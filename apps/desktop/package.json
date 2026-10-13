@@ -2,13 +2,39 @@
   "name": "yagent-desktop",
   "private": true,
   "version": "0.1.0",
-  "type": "module",
+  "description": "yagent desktop shell (Electron)",
+  "main": "dist/main.js",
   "scripts": {
-    "dev": "tauri dev",
-    "build": "tauri build",
-    "tauri": "tauri"
+    "build": "tsc -p tsconfig.json",
+    "dev": "concurrently -k -n web,electron \"pnpm --dir ../web dev\" \"wait-on http://localhost:5173 && pnpm build && VITE_DEV_SERVER_URL=http://localhost:5173 electron .\"",
+    "start": "electron .",
+    "pack": "pnpm build && electron-builder --dir",
+    "dist": "pnpm build && electron-builder"
+  },
+  "build": {
+    "appId": "com.yagent.app",
+    "productName": "yagent",
+    "files": [
+      "dist/**/*",
+      "package.json",
+      {
+        "from": "../web/dist",
+        "to": "web-dist"
+      }
+    ],
+    "directories": {
+      "output": "release"
+    },
+    "mac": {
+      "category": "public.app-category.productivity"
+    }
   },
   "devDependencies": {
-    "@tauri-apps/cli": "^2"
+    "@types/node": "^26.6.5",
+    "concurrently": "^10.0.6",
+    "electron": "^44.7.0",
+    "electron-builder": "^26.15.3",
+    "typescript": "^7.0.2",
+    "wait-on": "^9.5.1"
   }
 }
