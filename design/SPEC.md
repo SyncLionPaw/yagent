@@ -279,7 +279,22 @@ interface Settings {
 - 状态：`activeConversationId` + `activeNodeId` 驱动中间区；`openPopover` 单状态实现弹层互斥；主题 useState + localStorage
 - 分支树组件数据驱动：输入 nodes 树 → 自动分配泳道/行 → 生成 SVG path（设计稿中为手工坐标）
 
-## 11. 明确不做（本期）
+## 11. 沙箱方案（后置）
+
+沙箱执行环境本期不实现，但架构上按**可插拔 Provider** 设计：
+
+```ts
+interface SandboxProvider {
+  exec(cmd: string, cwd?: string): Promise<ExecResult>
+  readFile(path: string): Promise<string>
+  writeFile(path: string, content: string): Promise<void>
+  // ...
+}
+```
+
+候选后端：本地直连（开发态默认）/ e2b / 其他云端沙箱服务。UI 层的"沙箱已连接"状态、文件页、模式选择（本地/云端）都面向 `SandboxProvider` 接口编程，不绑定具体实现。
+
+## 12. 明确不做（本期）
 
 - 移动端原生界面（PWA 顶着）
 - 沙箱完整文件系统浏览（只有附件/产物两个受控视图）
