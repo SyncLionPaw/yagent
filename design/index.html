@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>yagent — 设计稿 v0.4</title>
+<title>yagent — 设计稿 v1.0</title>
 <style>
   /* ================= 主题变量 ================= */
   :root, [data-theme="light"] {
@@ -384,6 +384,48 @@
   /* 会话视图：中间区域随左侧选择切换 */
   .conv-view { display: none; }
   .conv-view.active { display: block; }
+  /* 分支视图：会话内不同分支的内容 */
+  .branch-view { display: none; }
+  .branch-view.active { display: block; }
+
+  /* 回答底部的 artifact 大文件卡片（Manus 风格） */
+  .art-big {
+    margin-top: 14px;
+    border: 1px solid var(--border);
+    background: var(--bg-card);
+    border-radius: 14px;
+    padding: 14px 16px;
+    display: flex; align-items: center; gap: 14px;
+    cursor: pointer;
+    transition: border-color 0.12s ease;
+  }
+  .art-big:hover { border-color: var(--border-strong); }
+  .art-thumb {
+    width: 42px; height: 42px; border-radius: 10px;
+    background: rgba(228, 77, 38, 0.12);
+    color: #e44d26;
+    display: flex; align-items: center; justify-content: center;
+    flex-shrink: 0;
+    font-family: "SF Mono", Menlo, monospace;
+    font-weight: 700; font-size: 15px;
+  }
+  .art-big .ab-name { font-weight: 600; font-size: 13.5px; letter-spacing: -0.01em; }
+  .art-big .ab-type { font-size: 11.5px; color: var(--text-2); margin-top: 1px; }
+  .art-big .ab-more {
+    margin-left: auto;
+    width: 28px; height: 28px; border-radius: 8px;
+    border: none; background: none; color: var(--text-2);
+    cursor: pointer;
+    display: flex; align-items: center; justify-content: center;
+  }
+  .art-big .ab-more:hover { background: var(--bg-hover); color: var(--text-0); }
+
+  /* 回答下方的操作排 */
+  .art-actions {
+    display: flex; align-items: center; gap: 2px;
+    margin-top: 8px;
+  }
+  .art-actions .icon-btn { margin-left: 0; width: 30px; height: 30px; border-radius: 8px; }
 
   /* 回答底部的 artifact 小卡片 */
   .artifacts-row { margin-top: 12px; display: flex; flex-wrap: wrap; gap: 8px; }
@@ -488,6 +530,111 @@
   }
   .send .send-ic { width: 13px; height: 13px; stroke-width: 2; }
   .send .send-plus { font-size: 10px; opacity: 0.7; line-height: 1; }
+
+  /* ---- 语音输入态：球形声波 ---- */
+  .mic-chip { border: none; background: none; font-family: inherit; }
+  .voice-bar {
+    display: none;
+    flex-direction: column;
+    align-items: center;
+    gap: 14px;
+    padding: 18px 10px 14px;
+  }
+  .composer-box.recording textarea,
+  .composer-box.recording .composer-bar { display: none; }
+  .composer-box.recording .voice-bar { display: flex; }
+
+  /* 球体 */
+  .orb {
+    width: 84px; height: 84px;
+    border-radius: 50%;
+    position: relative;
+    background: radial-gradient(circle at 32% 28%, #b3a8fa, var(--accent) 55%, #4338ca);
+    box-shadow:
+      0 10px 34px rgba(108, 92, 231, 0.45),
+      inset 0 -8px 20px rgba(20, 10, 60, 0.28),
+      inset 0 6px 14px rgba(255, 255, 255, 0.22);
+    animation: orbPulse 1.6s ease-in-out infinite;
+  }
+  /* 扩散涟漪 */
+  .orb::before, .orb::after {
+    content: "";
+    position: absolute; inset: -8px;
+    border-radius: 50%;
+    border: 1.5px solid var(--accent);
+    opacity: 0;
+    animation: ripple 2.2s ease-out infinite;
+    pointer-events: none;
+  }
+  .orb::after { animation-delay: 1.1s; }
+  @keyframes ripple {
+    0% { transform: scale(0.92); opacity: 0.55; }
+    100% { transform: scale(1.65); opacity: 0; }
+  }
+  @keyframes orbPulse {
+    0%, 100% { transform: scale(1); }
+    50% { transform: scale(1.06); }
+  }
+  /* 球面声纹 */
+  .orb-wf {
+    position: absolute; inset: 0;
+    display: flex; align-items: center; justify-content: center;
+    gap: 3px;
+  }
+  .orb-wf i {
+    width: 3px; height: 14%;
+    border-radius: 2px;
+    background: rgba(255, 255, 255, 0.85);
+    animation: wv 0.8s ease-in-out infinite;
+  }
+  .orb-wf i:nth-child(2n) { animation-delay: 0.14s; }
+  .orb-wf i:nth-child(3n) { animation-delay: 0.3s; }
+  .orb-wf i:nth-child(4n) { animation-delay: 0.45s; }
+  .orb-wf i:nth-child(5n) { animation-delay: 0.08s; }
+  @keyframes wv { 0%, 100% { height: 14%; } 50% { height: 52%; } }
+
+  .v-meta {
+    display: flex; align-items: center; gap: 8px;
+  }
+  .rec-dot {
+    width: 8px; height: 8px; border-radius: 50%;
+    background: var(--red);
+    animation: breathe 1.2s ease-in-out infinite;
+  }
+  .vtime {
+    font-family: "SF Mono", Menlo, monospace;
+    font-size: 12.5px; color: var(--text-1);
+  }
+
+  /* 实时识别文本 */
+  .voice-text {
+    min-height: 24px;
+    max-width: 520px;
+    text-align: center;
+    font-size: 14px;
+    line-height: 1.6;
+    color: var(--text-0);
+  }
+  .voice-text .caret {
+    display: inline-block;
+    width: 2px; height: 15px;
+    background: var(--accent);
+    vertical-align: -2px;
+    margin-left: 1px;
+    animation: blink 0.9s step-end infinite;
+  }
+  @keyframes blink { 50% { opacity: 0; } }
+
+  .voice-actions { display: flex; gap: 10px; }
+  .v-btn {
+    width: 30px; height: 30px; border-radius: 999px;
+    border: none;
+    display: flex; align-items: center; justify-content: center;
+    cursor: pointer;
+  }
+  .v-cancel { background: var(--bg-active); color: var(--text-1); }
+  .v-cancel:hover { color: var(--text-0); }
+  .v-confirm { background: var(--accent); color: #fff; box-shadow: 0 2px 8px rgba(108,92,231,0.4); }
 
   /* ================= 右侧栏（底层区域，舞台收窄后露出） ================= */
   .panel {
@@ -943,6 +1090,43 @@
     box-shadow: 0 1px 3px rgba(0,0,0,0.1);
   }
 
+  /* 会话节点树：git 分支图风格（SVG 连线 + 泳道） */
+  .gtree { position: relative; margin-top: 2px; }
+  .gtree-svg { position: absolute; left: 0; top: 0; display: block; }
+  .g-edge { stroke: var(--border-strong); stroke-width: 1.5; fill: none; }
+  .g-edge-cur { stroke: var(--accent); }
+  .g-dot { fill: var(--text-2); }
+  .g-dot-user { fill: var(--green); }
+  .g-dot-agent { fill: var(--accent); }
+  .g-dot-halo { fill: none; stroke: var(--accent); stroke-width: 2; opacity: 0.45; }
+
+  .g-rows { margin-left: 80px; }
+  .g-row {
+    height: 44px;
+    display: flex; flex-direction: column; justify-content: center;
+    gap: 2px;
+    min-width: 0;
+  }
+  .g-label {
+    display: flex; align-items: center; gap: 6px;
+    font-size: 12px; color: var(--text-1);
+    padding: 2px 7px;
+    border-radius: 6px;
+    cursor: pointer;
+    white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+    line-height: 1.4;
+  }
+  .g-label:hover { background: var(--bg-hover); }
+  .g-label.current { background: var(--accent-soft); color: var(--text-0); font-weight: 500; }
+  .g-label .g-time { font-size: 10.5px; color: var(--text-2); flex-shrink: 0; margin-left: auto; }
+  .g-tag {
+    font-size: 10px; font-weight: 600;
+    padding: 0 6px; border-radius: 999px;
+    background: var(--accent-soft); color: var(--accent-text);
+    flex-shrink: 0;
+  }
+  .g-tag.dim { background: var(--bg-active); color: var(--text-2); }
+
   ::-webkit-scrollbar { width: 6px; }
   ::-webkit-scrollbar-thumb { background: var(--border-strong); border-radius: 3px; }
 </style>
@@ -963,6 +1147,13 @@
     <symbol id="i-arrow-up" viewBox="0 0 24 24"><path d="m5 12 7-7 7 7"/><path d="M12 19V5"/></symbol>
     <symbol id="i-command" viewBox="0 0 24 24"><path d="M18 3a3 3 0 0 0-3 3v12a3 3 0 0 0 3 3 3 3 0 0 0 3-3 3 3 0 0 0-3-3H6a3 3 0 0 0-3 3 3 3 0 0 0 3 3 3 3 0 0 0 3-3V6a3 3 0 0 0-3-3 3 3 0 0 0-3 3 3 3 0 0 0 3 3h12a3 3 0 0 0 3-3 3 3 0 0 0-3-3z"/></symbol>
     <symbol id="i-enter" viewBox="0 0 24 24"><polyline points="9 10 4 15 9 20"/><path d="M20 4v7a4 4 0 0 1-4 4H4"/></symbol>
+    <symbol id="i-mic" viewBox="0 0 24 24"><path d="M12 2a3 3 0 0 0-3 3v7a3 3 0 0 0 6 0V5a3 3 0 0 0-3-3Z"/><path d="M19 10v2a7 7 0 0 1-14 0v-2"/><line x1="12" x2="12" y1="19" y2="22"/></symbol>
+    <symbol id="i-copy" viewBox="0 0 24 24"><rect width="14" height="14" x="8" y="8" rx="2"/><path d="M4 16c-1.1 0-2-.9-2-2V4c0-1.1.9-2 2-2h10c1.1 0 2 .9 2 2"/></symbol>
+    <symbol id="i-thumbs-up" viewBox="0 0 24 24"><path d="M7 10v12"/><path d="M15 5.88 14 10h5.83a2 2 0 0 1 1.92 2.56l-2.33 8A2 2 0 0 1 17.5 22H4a2 2 0 0 1-2-2v-8a2 2 0 0 1 2-2h2.76a2 2 0 0 0 1.79-1.11L12 2a3.13 3.13 0 0 1 3 3.88Z"/></symbol>
+    <symbol id="i-thumbs-down" viewBox="0 0 24 24"><path d="M17 14V2"/><path d="M9 18.12 10 14H4.17a2 2 0 0 1-1.92-2.56l2.33-8A2 2 0 0 1 6.5 2H20a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2h-2.76a2 2 0 0 0-1.79 1.11L12 22a3.13 3.13 0 0 1-3-3.88Z"/></symbol>
+    <symbol id="i-share" viewBox="0 0 24 24"><path d="M4 12v8a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-8"/><polyline points="16 6 12 2 8 6"/><line x1="12" x2="12" y1="2" y2="15"/></symbol>
+    <symbol id="i-download" viewBox="0 0 24 24"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" x2="12" y1="15" y2="3"/></symbol>
+    <symbol id="i-dots" viewBox="0 0 24 24"><circle cx="12" cy="12" r="1"/><circle cx="19" cy="12" r="1"/><circle cx="5" cy="12" r="1"/></symbol>
     <symbol id="i-moon" viewBox="0 0 24 24"><path d="M12 3a6 6 0 0 0 9 9 9 9 0 1 1-9-9Z"/></symbol>
     <symbol id="i-sun" viewBox="0 0 24 24"><circle cx="12" cy="12" r="4"/><path d="M12 2v2"/><path d="M12 20v2"/><path d="m4.93 4.93 1.41 1.41"/><path d="m17.66 17.66 1.41 1.41"/><path d="M2 12h2"/><path d="M20 12h2"/><path d="m6.34 17.66-1.41 1.41"/><path d="m19.07 4.93-1.41 1.41"/></symbol>
     <symbol id="i-check" viewBox="0 0 24 24"><path d="M20 6 9 17l-5-5"/></symbol>
@@ -1069,6 +1260,7 @@
 
     <div class="chat">
       <div class="conv-view active" data-view="c1">
+      <div class="branch-view active" data-branch="a">
       <div class="msg msg-user">
         <div class="msg-head"><span>22:31</span><span class="who-user">你</span></div>
         <div class="inner">
@@ -1134,15 +1326,24 @@
           </div>
         </div>
 
-        <div class="artifacts-row">
-          <span class="art-mini"><svg class="ic ic-sm"><use href="#i-file-code"/></svg>auth.ts<span class="am-meta">代码</span></span>
-          <span class="art-mini"><svg class="ic ic-sm"><use href="#i-image"/></svg>登录页预览.html<span class="am-meta">网页</span></span>
-          <span class="art-mini"><svg class="ic ic-sm"><use href="#i-file"/></svg>实施报告.md<span class="am-meta">文档</span></span>
-        </div>
-
         <div class="thinking">
           <span class="ring"></span>
           正在等待测试结果，然后根据结果决定是否调整中间件顺序…
+        </div>
+      </div>
+      </div>
+
+      <!-- 分支 B 的对话内容 -->
+      <div class="branch-view" data-branch="b">
+        <div class="msg msg-user">
+          <div class="msg-head"><span>昨天</span><span class="who-user">你</span></div>
+          <div class="inner"><div class="bubble">先别定，试试 Session + Redis 的方案看看。</div></div>
+        </div>
+        <div class="msg msg-agent">
+          <div class="msg-head"><span class="who-agent">yagent</span><span>昨天</span></div>
+          <p>好，这条分支我评估了 Session + Redis：需要额外引入 Redis 依赖，会话状态集中存储，好处是服务端可以主动踢人、踢设备，适合多端登录管控。</p>
+          <p>对比下来：JWT 无状态、实现轻；Session 可控性强但多一个组件。如果后续要做"踢下线"功能，Session 更合适。</p>
+          <div class="wait-bar"><span class="dot dot-wait"></span>此分支已暂停 · 点击节点可回到分支 A 继续</div>
         </div>
       </div>
       </div>
@@ -1178,9 +1379,21 @@
               <span class="t-status ok"><svg class="ic ic-sm"><use href="#i-check"/></svg>46 passed</span>
             </div>
           </div>
-          <div class="artifacts-row">
-            <span class="art-mini"><svg class="ic ic-sm"><use href="#i-file-code"/></svg>errors.ts<span class="am-meta">代码</span></span>
-            <span class="art-mini"><svg class="ic ic-sm"><use href="#i-file"/></svg>迁移说明.md<span class="am-meta">文档</span></span>
+          <div class="art-big">
+            <div class="art-thumb"><svg class="ic" style="width:20px;height:20px"><use href="#i-file-code"/></svg></div>
+            <div>
+              <div class="ab-name">api-errors-refactor.html</div>
+              <div class="ab-type">HTML · 重构报告</div>
+            </div>
+            <button class="ab-more" title="更多"><svg class="ic ic-sm"><use href="#i-dots"/></svg></button>
+          </div>
+          <div class="art-actions">
+            <button class="icon-btn" title="复制"><svg class="ic ic-sm"><use href="#i-copy"/></svg></button>
+            <button class="icon-btn" title="有用"><svg class="ic ic-sm"><use href="#i-thumbs-up"/></svg></button>
+            <button class="icon-btn" title="不行"><svg class="ic ic-sm"><use href="#i-thumbs-down"/></svg></button>
+            <button class="icon-btn" title="分享"><svg class="ic ic-sm"><use href="#i-share"/></svg></button>
+            <button class="icon-btn" title="下载"><svg class="ic ic-sm"><use href="#i-download"/></svg></button>
+            <button class="icon-btn" title="更多"><svg class="ic ic-sm"><use href="#i-dots"/></svg></button>
           </div>
           <div class="done-bar"><svg class="ic ic-sm"><use href="#i-check"/></svg>已完成 · 用时 6m 12s</div>
         </div>
@@ -1199,6 +1412,22 @@
         </div>
 
         <textarea placeholder="继续指示，⌘+Enter 发送，输入 / 使用命令…"></textarea>
+
+        <!-- 语音录入态：点击麦克风后汇聚成声波球 -->
+        <div class="voice-bar" id="voiceBar">
+          <div class="orb">
+            <div class="orb-wf"><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i></div>
+          </div>
+          <div class="v-meta">
+            <span class="rec-dot"></span>
+            <span class="vtime" id="vtime">0:00</span>
+          </div>
+          <div class="voice-text"><span id="voiceText"></span><span class="caret"></span></div>
+          <div class="voice-actions">
+            <button class="v-btn v-cancel" id="voiceCancel" title="取消"><svg class="ic ic-sm"><use href="#i-x"/></svg></button>
+            <button class="v-btn v-confirm" id="voiceConfirm" title="完成"><svg class="ic ic-sm"><use href="#i-check"/></svg></button>
+          </div>
+        </div>
         <div class="composer-bar">
 
           <!-- 模式选择器 -->
@@ -1228,6 +1457,7 @@
           <span class="chip"><svg class="ic ic-sm"><use href="#i-paperclip"/></svg><span class="chip-text">附件</span></span>
           <span class="chip"><svg class="ic ic-sm"><use href="#i-at"/></svg><span class="chip-text">引用文件</span></span>
           <span class="chip on"><svg class="ic ic-sm"><use href="#i-zap"/></svg><span class="chip-text">自动执行</span></span>
+          <button class="chip mic-chip" id="micBtn" title="语音输入"><svg class="ic ic-sm"><use href="#i-mic"/></svg></button>
           <button class="send" title="发送 (⌘+Enter)"><svg class="ic send-ic"><use href="#i-command"/></svg><span class="send-plus">+</span><svg class="ic send-ic"><use href="#i-enter"/></svg></button>
         </div>
       </div>
@@ -1237,37 +1467,46 @@
   <!-- ========== 右侧任务状态 ========== -->
   <aside class="panel">
     <div class="panel-tabs">
-      <button class="ptab active" data-ppane="task">任务</button>
+      <button class="ptab active" data-ppane="task">分支</button>
       <button class="ptab" data-ppane="files">文件</button>
       <button class="ptab" data-ppane="search">搜索结果</button>
     </div>
 
     <div class="p-pane active" id="ppane-task">
-    <div class="p-section">
-      <div class="p-title">任务进度 <span class="count">3 / 5</span></div>
-      <div class="progress"><i></i></div>
-      <div class="step s-done"><span class="mark">✓</span><span class="st">分析现有项目结构<small>读取 12 个文件</small></span></div>
-      <div class="step s-done"><span class="mark">✓</span><span class="st">安装依赖<small>jsonwebtoken, bcrypt</small></span></div>
-      <div class="step s-run"><span class="mark">3</span><span class="st">实现 auth 模块<small>注册 / 登录 / 中间件</small></span></div>
-      <div class="step s-todo"><span class="mark">4</span><span class="st">挂载鉴权中间件</span></div>
-      <div class="step s-todo"><span class="mark">5</span><span class="st">运行测试验证</span></div>
-    </div>
-
-    <div class="p-section">
-      <div class="p-title">变更文件 <span class="count">3</span></div>
-      <div class="file"><span class="tag tag-add">新增</span><span class="fname">packages/core/src/auth.ts</span><span class="num num-add">+86</span></div>
-      <div class="file"><span class="tag tag-mod">修改</span><span class="fname">apps/web/package.json</span><span class="num"><span class="num-add">+2</span></span></div>
-      <div class="file"><span class="tag tag-mod">修改</span><span class="fname">packages/core/src/index.ts</span><span class="num"><span class="num-add">+4</span> <span class="num-del">-1</span></span></div>
-    </div>
-
-    <div class="p-section">
-      <div class="p-title">运行环境</div>
-      <div class="kv"><span class="k">Node</span><span class="v">v24.21.0</span></div>
-      <div class="kv"><span class="k">包管理</span><span class="v">pnpm 12.11.2</span></div>
-      <div class="kv"><span class="k">分支</span><span class="v">feat/auth</span></div>
-      <div class="kv"><span class="k">Token 用量</span><span class="v">18.2k / 200k</span></div>
-      <div class="kv"><span class="k">耗时</span><span class="v">2m 41s</span></div>
-    </div>
+      <div class="gtree">
+        <svg class="gtree-svg" width="64" height="176" viewBox="0 0 64 176">
+          <!-- 连线 -->
+          <path class="g-edge g-edge-cur" d="M12 22 V66"/>
+          <path class="g-edge g-edge-cur" d="M12 66 C 12 88, 32 88, 32 110"/>
+          <path class="g-edge" d="M12 66 C 12 92, 52 84, 52 110"/>
+          <path class="g-edge g-edge-cur" d="M32 110 V154"/>
+          <path class="g-edge" d="M52 110 V154"/>
+          <!-- 节点 -->
+          <circle class="g-dot g-dot-user" cx="12" cy="22" r="4.5"/>
+          <circle class="g-dot g-dot-agent" cx="12" cy="66" r="4.5"/>
+          <circle class="g-dot g-dot-user" cx="32" cy="110" r="4.5"/>
+          <circle class="g-dot g-dot-user" cx="52" cy="110" r="4.5"/>
+          <circle class="g-dot-halo" cx="32" cy="154" r="8"/>
+          <circle class="g-dot g-dot-agent" cx="32" cy="154" r="4.5"/>
+          <circle class="g-dot g-dot-agent" cx="52" cy="154" r="4.5" opacity="0.45"/>
+        </svg>
+        <div class="g-rows">
+          <div class="g-row">
+            <div class="g-label">给项目加上用户认证<span class="g-time">用户</span></div>
+          </div>
+          <div class="g-row">
+            <div class="g-label">提出 JWT / Session 两种方案<span class="g-time">yagent</span></div>
+          </div>
+          <div class="g-row">
+            <div class="g-label" data-branch="a"><span class="g-tag">分支A</span>用 JWT，加盐哈希</div>
+            <div class="g-label" data-branch="b"><span class="g-tag dim">分支B</span>Session + Redis</div>
+          </div>
+          <div class="g-row">
+            <div class="g-label current" data-branch="a">实现 auth 模块（进行中）<span class="g-time">2m</span></div>
+            <div class="g-label" data-branch="b" style="color:var(--text-2)">已暂停<span class="g-time">昨天</span></div>
+          </div>
+        </div>
+      </div>
     </div>
 
     <div class="p-pane" id="ppane-files">
@@ -1534,6 +1773,54 @@
     }
   });
 
+  // 会话树节点点击：高亮节点；分支节点同时切换对话区加载的分支内容
+  document.querySelectorAll('.g-label').forEach((n) => {
+    n.addEventListener('click', (e) => {
+      e.stopPropagation();
+      document.querySelectorAll('.g-label.current').forEach((x) => x.classList.remove('current'));
+      n.classList.add('current');
+      const b = n.dataset.branch;
+      if (b) {
+        document.querySelectorAll('.branch-view').forEach((v) => {
+          v.classList.toggle('active', v.dataset.branch === b);
+        });
+      }
+    });
+  });
+
+  // 语音输入：点击麦克风，输入框汇聚成声波球，实时流式显示识别文本
+  const composerBox = document.querySelector('.composer-box');
+  const vtime = document.getElementById('vtime');
+  const voiceText = document.getElementById('voiceText');
+  let vTimer = null, vSec = 0, tTimer = null;
+  const fmt = (s) => Math.floor(s / 60) + ':' + String(s % 60).padStart(2, '0');
+  const DEMO_TRANSCRIPT = '把登录页加上"记住我"复选框，默认勾选，然后帮我把登录流程跑一遍测试';
+
+  const stopRecording = () => {
+    clearInterval(vTimer);
+    clearInterval(tTimer);
+    composerBox.classList.remove('recording');
+  };
+  document.getElementById('micBtn').addEventListener('click', () => {
+    composerBox.classList.add('recording');
+    vSec = 0;
+    vtime.textContent = '0:00';
+    voiceText.textContent = '';
+    vTimer = setInterval(() => { vSec++; vtime.textContent = fmt(vSec); }, 1000);
+    // 模拟流式识别：逐字浮现
+    let i = 0;
+    tTimer = setInterval(() => {
+      if (i >= DEMO_TRANSCRIPT.length) { clearInterval(tTimer); return; }
+      voiceText.textContent += DEMO_TRANSCRIPT[i++];
+    }, 110);
+  });
+  document.getElementById('voiceCancel').addEventListener('click', stopRecording);
+  document.getElementById('voiceConfirm').addEventListener('click', () => {
+    stopRecording();
+    composerInput.value = voiceText.textContent;
+    composerInput.focus();
+  });
+
   // 思考过程折叠/展开
   document.querySelectorAll('.thought-head').forEach((h) => {
     h.addEventListener('click', () => h.parentElement.classList.toggle('open'));
@@ -1590,7 +1877,7 @@
     app.classList.add('panel-open');
     switchPane('files');
   };
-  document.querySelectorAll('.art-mini, .art-card').forEach((c) => {
+  document.querySelectorAll('.art-mini, .art-big').forEach((c) => {
     c.addEventListener('click', openArtifactsPane);
   });
 
