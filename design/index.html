@@ -241,7 +241,13 @@
     white-space: normal;
   }
   .topbar .sep { color: var(--text-2); flex-shrink: 0; }
-  .topbar .meta { font-size: 12px; color: var(--text-2); flex-shrink: 0; }
+  .topbar .meta {
+    font-size: 11.5px; color: var(--text-2);
+    flex-shrink: 0;
+    display: flex; align-items: center; gap: 5px;
+    font-family: "SF Mono", Menlo, monospace;
+  }
+  .topbar .meta .ic { color: var(--text-2); }
   .topbar-right { margin-left: auto; display: flex; align-items: center; gap: 8px; flex-shrink: 0; }
 
   /* 舞台收窄时，顶栏按优先级隐藏次要信息，保证按钮完整 */
@@ -293,12 +299,38 @@
     padding: 5px;
     display: none;
     z-index: 30;
+    white-space: normal;
   }
   .model-pop.open { display: block; }
   .model-pop .pop-label {
     font-size: 11px; font-weight: 600; color: var(--text-2);
     padding: 6px 10px 3px;
   }
+
+  /* 分享弹层 */
+  .share-pop { width: 300px; padding: 10px; }
+  .share-desc { font-size: 12px; color: var(--text-2); padding: 2px 4px 10px; line-height: 1.5; }
+  .share-row { display: flex; gap: 6px; }
+  .share-link {
+    flex: 1; min-width: 0;
+    font-family: "SF Mono", Menlo, monospace;
+    font-size: 11.5px;
+    color: var(--text-1);
+    background: var(--bg-app);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 7px 10px;
+    outline: none;
+    white-space: nowrap;
+  }
+  .share-copy {
+    width: 31px; height: 31px;
+    border-radius: 8px;
+    border: 1px solid var(--border);
+    background: var(--bg-app);
+    flex-shrink: 0;
+  }
+  .share-copy.copied { color: var(--green); border-color: var(--green); }
 
   /* ---- 对话流 ---- */
   .chat { flex: 1; overflow-y: auto; padding: 20px 32px 12px; }
@@ -426,6 +458,12 @@
     margin-top: 8px;
   }
   .art-actions .icon-btn { margin-left: 0; width: 30px; height: 30px; border-radius: 8px; }
+  .art-actions .done-inline {
+    margin-left: auto;
+    display: flex; align-items: center; gap: 6px;
+    font-size: 12.5px; color: var(--text-2);
+    padding-right: 2px;
+  }
 
   /* 回答底部的 artifact 小卡片 */
   .artifacts-row { margin-top: 12px; display: flex; flex-wrap: wrap; gap: 8px; }
@@ -506,6 +544,9 @@
     background: none; color: var(--text-0);
     font-family: inherit; font-size: 14px; line-height: 1.6;
     min-height: 42px;
+    max-height: 180px;
+    overflow-y: auto;
+    display: block;
   }
   .composer-box textarea::placeholder { color: var(--text-2); }
   .composer-bar { display: flex; align-items: center; gap: 4px; padding-top: 6px; }
@@ -531,67 +572,44 @@
   .send .send-ic { width: 13px; height: 13px; stroke-width: 2; }
   .send .send-plus { font-size: 10px; opacity: 0.7; line-height: 1; }
 
-  /* ---- 语音输入态：球形声波 ---- */
+  /* ---- 语音输入态：悬浮声波球 ---- */
   .mic-chip { border: none; background: none; font-family: inherit; }
-  .voice-bar {
+  .stage { position: relative; }
+
+  .voice-overlay {
+    position: absolute; inset: 0;
+    z-index: 15;
     display: none;
     flex-direction: column;
     align-items: center;
-    gap: 14px;
-    padding: 18px 10px 14px;
+    justify-content: center;
+    gap: 20px;
+    backdrop-filter: blur(16px);
+    -webkit-backdrop-filter: blur(16px);
+    background: color-mix(in srgb, var(--bg-surface) 52%, transparent);
   }
-  .composer-box.recording textarea,
-  .composer-box.recording .composer-bar { display: none; }
-  .composer-box.recording .voice-bar { display: flex; }
+  .voice-overlay.open { display: flex; }
 
-  /* 球体 */
-  .orb {
-    width: 84px; height: 84px;
-    border-radius: 50%;
-    position: relative;
-    background: radial-gradient(circle at 32% 28%, #b3a8fa, var(--accent) 55%, #4338ca);
-    box-shadow:
-      0 10px 34px rgba(108, 92, 231, 0.45),
-      inset 0 -8px 20px rgba(20, 10, 60, 0.28),
-      inset 0 6px 14px rgba(255, 255, 255, 0.22);
-    animation: orbPulse 1.6s ease-in-out infinite;
-  }
-  /* 扩散涟漪 */
-  .orb::before, .orb::after {
-    content: "";
-    position: absolute; inset: -8px;
-    border-radius: 50%;
-    border: 1.5px solid var(--accent);
-    opacity: 0;
-    animation: ripple 2.2s ease-out infinite;
-    pointer-events: none;
-  }
-  .orb::after { animation-delay: 1.1s; }
-  @keyframes ripple {
-    0% { transform: scale(0.92); opacity: 0.55; }
-    100% { transform: scale(1.65); opacity: 0; }
-  }
-  @keyframes orbPulse {
-    0%, 100% { transform: scale(1); }
-    50% { transform: scale(1.06); }
-  }
-  /* 球面声纹 */
-  .orb-wf {
-    position: absolute; inset: 0;
+  /* 声纹波浪：一排渐变细柱，真实频谱驱动 */
+  .voice-wave {
     display: flex; align-items: center; justify-content: center;
     gap: 3px;
+    height: 72px;
+    transition: transform 0.08s linear;
   }
-  .orb-wf i {
-    width: 3px; height: 14%;
+  .voice-wave i {
+    width: 3px; height: 10%;
     border-radius: 2px;
-    background: rgba(255, 255, 255, 0.85);
-    animation: wv 0.8s ease-in-out infinite;
+    background: linear-gradient(to bottom, #b3a8fa, var(--accent));
+    box-shadow: 0 0 8px rgba(108, 92, 231, 0.35);
+    animation: wv 0.9s ease-in-out infinite;
   }
-  .orb-wf i:nth-child(2n) { animation-delay: 0.14s; }
-  .orb-wf i:nth-child(3n) { animation-delay: 0.3s; }
-  .orb-wf i:nth-child(4n) { animation-delay: 0.45s; }
-  .orb-wf i:nth-child(5n) { animation-delay: 0.08s; }
-  @keyframes wv { 0%, 100% { height: 14%; } 50% { height: 52%; } }
+  .voice-wave i:nth-child(2n) { animation-duration: 0.72s; animation-delay: 0.12s; }
+  .voice-wave i:nth-child(3n) { animation-duration: 1.05s; animation-delay: 0.28s; }
+  .voice-wave i:nth-child(4n) { animation-duration: 0.84s; animation-delay: 0.4s; }
+  .voice-wave i:nth-child(5n) { animation-duration: 1.18s; animation-delay: 0.06s; }
+  .voice-wave i:nth-child(7n) { animation-duration: 0.66s; }
+  @keyframes wv { 0%, 100% { height: 10%; } 50% { height: 60%; } }
 
   .v-meta {
     display: flex; align-items: center; gap: 8px;
@@ -608,11 +626,12 @@
 
   /* 实时识别文本 */
   .voice-text {
-    min-height: 24px;
+    min-height: 46px;
     max-width: 520px;
+    padding: 0 24px;
     text-align: center;
-    font-size: 14px;
-    line-height: 1.6;
+    font-size: 15px;
+    line-height: 1.7;
     color: var(--text-0);
   }
   .voice-text .caret {
@@ -627,7 +646,7 @@
 
   .voice-actions { display: flex; gap: 10px; }
   .v-btn {
-    width: 30px; height: 30px; border-radius: 999px;
+    width: 32px; height: 32px; border-radius: 999px;
     border: none;
     display: flex; align-items: center; justify-content: center;
     cursor: pointer;
@@ -1154,10 +1173,12 @@
     <symbol id="i-share" viewBox="0 0 24 24"><path d="M4 12v8a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-8"/><polyline points="16 6 12 2 8 6"/><line x1="12" x2="12" y1="2" y2="15"/></symbol>
     <symbol id="i-download" viewBox="0 0 24 24"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" x2="12" y1="15" y2="3"/></symbol>
     <symbol id="i-dots" viewBox="0 0 24 24"><circle cx="12" cy="12" r="1"/><circle cx="19" cy="12" r="1"/><circle cx="5" cy="12" r="1"/></symbol>
+    <symbol id="i-link" viewBox="0 0 24 24"><path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"/><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"/></symbol>
     <symbol id="i-moon" viewBox="0 0 24 24"><path d="M12 3a6 6 0 0 0 9 9 9 9 0 1 1-9-9Z"/></symbol>
     <symbol id="i-sun" viewBox="0 0 24 24"><circle cx="12" cy="12" r="4"/><path d="M12 2v2"/><path d="M12 20v2"/><path d="m4.93 4.93 1.41 1.41"/><path d="m17.66 17.66 1.41 1.41"/><path d="M2 12h2"/><path d="M20 12h2"/><path d="m6.34 17.66-1.41 1.41"/><path d="m19.07 4.93-1.41 1.41"/></symbol>
     <symbol id="i-check" viewBox="0 0 24 24"><path d="M20 6 9 17l-5-5"/></symbol>
     <symbol id="i-chevron-down" viewBox="0 0 24 24"><path d="m6 9 6 6 6-6"/></symbol>
+    <symbol id="i-folder" viewBox="0 0 24 24"><path d="M20 20a2 2 0 0 0 2-2V8a2 2 0 0 0-2-2h-7.9a2 2 0 0 1-1.69-.9L9.6 3.9A2 2 0 0 0 7.93 3H4a2 2 0 0 0-2 2v13a2 2 0 0 0 2 2Z"/></symbol>
     <symbol id="b-claude" viewBox="0 0 24 24"><path fill="#D97757" fill-rule="nonzero" d="M4.709 15.955l4.72-2.647.08-.23-.08-.128H9.2l-.79-.048-2.698-.073-2.339-.097-2.266-.122-.571-.121L0 11.784l.055-.352.48-.321.686.06 1.52.103 2.278.158 1.652.097 2.449.255h.389l.055-.157-.134-.098-.103-.097-2.358-1.596-2.552-1.688-1.336-.972-.724-.491-.364-.462-.158-1.008.656-.722.881.06.225.061.893.686 1.908 1.476 2.491 1.833.365.304.145-.103.019-.073-.164-.274-1.355-2.446-1.446-2.49-.644-1.032-.17-.619a2.97 2.97 0 01-.104-.729L6.283.134 6.696 0l.996.134.42.364.62 1.414 1.002 2.229 1.555 3.03.456.898.243.832.091.255h.158V9.01l.128-1.706.237-2.095.23-2.695.08-.76.376-.91.747-.492.584.28.48.685-.067.444-.286 1.851-.559 2.903-.364 1.942h.212l.243-.242.985-1.306 1.652-2.064.73-.82.85-.904.547-.431h1.033l.76 1.129-.34 1.166-1.064 1.347-.881 1.142-1.264 1.7-.79 1.36.073.11.188-.02 2.856-.606 1.543-.28 1.841-.315.833.388.091.395-.328.807-1.969.486-2.309.462-3.439.813-.042.03.049.061 1.549.146.662.036h1.622l3.02.225.79.522.474.638-.079.485-1.215.62-1.64-.389-3.829-.91-1.312-.329h-.182v.11l1.093 1.068 2.006 1.81 2.509 2.33.127.578-.322.455-.34-.049-2.205-1.657-.851-.747-1.926-1.62h-.128v.17l.444.649 2.345 3.521.122 1.08-.17.353-.608.213-.668-.122-1.374-1.925-1.415-2.167-1.143-1.943-.14.08-.674 7.254-.316.37-.729.28-.607-.461-.322-.747.322-1.476.389-1.924.315-1.53.286-1.9.17-.632-.012-.042-.14.018-1.434 1.967-2.18 2.945-1.726 1.845-.414.164-.717-.37.067-.662.401-.589 2.388-3.036 1.44-1.882.93-1.086-.006-.158h-.055L4.132 18.56l-1.13.146-.487-.456.061-.746.231-.243 1.908-1.312-.006.006z"/></symbol>
     <symbol id="b-openai" viewBox="0 0 24 24"><path fill="currentColor" fill-rule="evenodd" d="M9.205 8.658v-2.26c0-.19.072-.333.238-.428l4.543-2.616c.619-.357 1.356-.523 2.117-.523 2.854 0 4.662 2.212 4.662 4.566 0 .167 0 .357-.024.547l-4.71-2.759a.797.797 0 00-.856 0l-5.97 3.473zm10.609 8.8V12.06c0-.333-.143-.57-.429-.737l-5.97-3.473 1.95-1.118a.433.433 0 01.476 0l4.543 2.617c1.309.76 2.189 2.378 2.189 3.948 0 1.808-1.07 3.473-2.76 4.163zM7.802 12.703l-1.95-1.142c-.167-.095-.239-.238-.239-.428V5.899c0-2.545 1.95-4.472 4.591-4.472 1 0 1.927.333 2.712.928L8.23 5.067c-.285.166-.428.404-.428.737v6.898zM12 15.128l-2.795-1.57v-3.33L12 8.658l2.795 1.57v3.33L12 15.128zm1.796 7.23c-1 0-1.927-.332-2.712-.927l4.686-2.712c.285-.166.428-.404.428-.737v-6.898l1.974 1.142c.167.095.238.238.238.428v5.233c0 2.545-1.974 4.472-4.614 4.472zm-5.637-5.303l-4.544-2.617c-1.308-.761-2.188-2.378-2.188-3.948A4.482 4.482 0 014.21 6.327v5.423c0 .333.143.571.428.738l5.947 3.449-1.95 1.118a.432.432 0 01-.476 0zm-.262 3.9c-2.688 0-4.662-2.021-4.662-4.519 0-.19.024-.38.047-.57l4.686 2.71c.286.167.571.167.856 0l5.97-3.448v2.26c0 .19-.07.333-.237.428l-4.543 2.616c-.619.357-1.356.523-2.117.523zm5.899 2.83a5.947 5.947 0 005.827-4.756C22.287 18.339 24 15.84 24 13.296c0-1.665-.713-3.282-1.998-4.448.119-.5.19-.999.19-1.498 0-3.401-2.759-5.947-5.946-5.947-.642 0-1.26.095-1.88.31A5.962 5.962 0 0010.205 0a5.947 5.947 0 00-5.827 4.757C1.713 5.447 0 7.945 0 10.49c0 1.666.713 3.283 1.998 4.448-.119.5-.19 1-.19 1.499 0 3.401 2.759 5.946 5.946 5.946.642 0 1.26-.095 1.88-.309a5.96 5.96 0 004.162 1.713z"/></symbol>
     <symbol id="b-deepseek" viewBox="0 0 24 24"><path fill="#4D6BFE" d="M23.748 4.482c-.254-.124-.364.113-.512.234-.051.039-.094.09-.137.136-.372.397-.806.657-1.373.626-.829-.046-1.537.214-2.163.848-.133-.782-.575-1.248-1.247-1.548-.352-.156-.708-.311-.955-.65-.172-.241-.219-.51-.305-.774-.055-.16-.11-.323-.293-.35-.2-.031-.278.136-.356.276-.313.572-.434 1.202-.422 1.84.027 1.436.633 2.58 1.838 3.393.137.093.172.187.129.323-.082.28-.18.552-.266.833-.055.179-.137.217-.329.14a5.526 5.526 0 01-1.736-1.18c-.857-.828-1.631-1.742-2.597-2.458a11.365 11.365 0 00-.689-.471c-.985-.957.13-1.743.388-1.836.27-.098.093-.432-.779-.428-.872.004-1.67.295-2.687.684a3.055 3.055 0 01-.465.137 9.597 9.597 0 00-2.883-.102c-1.885.21-3.39 1.102-4.497 2.623C.082 8.606-.231 10.684.152 12.85c.403 2.284 1.569 4.175 3.36 5.653 1.858 1.533 3.997 2.284 6.438 2.14 1.482-.085 3.133-.284 4.994-1.86.47.234.962.327 1.78.397.63.059 1.236-.03 1.705-.128.735-.156.684-.837.419-.961-2.155-1.004-1.682-.595-2.113-.926 1.096-1.296 2.746-2.642 3.392-7.003.05-.347.007-.565 0-.845-.004-.17.035-.237.23-.256a4.173 4.173 0 001.545-.475c1.396-.763 1.96-2.015 2.093-3.517.02-.23-.004-.467-.247-.588zM11.581 18c-2.089-1.642-3.102-2.183-3.52-2.16-.392.024-.321.471-.235.763.09.288.207.486.371.739.114.167.192.416-.113.603-.673.416-1.842-.14-1.897-.167-1.361-.802-2.5-1.86-3.301-3.307-.774-1.393-1.224-2.887-1.298-4.482-.02-.386.093-.522.477-.592a4.696 4.696 0 011.529-.039c2.132.312 3.946 1.265 5.468 2.774.868.86 1.525 1.887 2.202 2.891.72 1.066 1.494 2.082 2.48 2.914.348.292.625.514.891.677-.802.09-2.14.11-3.054-.614zm1-6.44a.306.306 0 01.415-.287.302.302 0 01.2.288.306.306 0 01-.31.307.303.303 0 01-.304-.308zm3.11 1.596c-.2.081-.399.151-.59.16a1.245 1.245 0 01-.798-.254c-.274-.23-.47-.358-.552-.758a1.73 1.73 0 01.016-.588c.07-.327-.008-.537-.239-.727-.187-.156-.426-.199-.688-.199a.559.559 0 01-.254-.078c-.11-.054-.2-.19-.114-.358.028-.054.16-.186.192-.21.356-.202.767-.136 1.146.016.352.144.618.408 1.001.782.391.451.462.576.685.914.176.265.336.537.445.848.067.195-.019.354-.25.452z"/></symbol>
@@ -1230,7 +1251,7 @@
       <button class="icon-btn" id="sidebarBtn" title="侧栏 (⌘B)"><svg class="ic"><use href="#i-panel-left"/></svg></button>
       <span class="title">实现用户认证模块</span>
       <span class="sep">·</span>
-      <span class="meta">feat/auth</span>
+      <span class="meta"><svg class="ic ic-sm"><use id="metaIcon" href="#i-folder"/></svg><span id="metaText">~/yagent</span></span>
       <div class="topbar-right">
         <div class="pill"><span class="ok-dot"></span>沙箱已连接</div>
         <div class="model-wrap">
@@ -1252,6 +1273,17 @@
               <span><span class="m-title">DeepSeek V4</span><span class="m-desc">deepseek · 128k 上下文</span></span>
               <span class="m-check"><svg class="ic ic-sm"><use href="#i-check"/></svg></span>
             </button>
+          </div>
+        </div>
+        <div class="model-wrap">
+          <button class="theme-toggle" id="shareBtn" title="分享对话"><svg class="ic"><use href="#i-link"/></svg></button>
+          <div class="model-pop share-pop" id="sharePop">
+            <div class="pop-label">分享此对话</div>
+            <div class="share-desc">任何获得链接的人都可以<b>只读</b>查看当前分支的对话内容，不能继续操作。</div>
+            <div class="share-row">
+              <input class="share-link" id="shareLink" readonly value="https://yagent.app/s/t-0142-a8f3">
+              <button class="icon-btn share-copy" id="copyLink" title="复制链接"><svg class="ic ic-sm" id="copyIcon"><use href="#i-copy"/></svg></button>
+            </div>
           </div>
         </div>
         <button class="theme-toggle" id="panelBtn" title="任务面板"><svg class="ic"><use href="#i-panel-right"/></svg></button>
@@ -1394,8 +1426,8 @@
             <button class="icon-btn" title="分享"><svg class="ic ic-sm"><use href="#i-share"/></svg></button>
             <button class="icon-btn" title="下载"><svg class="ic ic-sm"><use href="#i-download"/></svg></button>
             <button class="icon-btn" title="更多"><svg class="ic ic-sm"><use href="#i-dots"/></svg></button>
+            <span class="done-inline">已完成 · 用时 6m 12s</span>
           </div>
-          <div class="done-bar"><svg class="ic ic-sm"><use href="#i-check"/></svg>已完成 · 用时 6m 12s</div>
         </div>
       </div>
 
@@ -1412,22 +1444,6 @@
         </div>
 
         <textarea placeholder="继续指示，⌘+Enter 发送，输入 / 使用命令…"></textarea>
-
-        <!-- 语音录入态：点击麦克风后汇聚成声波球 -->
-        <div class="voice-bar" id="voiceBar">
-          <div class="orb">
-            <div class="orb-wf"><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i></div>
-          </div>
-          <div class="v-meta">
-            <span class="rec-dot"></span>
-            <span class="vtime" id="vtime">0:00</span>
-          </div>
-          <div class="voice-text"><span id="voiceText"></span><span class="caret"></span></div>
-          <div class="voice-actions">
-            <button class="v-btn v-cancel" id="voiceCancel" title="取消"><svg class="ic ic-sm"><use href="#i-x"/></svg></button>
-            <button class="v-btn v-confirm" id="voiceConfirm" title="完成"><svg class="ic ic-sm"><use href="#i-check"/></svg></button>
-          </div>
-        </div>
         <div class="composer-bar">
 
           <!-- 模式选择器 -->
@@ -1460,6 +1476,20 @@
           <button class="chip mic-chip" id="micBtn" title="语音输入"><svg class="ic ic-sm"><use href="#i-mic"/></svg></button>
           <button class="send" title="发送 (⌘+Enter)"><svg class="ic send-ic"><use href="#i-command"/></svg><span class="send-plus">+</span><svg class="ic send-ic"><use href="#i-enter"/></svg></button>
         </div>
+      </div>
+    </div>
+
+    <!-- 语音录入悬浮层：声纹波浪覆盖对话区 -->
+    <div class="voice-overlay" id="voiceOverlay">
+      <div class="voice-wave" id="voiceWave"><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i></div>
+      <div class="v-meta">
+        <span class="rec-dot"></span>
+        <span class="vtime" id="vtime">0:00</span>
+      </div>
+      <div class="voice-text"><span id="voiceText"></span><span class="caret"></span></div>
+      <div class="voice-actions">
+        <button class="v-btn v-cancel" id="voiceCancel" title="取消"><svg class="ic ic-sm"><use href="#i-x"/></svg></button>
+        <button class="v-btn v-confirm" id="voiceConfirm" title="完成"><svg class="ic ic-sm"><use href="#i-check"/></svg></button>
       </div>
     </div>
   </main>
@@ -1747,6 +1777,7 @@
         <div class="inner"><div class="bubble">${escapeHtml(text)}</div></div>
       </div>`);
     composerInput.value = '';
+    composerInput.style.height = '';
 
     const agentMsg = document.createElement('div');
     agentMsg.className = 'msg msg-agent';
@@ -1763,6 +1794,13 @@
     }, 1400);
   }
   sendBtn.addEventListener('click', sendMessage);
+
+  // 输入框随内容自适应长高（上限 180px，超出内部滚动）
+  const autoresize = () => {
+    composerInput.style.height = 'auto';
+    composerInput.style.height = Math.min(composerInput.scrollHeight, 180) + 'px';
+  };
+  composerInput.addEventListener('input', autoresize);
   composerInput.addEventListener('keydown', (e) => {
     // 输入法组词期间的 Enter 是确认候选，不触发发送
     if (e.isComposing || e.keyCode === 229) return;
@@ -1788,36 +1826,95 @@
     });
   });
 
-  // 语音输入：点击麦克风，输入框汇聚成声波球，实时流式显示识别文本
-  const composerBox = document.querySelector('.composer-box');
+  // 语音输入：悬浮声波球覆盖对话区；真实麦克风频谱驱动 + 浏览器原生语音识别，失败回退模拟
+  const voiceOverlay = document.getElementById('voiceOverlay');
   const vtime = document.getElementById('vtime');
   const voiceText = document.getElementById('voiceText');
-  let vTimer = null, vSec = 0, tTimer = null;
+  const waveEl = document.getElementById('voiceWave');
+  const wfBars = document.querySelectorAll('.voice-wave i');
+  let vTimer = null, vSec = 0, tTimer = null, rafId = null;
+  let mediaStream = null, audioCtx = null, recog = null;
   const fmt = (s) => Math.floor(s / 60) + ':' + String(s % 60).padStart(2, '0');
   const DEMO_TRANSCRIPT = '把登录页加上"记住我"复选框，默认勾选，然后帮我把登录流程跑一遍测试';
 
-  const stopRecording = () => {
+  function stopRecording() {
     clearInterval(vTimer);
     clearInterval(tTimer);
-    composerBox.classList.remove('recording');
-  };
-  document.getElementById('micBtn').addEventListener('click', () => {
-    composerBox.classList.add('recording');
-    vSec = 0;
-    vtime.textContent = '0:00';
-    voiceText.textContent = '';
-    vTimer = setInterval(() => { vSec++; vtime.textContent = fmt(vSec); }, 1000);
-    // 模拟流式识别：逐字浮现
+    cancelAnimationFrame(rafId);
+    if (recog) { try { recog.stop(); } catch {} recog = null; }
+    if (mediaStream) { mediaStream.getTracks().forEach((t) => t.stop()); mediaStream = null; }
+    if (audioCtx) { audioCtx.close(); audioCtx = null; }
+    voiceOverlay.classList.remove('open');
+  }
+
+  async function startRealAudio() {
+    mediaStream = await navigator.mediaDevices.getUserMedia({ audio: true });
+    audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+    const src = audioCtx.createMediaStreamSource(mediaStream);
+    const analyser = audioCtx.createAnalyser();
+    analyser.fftSize = 64;
+    analyser.smoothingTimeConstant = 0.72;
+    src.connect(analyser);
+    const data = new Uint8Array(analyser.frequencyBinCount);
+    // 真实音频接管动画：关掉 CSS 模拟动画
+    wfBars.forEach((b) => { b.style.animation = 'none'; });
+    const tick = () => {
+      analyser.getByteFrequencyData(data);
+      let sum = 0;
+      wfBars.forEach((b, i) => {
+        const v = data[Math.floor((i * data.length) / wfBars.length)] / 255;
+        sum += v;
+        b.style.height = 10 + v * 66 + '%';
+      });
+      const vol = sum / wfBars.length;
+      waveEl.style.transform = 'scaleY(' + (1 + vol * 0.18) + ')';
+      rafId = requestAnimationFrame(tick);
+    };
+    tick();
+  }
+
+  function startRealRecognition() {
+    const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
+    if (!SR) return false;
+    recog = new SR();
+    recog.lang = 'zh-CN';
+    recog.continuous = true;
+    recog.interimResults = true;
+    let finalText = '';
+    recog.onresult = (e) => {
+      let interim = '';
+      for (let i = e.resultIndex; i < e.results.length; i++) {
+        if (e.results[i].isFinal) finalText += e.results[i][0].transcript;
+        else interim += e.results[i][0].transcript;
+      }
+      voiceText.textContent = finalText + interim;
+    };
+    recog.onerror = () => {};
+    try { recog.start(); return true; } catch { return false; }
+  }
+
+  function startSimulatedTranscript() {
     let i = 0;
     tTimer = setInterval(() => {
       if (i >= DEMO_TRANSCRIPT.length) { clearInterval(tTimer); return; }
       voiceText.textContent += DEMO_TRANSCRIPT[i++];
     }, 110);
+  }
+
+  document.getElementById('micBtn').addEventListener('click', () => {
+    voiceOverlay.classList.add('open');
+    vSec = 0;
+    vtime.textContent = '0:00';
+    voiceText.textContent = '';
+    vTimer = setInterval(() => { vSec++; vtime.textContent = fmt(vSec); }, 1000);
+    // 无权限/不支持时回退到模拟演示
+    startRealAudio().catch(() => {});
+    if (!startRealRecognition()) startSimulatedTranscript();
   });
   document.getElementById('voiceCancel').addEventListener('click', stopRecording);
   document.getElementById('voiceConfirm').addEventListener('click', () => {
     stopRecording();
-    composerInput.value = voiceText.textContent;
+    if (voiceText.textContent.trim()) composerInput.value = voiceText.textContent;
     composerInput.focus();
   });
 
@@ -1827,13 +1924,15 @@
   });
 
   // 会话切换：点击左侧列表，中间区域显示对应会话内容和状态
+  // 第三个字段是工作目录（无目录的纯聊天显示 "chat"）
   const convMeta = {
-    c1: ['实现用户认证模块', 'feat/auth'],
-    c2: ['修复支付回调超时', 'fix/payment-timeout'],
-    c3: ['重构 API 错误处理', 'refactor/api-errors'],
+    c1: ['实现用户认证模块', '~/yagent', 'i-folder'],
+    c2: ['修复支付回调超时', '~/pay-service', 'i-folder'],
+    c3: ['重构 API 错误处理', '~/yagent', 'i-folder'],
   };
   const topTitle = document.querySelector('.topbar .title');
-  const topMeta = document.querySelector('.topbar .meta');
+  const metaText = document.getElementById('metaText');
+  const metaIcon = document.getElementById('metaIcon');
   let currentConv = 'c1';
 
   // 顶栏标题就地编辑：点击即改，Enter/失焦保存，Esc 取消，同步左侧列表
@@ -1867,15 +1966,21 @@
       const meta = convMeta[id];
       if (meta) {
         topTitle.textContent = meta[0];
-        topMeta.textContent = meta[1];
+        metaText.textContent = meta[1];
+        metaIcon.setAttribute('href', '#' + meta[2]);
       }
     });
   });
 
-  // artifact 卡片：点击打开右栏文件页
+  // artifact 卡片：点击展开右栏文件页，再点一次关闭右栏
   const openArtifactsPane = () => {
-    app.classList.add('panel-open');
-    switchPane('files');
+    const filesActive = document.querySelector('.ptab[data-ppane="files"]').classList.contains('active');
+    if (app.classList.contains('panel-open') && filesActive) {
+      app.classList.remove('panel-open');
+    } else {
+      app.classList.add('panel-open');
+      switchPane('files');
+    }
   };
   document.querySelectorAll('.art-mini, .art-big').forEach((c) => {
     c.addEventListener('click', openArtifactsPane);
@@ -1914,6 +2019,8 @@
 
   modeChip.addEventListener('click', (e) => {
     e.stopPropagation();
+    document.getElementById('modelPop').classList.remove('open');
+    document.getElementById('sharePop').classList.remove('open');
     modePop.classList.toggle('open');
     modeChip.classList.toggle('open');
   });
@@ -1939,6 +2046,8 @@
   const modelPop = document.getElementById('modelPop');
   modelBtn.addEventListener('click', (e) => {
     e.stopPropagation();
+    document.getElementById('sharePop').classList.remove('open');
+    document.getElementById('modePop').classList.remove('open');
     modelPop.classList.toggle('open');
   });
   modelPop.addEventListener('click', (e) => e.stopPropagation());
@@ -1950,6 +2059,29 @@
       document.getElementById('modelIconUse').setAttribute('href', '#' + opt.dataset.icon);
       modelPop.classList.remove('open');
     });
+  });
+
+  // 分享对话：生成只读链接，一键复制
+  const shareBtn = document.getElementById('shareBtn');
+  const sharePop = document.getElementById('sharePop');
+  const copyBtn = document.getElementById('copyLink');
+  shareBtn.addEventListener('click', (e) => {
+    e.stopPropagation();
+    modelPop.classList.remove('open');
+    document.getElementById('modePop').classList.remove('open');
+    sharePop.classList.toggle('open');
+  });
+  sharePop.addEventListener('click', (e) => e.stopPropagation());
+  document.addEventListener('click', () => sharePop.classList.remove('open'));
+  copyBtn.addEventListener('click', async () => {
+    const link = document.getElementById('shareLink').value;
+    try { await navigator.clipboard.writeText(link); } catch {}
+    copyBtn.classList.add('copied');
+    document.querySelector('#copyIcon use').setAttribute('href', '#i-check');
+    setTimeout(() => {
+      copyBtn.classList.remove('copied');
+      document.querySelector('#copyIcon use').setAttribute('href', '#i-copy');
+    }, 1600);
   });
 
   // 设置弹窗（左下角工作区整块可点，主题按钮独立）
