@@ -15,7 +15,8 @@
     "dist"
   ],
   "scripts": {
-    "build": "tsc -p tsconfig.json"
+    "build": "tsc -p tsconfig.json",
+    "smoke": "pnpm build && node scripts/smoke.mjs"
   },
   "devDependencies": {
     "typescript": "~6.0.2"

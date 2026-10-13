@@ -24,7 +24,10 @@ export type Block =
       status: 'running' | 'done' | 'error'
       detail?: string
       stats?: string
+      toolUseId?: string // 模型侧工具调用 id（回放 messages 时用）
+      input?: Record<string, unknown> // 调用参数
     }
+  | { type: 'tool_result'; tool: string; toolUseId?: string; content: string; isError?: boolean }
   | { type: 'artifacts'; items: Artifact[] }
 
 export interface Ref {
@@ -129,3 +132,8 @@ export function createApiClient(options: ApiClientOptions) {
       request<T>(path, { method: 'POST', body: JSON.stringify(body) }),
   }
 }
+
+/* ============ 模型请求层 + Harness ============ */
+
+export * from './providers/index.js'
+export * from './harness/index.js'
