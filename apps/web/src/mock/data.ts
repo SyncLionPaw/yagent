@@ -345,7 +345,7 @@ export const MOCK_CONVERSATIONS: Conversation[] = [
 ]
 
 export const MOCK_SETTINGS: Settings = {
-  apiKeys: { anthropic: 'sk-ant-••••••••••••••••••••' },
+  apiKeys: {},
   models: [
     {
       id: 'm-claude',
@@ -353,7 +353,6 @@ export const MOCK_SETTINGS: Settings = {
       provider: 'anthropic',
       modelId: 'claude-sonnet-4-6',
       context: 200_000,
-      isDefault: true,
     },
     {
       id: 'm-gpt',
@@ -364,10 +363,11 @@ export const MOCK_SETTINGS: Settings = {
     },
     {
       id: 'm-deepseek',
-      name: 'DeepSeek V4',
+      name: 'DeepSeek V3.2',
       provider: 'deepseek',
-      modelId: 'deepseek-v4',
+      modelId: 'deepseek-chat',
       context: 128_000,
+      isDefault: true,
     },
   ],
   memories: [
@@ -387,6 +387,3 @@ export const MOCK_SETTINGS: Settings = {
   tools: { terminal: true, fileEdit: true, webSearch: false },
   sandbox: { env: 'sandbox', workdir: '~/yagent', network: true },
 }
-
-export const MOCK_REPLY =
-  '收到。这是设计稿的模拟回复——接入真实模型后，这里会流式输出实际内容，工具调用和产物也会实时追加在下方。'

@@ -1,6 +1,7 @@
 import { useState } from 'react'
 import { Cpu, KeyRound, Plus, Sparkles, Trash2, X } from 'lucide-react'
 import type { Settings } from '@yagent/core'
+import { devDeepseekKey, maskKey, testConnection, type TestTarget } from '../harness'
 import { formatDaysAgo } from '../lib/utils'
 
 interface SettingsModalProps {
@@ -85,9 +86,36 @@ export function SettingsModal({ open, settings, onChange, onClose }: SettingsMod
 
 /* ---------- 1. API 密钥（BYOK） ---------- */
 
+type TestState = 'idle' | 'testing' | 'ok' | 'fail'
+
 function ByokPane({ settings, onChange }: { settings: Settings; onChange: (s: Settings) => void }) {
+  const [savedFlash, setSavedFlash] = useState(false)
+  const [tests, setTests] = useState<Partial<Record<TestTarget, { state: TestState; msg: string }>>>({})
   const setKey = (patch: Partial<Settings['apiKeys']>) =>
     onChange({ ...settings, apiKeys: { ...settings.apiKeys, ...patch } })
+
+  // 测试连接：真发一次 GET /models 验证连通（deepseek 未填 key 时用 dev 预填）
+  const runTest = async (target: TestTarget) => {
+    setTests((m) => ({ ...m, [target]: { state: 'testing', msg: '' } }))
+    try {
+      const ms = await testConnection(target, settings.apiKeys)
+      setTests((m) => ({ ...m, [target]: { state: 'ok', msg: ms } }))
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err)
+      setTests((m) => ({ ...m, [target]: { state: 'fail', msg: msg.slice(0, 60) } }))
+    }
+  }
+
+  const testTag = (target: TestTarget) => {
+    const t = tests[target]
+    if (!t || t.state === 'idle') return null
+    if (t.state === 'testing') return <span className="tag-muted">测试中…</span>
+    if (t.state === 'ok') return <span className="tag-ok">已连通 · {t.msg}</span>
+    return <span className="tag-fail">失败 · {t.msg}</span>
+  }
+
+  const devKey = devDeepseekKey()
+  const deepseekUsingDev = !settings.apiKeys.deepseek?.trim() && !!devKey
 
   return (
     <>
@@ -101,6 +129,15 @@ function ByokPane({ settings, onChange }: { settings: Settings; onChange: (s: Se
           value={settings.apiKeys.anthropic ?? ''}
           onChange={(e) => setKey({ anthropic: e.target.value })}
         />
+        <div className="byok-row">
+          <button className="btn" onClick={() => runTest('anthropic')}>
+            测试连接
+          </button>
+          {settings.apiKeys.anthropic?.trim() && (
+            <span className="tag-muted">已配置 {maskKey(settings.apiKeys.anthropic)}</span>
+          )}
+          {testTag('anthropic')}
+        </div>
       </div>
       <div className="field">
         <div className="field-label">OpenAI</div>
@@ -110,6 +147,37 @@ function ByokPane({ settings, onChange }: { settings: Settings; onChange: (s: Se
           value={settings.apiKeys.openai ?? ''}
           onChange={(e) => setKey({ openai: e.target.value })}
         />
+        <div className="byok-row">
+          <button className="btn" onClick={() => runTest('openai')}>
+            测试连接
+          </button>
+          {settings.apiKeys.openai?.trim() && (
+            <span className="tag-muted">已配置 {maskKey(settings.apiKeys.openai)}</span>
+          )}
+          {testTag('openai')}
+        </div>
+      </div>
+      <div className="field">
+        <div className="field-label">
+          DeepSeek <span className="hint">platform.deepseek.com</span>
+        </div>
+        <input
+          type="password"
+          placeholder={deepseekUsingDev ? '留空则使用开发预填密钥' : 'sk-...'}
+          value={settings.apiKeys.deepseek ?? ''}
+          onChange={(e) => setKey({ deepseek: e.target.value })}
+        />
+        <div className="byok-row">
+          <button className="btn" onClick={() => runTest('deepseek')}>
+            测试连接
+          </button>
+          {settings.apiKeys.deepseek?.trim() ? (
+            <span className="tag-muted">已配置 {maskKey(settings.apiKeys.deepseek)}</span>
+          ) : (
+            deepseekUsingDev && <span className="tag-ok">开发预填 {maskKey(devKey)} 生效中</span>
+          )}
+          {testTag('deepseek')}
+        </div>
       </div>
       <div className="field">
         <div className="field-label">
@@ -128,11 +196,28 @@ function ByokPane({ settings, onChange }: { settings: Settings; onChange: (s: Se
           value={settings.apiKeys.customKey ?? ''}
           onChange={(e) => setKey({ customKey: e.target.value })}
         />
+        <div className="byok-row">
+          <button className="btn" onClick={() => runTest('custom')}>
+            测试连接
+          </button>
+          {settings.apiKeys.customKey?.trim() && (
+            <span className="tag-muted">已配置 {maskKey(settings.apiKeys.customKey)}</span>
+          )}
+          {testTag('custom')}
+        </div>
       </div>
       <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
-        <button className="btn btn-primary">保存</button>
-        <button className="btn">测试连接</button>
-        {settings.apiKeys.anthropic && <span className="tag-ok">Anthropic 已连通</span>}
+        <button
+          className="btn btn-primary"
+          onClick={() => {
+            // onChange 时已自动持久化到 localStorage；按钮给出明确反馈
+            setSavedFlash(true)
+            setTimeout(() => setSavedFlash(false), 1600)
+          }}
+        >
+          保存
+        </button>
+        {savedFlash && <span className="tag-ok">已保存到本地</span>}
       </div>
     </>
   )
@@ -163,7 +248,14 @@ function ModelsPane({
         {
           id: `m-${Date.now()}`,
           name: name.trim(),
-          provider: provider === 'Anthropic' ? 'anthropic' : provider === 'OpenAI' ? 'openai' : 'custom',
+          provider:
+            provider === 'Anthropic'
+              ? 'anthropic'
+              : provider === 'OpenAI'
+                ? 'openai'
+                : provider === 'DeepSeek'
+                  ? 'deepseek'
+                  : 'custom',
           modelId: modelId.trim(),
           context: 128_000,
         },
@@ -210,6 +302,7 @@ function ModelsPane({
           <select value={provider} onChange={(e) => setProvider(e.target.value)}>
             <option>Anthropic</option>
             <option>OpenAI</option>
+            <option>DeepSeek</option>
             <option>自定义端点</option>
           </select>
         </div>

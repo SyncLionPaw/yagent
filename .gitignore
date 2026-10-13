@@ -4,6 +4,11 @@ dist-ssr/
 *.local
 .DS_Store
 
+# Local secrets (never commit; .env.example is allowed)
+.env
+.env.*
+!.env.example
+
 # Electron
 release/
 

@@ -1797,3 +1797,49 @@ body {
   background: var(--border-strong);
   border-radius: 3px;
 }
+
+/* ---- harness 接线：tool_result 灰字块 / BYOK 状态标签 ---- */
+.tool-result {
+  font-family: 'SF Mono', 'JetBrains Mono', Menlo, monospace;
+  font-size: 11.5px;
+  line-height: 1.55;
+  color: var(--text-2);
+  background: var(--bg-hover);
+  border-radius: 8px;
+  padding: 6px 10px;
+  margin: 6px 0;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+.tool-result .tr-tool {
+  color: var(--text-1);
+  font-weight: 600;
+  margin-right: 8px;
+}
+.tool-result.error {
+  color: var(--red);
+}
+
+.byok-row {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  margin-top: 6px;
+  flex-wrap: wrap;
+}
+.tag-muted {
+  font-size: 10px;
+  font-weight: 600;
+  color: var(--text-2);
+  background: var(--bg-hover);
+  padding: 1px 7px;
+  border-radius: 999px;
+}
+.tag-fail {
+  font-size: 10px;
+  font-weight: 600;
+  color: var(--red);
+  background: var(--bg-hover);
+  padding: 1px 7px;
+  border-radius: 999px;
+}

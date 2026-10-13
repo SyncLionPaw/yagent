@@ -81,7 +81,13 @@ export interface Memory {
 }
 
 export interface Settings {
-  apiKeys: { anthropic?: string; openai?: string; customEndpoint?: string; customKey?: string }
+  apiKeys: {
+    anthropic?: string
+    openai?: string
+    deepseek?: string
+    customEndpoint?: string
+    customKey?: string
+  }
   models: ModelConfig[]
   memories: Memory[]
   tools: { terminal: boolean; fileEdit: boolean; webSearch: boolean }

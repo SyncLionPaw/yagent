@@ -43,11 +43,11 @@ interface PendingToolCall {
 }
 
 export class Harness {
-  private readonly provider: ModelProvider
-  private readonly model: string
-  private readonly system?: string
-  private readonly tools?: ToolDef[]
-  private readonly executor?: ToolExecutor
+  private provider: ModelProvider
+  private model: string
+  private system?: string
+  private tools?: ToolDef[]
+  private executor?: ToolExecutor
   private readonly maxTurns: number
 
   private readonly convs = new Map<string, Conversation>()
@@ -159,6 +159,13 @@ export class Harness {
 
   abort(convId: string): void {
     this.controllers.get(convId)?.abort()
+  }
+
+  /** 运行时切换模型 / provider（UI 换模型即调）；进行中的会话不受影响（下一条消息生效） */
+  configure(opts: { provider?: ModelProvider; model?: string; system?: string }): void {
+    if (opts.provider !== undefined) this.provider = opts.provider
+    if (opts.model !== undefined) this.model = opts.model
+    if (opts.system !== undefined) this.system = opts.system
   }
 
   /* ---------- agent loop ---------- */

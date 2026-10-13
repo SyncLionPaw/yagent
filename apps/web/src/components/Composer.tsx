@@ -12,6 +12,7 @@ import {
   Mic,
   Paperclip,
   Smartphone,
+  Square,
   Zap,
 } from 'lucide-react'
 import type { Mode } from '@yagent/core'
@@ -21,9 +22,11 @@ interface ComposerProps {
   draft: string
   mode: Mode
   popover: PopoverId
+  running: boolean
   textareaRef: RefObject<HTMLTextAreaElement | null>
   onDraftChange: (v: string) => void
   onSend: () => void
+  onStop: () => void
   onModeChange: (m: Mode) => void
   onPopover: (id: PopoverId) => void
   onOpenVoice: () => void
@@ -39,9 +42,11 @@ export function Composer({
   draft,
   mode,
   popover,
+  running,
   textareaRef,
   onDraftChange,
   onSend,
+  onStop,
   onModeChange,
   onPopover,
   onOpenVoice,
@@ -142,11 +147,17 @@ export function Composer({
           <button className="chip mic-chip" title="语音输入" onClick={onOpenVoice}>
             <Mic className="ic ic-sm" />
           </button>
-          <button className="send" title="发送 (⌘+Enter)" onClick={onSend}>
-            <Command className="ic send-ic" />
-            <span className="send-plus">+</span>
-            <CornerDownLeft className="ic send-ic" />
-          </button>
+          {running ? (
+            <button className="send stop" title="停止生成" onClick={onStop}>
+              <Square className="ic send-ic" fill="currentColor" stroke="none" />
+            </button>
+          ) : (
+            <button className="send" title="发送 (⌘+Enter)" onClick={onSend}>
+              <Command className="ic send-ic" />
+              <span className="send-plus">+</span>
+              <CornerDownLeft className="ic send-ic" />
+            </button>
+          )}
         </div>
       </div>
     </div>

@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import type { Conversation, Mode, Settings } from '@yagent/core'
-import { MOCK_CONVERSATIONS, MOCK_REPLY, MOCK_SETTINGS } from './mock/data'
+import { MOCK_CONVERSATIONS, MOCK_SETTINGS } from './mock/data'
+import { configureHarness, harness, pickInitialModel } from './harness'
 import { Sidebar } from './components/Sidebar'
 import { Topbar, type PopoverId } from './components/Topbar'
 import { ChatView } from './components/ChatView'
@@ -12,6 +13,7 @@ import { SettingsModal } from './components/SettingsModal'
 type Theme = 'light' | 'dark'
 
 const THEME_KEY = 'yagent-theme'
+const SETTINGS_KEY = 'yagent-settings'
 
 function initialTheme(): Theme {
   const saved = localStorage.getItem(THEME_KEY)
@@ -19,12 +21,33 @@ function initialTheme(): Theme {
   return window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light'
 }
 
-let nodeSeq = 0
-const nextNodeId = () => `n-${Date.now()}-${nodeSeq++}`
+/** 设置持久化：localStorage 里的覆盖 mock 默认；apiKeys 明文仅存本地 */
+function loadSettings(): Settings {
+  try {
+    const raw = localStorage.getItem(SETTINGS_KEY)
+    if (!raw) return MOCK_SETTINGS
+    const saved = JSON.parse(raw) as Partial<Settings>
+    return {
+      ...MOCK_SETTINGS,
+      ...saved,
+      apiKeys: { ...saved.apiKeys },
+      tools: { ...MOCK_SETTINGS.tools, ...saved.tools },
+      sandbox: { ...MOCK_SETTINGS.sandbox, ...saved.sandbox },
+    }
+  } catch {
+    return MOCK_SETTINGS
+  }
+}
+
+function titleFrom(text: string): string {
+  const clean = text.replace(/\s+/g, ' ').trim()
+  return clean.length > 18 ? `${clean.slice(0, 18)}…` : clean
+}
 
 function App() {
   const [theme, setTheme] = useState<Theme>(initialTheme)
-  const [conversations, setConversations] = useState<Conversation[]>(MOCK_CONVERSATIONS)
+  // 静态演示会话（c1-c6）保留为纯展示数据；真实会话由 harness 接管
+  const [demoConvs, setDemoConvs] = useState<Conversation[]>(MOCK_CONVERSATIONS)
   const [activeConvId, setActiveConvId] = useState(MOCK_CONVERSATIONS[0].id)
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false)
   const [panelOpen, setPanelOpen] = useState(false)
@@ -35,19 +58,44 @@ function App() {
   const [mode, setMode] = useState<Mode>('local')
   const [voiceOpen, setVoiceOpen] = useState(false)
   const [draft, setDraft] = useState('')
-  const [settings, setSettings] = useState<Settings>(MOCK_SETTINGS)
-  const [currentModelId, setCurrentModelId] = useState(
-    MOCK_SETTINGS.models.find((m) => m.isDefault)?.id ?? MOCK_SETTINGS.models[0].id,
+  const [settings, setSettings] = useState<Settings>(loadSettings)
+  const [currentModelId, setCurrentModelId] = useState(() =>
+    pickInitialModel(settings.models, settings.apiKeys),
   )
+  // harness 内部是可变对象，事件到达时 bump tick 触发重读
+  const [, setHarnessTick] = useState(0)
   const textareaRef = useRef<HTMLTextAreaElement | null>(null)
 
+  const conversations: Conversation[] = [
+    ...harness.listConversations().slice().reverse(),
+    ...demoConvs,
+  ]
   const conversation = conversations.find((c) => c.id === activeConvId) ?? conversations[0]
+  const harnessConv = harness.getConversation(conversation.id)
+  const running = harnessConv?.status === 'running'
+
+  // 订阅 harness 事件 → 重渲染（conversations 重读活引用）
+  useEffect(() => harness.on(() => setHarnessTick((t) => t + 1)), [])
+
+  // 设置 / 当前模型 → 装配 harness provider（下一条消息生效）
+  useEffect(() => {
+    configureHarness(settings.models.find((m) => m.id === currentModelId), settings.apiKeys)
+  }, [settings, currentModelId])
 
   // 主题：html data-theme 切换 + localStorage 持久化
   useEffect(() => {
     document.documentElement.dataset.theme = theme
     localStorage.setItem(THEME_KEY, theme)
   }, [theme])
+
+  // 设置变更即持久化（含 BYOK 密钥，明文仅存本地）
+  useEffect(() => {
+    try {
+      localStorage.setItem(SETTINGS_KEY, JSON.stringify(settings))
+    } catch {
+      // 隐私模式等写失败忽略
+    }
+  }, [settings])
 
   // 全局快捷键：⌘B 侧栏；Esc 关设置 / 退语音
   useEffect(() => {
@@ -72,83 +120,50 @@ function App() {
     return () => document.removeEventListener('click', close)
   }, [])
 
-  const updateConversation = useCallback((id: string, patch: (c: Conversation) => Conversation) => {
-    setConversations((list) => list.map((c) => (c.id === id ? patch(c) : c)))
+  const patchDemoConv = useCallback((id: string, patch: (c: Conversation) => Conversation) => {
+    setDemoConvs((list) => list.map((c) => (c.id === id ? patch(c) : c)))
   }, [])
 
   const handleRename = useCallback(
-    (title: string) => updateConversation(activeConvId, (c) => ({ ...c, title })),
-    [activeConvId, updateConversation],
+    (title: string) => {
+      if (harness.getConversation(activeConvId)) harness.rename(activeConvId, title)
+      else patchDemoConv(activeConvId, (c) => ({ ...c, title }))
+    },
+    [activeConvId, patchDemoConv],
   )
 
   const handleSelectNode = useCallback(
-    (nodeId: string) =>
-      updateConversation(activeConvId, (c) => ({ ...c, activeNodeId: nodeId })),
-    [activeConvId, updateConversation],
+    (nodeId: string) => {
+      if (harness.getConversation(activeConvId)) harness.setActiveNode(activeConvId, nodeId)
+      else patchDemoConv(activeConvId, (c) => ({ ...c, activeNodeId: nodeId }))
+    },
+    [activeConvId, patchDemoConv],
   )
 
-  // 发送消息：追加用户节点 + 模拟 Agent 思考后回复（挂在 activeNodeId 之后）
+  // 发送：当前是演示会话时先开真实会话；真实会话直接走 harness（流式由事件驱动 UI）
   const handleSend = useCallback(() => {
     const text = draft.trim()
     if (!text) return
-    const now = Date.now()
-    const userId = nextNodeId()
-    const agentId = nextNodeId()
-    updateConversation(activeConvId, (c) => ({
-      ...c,
-      nodes: {
-        ...c.nodes,
-        [userId]: {
-          id: userId,
-          parentId: c.activeNodeId || null,
-          role: 'user',
-          blocks: [{ type: 'text', text }],
-          createdAt: now,
-        },
-        [agentId]: {
-          id: agentId,
-          parentId: userId,
-          role: 'agent',
-          blocks: [{ type: 'thinking', text: '正在思考…', status: 'streaming' }],
-          createdAt: now,
-        },
-      },
-      activeNodeId: agentId,
-    }))
+    let conv = harness.getConversation(activeConvId)
+    if (!conv) {
+      conv = harness.createConversation('新任务', null)
+      setActiveConvId(conv.id)
+    }
+    if (conv.status === 'running') return // 流式中只允许停止
+    if (conv.title === '新任务' && Object.keys(conv.nodes).length === 0) {
+      harness.rename(conv.id, titleFrom(text))
+    }
     setDraft('')
-    setTimeout(() => {
-      updateConversation(activeConvId, (c) => {
-        const node = c.nodes[agentId]
-        if (!node) return c
-        return {
-          ...c,
-          nodes: {
-            ...c.nodes,
-            [agentId]: { ...node, blocks: [{ type: 'text', text: MOCK_REPLY }] },
-          },
-        }
-      })
-    }, 1400)
-  }, [draft, activeConvId, updateConversation])
+    // 错误（含缺 key / 网络失败）以 harness error 事件 + [error] 块呈现
+    void harness.sendMessage(conv.id, text).catch(() => undefined)
+  }, [draft, activeConvId])
 
-  // 新建任务：空会话（无目录纯聊天），直接进入
+  const handleStop = useCallback(() => harness.abort(activeConvId), [activeConvId])
+
+  // 新建任务：harness 空会话（无目录纯聊天），直接进入
   const handleNewTask = useCallback(() => {
-    const id = `c-${Date.now()}`
-    setConversations((list) => [
-      {
-        id,
-        title: '新任务',
-        workdir: null,
-        nodes: {},
-        activeNodeId: '',
-        status: 'done',
-        refs: [],
-        attachments: [],
-        outputs: [],
-      },
-      ...list,
-    ])
-    setActiveConvId(id)
+    const conv = harness.createConversation('新任务', null)
+    setActiveConvId(conv.id)
     textareaRef.current?.focus()
   }, [])
 
@@ -218,9 +233,11 @@ function App() {
           draft={draft}
           mode={mode}
           popover={popover}
+          running={running}
           textareaRef={textareaRef}
           onDraftChange={setDraft}
           onSend={handleSend}
+          onStop={handleStop}
           onModeChange={setMode}
           onPopover={setPopover}
           onOpenVoice={() => setVoiceOpen(true)}

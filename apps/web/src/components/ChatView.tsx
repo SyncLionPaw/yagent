@@ -25,15 +25,20 @@ export function ChatView({ conversation, onRefClick, onToggleFiles }: ChatViewPr
     !trunkIds(conversation.nodes).has(last.id) &&
     !hasChildren(conversation.nodes, last.id)
 
-  // 新消息 / 流式更新时滚到底部
+  // 新消息 / 流式更新时滚到底部（text/thinking 长度变化也算更新）
   const lastBlockCount = last?.blocks.length ?? 0
   const lastBlockKey = JSON.stringify(
     last?.blocks.map((b) => b.type + ('status' in b ? b.status : '')) ?? [],
   )
+  const lastTextLen =
+    last?.blocks.reduce(
+      (n, b) => n + (b.type === 'text' || b.type === 'thinking' ? b.text.length : 0),
+      0,
+    ) ?? 0
   useEffect(() => {
     const el = chatRef.current
     if (el) el.scrollTop = el.scrollHeight
-  }, [conversation.id, conversation.activeNodeId, lastBlockCount, lastBlockKey])
+  }, [conversation.id, conversation.activeNodeId, lastBlockCount, lastBlockKey, lastTextLen])
 
   return (
     <div className="chat" ref={chatRef}>
@@ -70,16 +75,24 @@ function Message({
   const time = formatMsgTime(node.createdAt)
 
   if (node.role === 'user') {
-    const text = node.blocks.find((b) => b.type === 'text')
+    const texts = node.blocks.filter((b) => b.type === 'text')
+    const results = node.blocks.filter((b) => b.type === 'tool_result')
     return (
       <div className="msg msg-user">
         <div className="msg-head">
           <span>{time}</span>
           <span className="who-user">你</span>
         </div>
-        <div className="inner">
-          <div className="bubble">{text?.type === 'text' ? text.text : ''}</div>
-        </div>
+        {texts.map((b, i) => (
+          <div className="inner" key={i}>
+            <div className="bubble">{b.type === 'text' ? b.text : ''}</div>
+          </div>
+        ))}
+        {results.map((b, i) =>
+          b.type === 'tool_result' ? (
+            <ToolResultLine key={i} tool={b.tool} content={b.content} isError={b.isError} />
+          ) : null,
+        )}
       </div>
     )
   }
@@ -114,6 +127,15 @@ function Message({
                 stats={block.stats}
               />
             )
+          case 'tool_result':
+            return (
+              <ToolResultLine
+                key={i}
+                tool={block.tool}
+                content={block.content}
+                isError={block.isError}
+              />
+            )
           case 'artifacts':
             return (
               <ArtifactBlock
@@ -125,6 +147,24 @@ function Message({
             )
         }
       })}
+    </div>
+  )
+}
+
+/** tool_result：本期不执行工具，灰色小字简单渲染 */
+function ToolResultLine({
+  tool,
+  content,
+  isError,
+}: {
+  tool: string
+  content: string
+  isError?: boolean
+}) {
+  return (
+    <div className={`tool-result${isError ? ' error' : ''}`}>
+      <span className="tr-tool">{tool}</span>
+      {content}
     </div>
   )
 }
