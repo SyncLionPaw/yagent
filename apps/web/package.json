@@ -13,6 +13,7 @@
     "@tailwindcss/vite": "^4.3.3",
     "@yagent/core": "workspace:*",
     "@yagent/ui": "workspace:*",
+    "lucide-react": "^1.55.0",
     "react": "^19.2.8",
     "react-dom": "^19.2.8",
     "tailwindcss": "^4.3.3"
