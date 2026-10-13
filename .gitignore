@@ -1,0 +1,19 @@
+node_modules/
+dist/
+dist-ssr/
+target/
+*.local
+.DS_Store
+
+# Electron
+release/
+
+# Logs
+*.log
+npm-debug.log*
+pnpm-debug.log*
+
+# Editor
+.vscode/*
+!.vscode/extensions.json
+.idea/

@@ -1,0 +1,16 @@
+{
+  "name": "yagent",
+  "private": true,
+  "type": "module",
+  "engines": {
+    "node": ">=20"
+  },
+  "scripts": {
+    "dev": "pnpm dev:web",
+    "dev:web": "pnpm --filter web dev",
+    "dev:desktop": "pnpm --filter yagent-desktop tauri dev",
+    "build": "pnpm --filter @yagent/core build && pnpm --filter web build && pnpm --filter yagent-desktop build",
+    "build:web": "pnpm --filter @yagent/core build && pnpm --filter web build",
+    "build:desktop": "pnpm --filter yagent-desktop tauri build"
+  }
+}
