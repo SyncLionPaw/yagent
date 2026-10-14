@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { Cpu, KeyRound, Plus, Sparkles, Trash2, X } from 'lucide-react'
+import { Cpu, KeyRound, Pencil, Plus, Sparkles, Trash2, X } from 'lucide-react'
 import type { Settings } from '@yagent/core'
 import { devDeepseekKey, keyHasBadChars, maskKey, testConnection, type TestTarget } from '../harness'
 import { formatDaysAgo } from '../lib/utils'
@@ -250,9 +250,22 @@ function ModelsPane({
   const [name, setName] = useState('')
   const [provider, setProvider] = useState('Anthropic')
   const [modelId, setModelId] = useState('')
+  const [editingId, setEditingId] = useState<string | null>(null)
+  const [editValue, setEditValue] = useState('')
 
   const removeModel = (id: string) =>
     onChange({ ...settings, models: settings.models.filter((m) => m.id !== id) })
+
+  const saveModelId = (id: string) => {
+    const v = editValue.trim()
+    if (v) {
+      onChange({
+        ...settings,
+        models: settings.models.map((m) => (m.id === id ? { ...m, modelId: v } : m)),
+      })
+    }
+    setEditingId(null)
+  }
 
   const addModel = () => {
     if (!name.trim() || !modelId.trim()) return
@@ -289,11 +302,40 @@ function ModelsPane({
             <div className="rc-title">
               {m.name} {m.isDefault && <span className="tag-default">默认</span>}
             </div>
-            <div className="rc-sub">
-              {m.provider} · {m.modelId} · {Math.round(m.context / 1000)}k 上下文
-            </div>
+            {editingId === m.id ? (
+              <input
+                autoFocus
+                defaultValue={m.modelId}
+                onChange={(e) => setEditValue(e.target.value)}
+                onBlur={() => saveModelId(m.id)}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter') saveModelId(m.id)
+                  if (e.key === 'Escape') setEditingId(null)
+                }}
+                style={{
+                  fontFamily: 'var(--mono, monospace)',
+                  fontSize: 11.5,
+                  padding: '2px 6px',
+                  marginTop: 2,
+                }}
+              />
+            ) : (
+              <div className="rc-sub">
+                {m.provider} · {m.modelId} · {Math.round(m.context / 1000)}k 上下文
+              </div>
+            )}
           </div>
           <div className="rc-actions">
+            <button
+              className="icon-btn"
+              title="修改模型 ID"
+              onClick={() => {
+                setEditingId(m.id)
+                setEditValue(m.modelId)
+              }}
+            >
+              <Pencil className="ic ic-sm" />
+            </button>
             <button className="icon-btn" title="删除" onClick={() => removeModel(m.id)}>
               <Trash2 className="ic ic-sm" />
             </button>
