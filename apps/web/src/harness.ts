@@ -51,9 +51,9 @@ export function devDeepseekKey(): string {
   return cleanKey(import.meta.env.DEV_DEEPSEEK_KEY as string | undefined)
 }
 
-/** DeepSeek 有效 key：设置优先，dev 预填兜底 */
+/** DeepSeek 有效 key：dev 预填（.env）优先，设置页兜底 */
 export function effectiveDeepseekKey(keys: ApiKeys): string {
-  return cleanKey(keys.deepseek) || devDeepseekKey()
+  return devDeepseekKey() || cleanKey(keys.deepseek)
 }
 
 export function hasKeyFor(model: ModelConfig, keys: ApiKeys): boolean {
@@ -171,7 +171,7 @@ export async function testConnection(target: TestTarget, keys: ApiKeys): Promise
       break
     }
     case 'deepseek': {
-      const key = keys.deepseek?.trim() ? keyOf(keys.deepseek) : devDeepseekKey()
+      const key = devDeepseekKey() || keyOf(keys.deepseek)
       if (!key) throw new Error('未填写密钥')
       url = `${DEEPSEEK_BASE_URL}/models`
       headers = { authorization: `Bearer ${key}` }

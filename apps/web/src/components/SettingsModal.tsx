@@ -115,13 +115,13 @@ function ByokPane({ settings, onChange }: { settings: Settings; onChange: (s: Se
   }
 
   const devKey = devDeepseekKey()
-  const deepseekUsingDev = !settings.apiKeys.deepseek?.trim() && !!devKey
+  const devOverride = !!devKey // .env 开发预填优先级最高，覆盖设置页的值
 
   // key 粘贴带入非法字符（空格/换行/全角）时的就地警示
   const badCharWarn = (v?: string) =>
     keyHasBadChars(v) ? (
       <div style={{ color: 'var(--red)', fontSize: 11.5, marginTop: 6 }}>
-        检测到非法字符（粘贴时带入了空格、换行或全角字符），请清空后重新粘贴；DeepSeek 留空则回退到 .env 开发预填
+        检测到非法字符（粘贴时带入了空格、换行或全角字符），请清空后重新粘贴
       </div>
     ) : null
 
@@ -173,7 +173,7 @@ function ByokPane({ settings, onChange }: { settings: Settings; onChange: (s: Se
         </div>
         <input
           type="password"
-          placeholder={deepseekUsingDev ? '留空则使用开发预填密钥' : 'sk-...'}
+          placeholder={devOverride ? '开发预填优先生效，此处可留空' : 'sk-...'}
           value={settings.apiKeys.deepseek ?? ''}
           onChange={(e) => setKey({ deepseek: e.target.value })}
         />
@@ -182,10 +182,12 @@ function ByokPane({ settings, onChange }: { settings: Settings; onChange: (s: Se
           <button className="btn" onClick={() => runTest('deepseek')}>
             测试连接
           </button>
-          {settings.apiKeys.deepseek?.trim() ? (
-            <span className="tag-muted">已配置 {maskKey(settings.apiKeys.deepseek)}</span>
+          {devOverride ? (
+            <span className="tag-ok">开发预填 {maskKey(devKey)} 优先生效中</span>
           ) : (
-            deepseekUsingDev && <span className="tag-ok">开发预填 {maskKey(devKey)} 生效中</span>
+            settings.apiKeys.deepseek?.trim() && (
+              <span className="tag-muted">已配置 {maskKey(settings.apiKeys.deepseek)}</span>
+            )
           )}
           {testTag('deepseek')}
         </div>
