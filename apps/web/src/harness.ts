@@ -60,13 +60,17 @@ interface CcSwitchConf {
 
 /** dev 下复用 cc-switch 的当前 Claude 渠道（~/.cc-switch，由 vite.config 注入；生产为 null） */
 export function devCcSwitch(): CcSwitchConf | null {
-  try {
-    return JSON.parse(
-      (import.meta.env.DEV_CC_SWITCH as string | undefined) ?? 'null',
-    ) as CcSwitchConf | null
-  } catch {
-    return null
+  const raw = import.meta.env.DEV_CC_SWITCH as unknown
+  if (!raw) return null
+  // vite define 注入的是对象字面量；兼容字符串形式
+  if (typeof raw === 'string') {
+    try {
+      return JSON.parse(raw) as CcSwitchConf
+    } catch {
+      return null
+    }
   }
+  return raw as CcSwitchConf
 }
 
 /** DeepSeek 有效 key：dev 预填（.env）优先，设置页兜底 */
