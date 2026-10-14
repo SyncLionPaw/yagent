@@ -1,7 +1,7 @@
-import { useCallback, useEffect, useRef, useState } from 'react'
-import type { Conversation, Mode, Settings } from '@yagent/core'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import type { Conversation, Mode, ModelConfig, Settings } from '@yagent/core'
 import { MOCK_CONVERSATIONS, MOCK_SETTINGS } from './mock/data'
-import { configureHarness, harness, pickInitialModel } from './harness'
+import { configureHarness, devCcSwitch, harness, pickInitialModel } from './harness'
 import { Sidebar } from './components/Sidebar'
 import { Topbar, type PopoverId } from './components/Topbar'
 import { ChatView } from './components/ChatView'
@@ -27,9 +27,15 @@ function loadSettings(): Settings {
     const raw = localStorage.getItem(SETTINGS_KEY)
     if (!raw) return MOCK_SETTINGS
     const saved = JSON.parse(raw) as Partial<Settings>
+    // 模型列表做合并迁移：旧版 localStorage 里可能缺少后加的模型条目
+    const models = [...(saved.models ?? [])]
+    for (const m of MOCK_SETTINGS.models) {
+      if (!models.some((s) => s.id === m.id)) models.push(m)
+    }
     return {
       ...MOCK_SETTINGS,
       ...saved,
+      models: models.length ? models : MOCK_SETTINGS.models,
       apiKeys: { ...saved.apiKeys },
       tools: { ...MOCK_SETTINGS.tools, ...saved.tools },
       sandbox: { ...MOCK_SETTINGS.sandbox, ...saved.sandbox },
@@ -59,8 +65,24 @@ function App() {
   const [voiceOpen, setVoiceOpen] = useState(false)
   const [draft, setDraft] = useState('')
   const [settings, setSettings] = useState<Settings>(loadSettings)
+  // 有效模型列表：dev 下检测到 cc-switch 当前 Claude 渠道时，置顶一个复用其 key 的模型
+  const cc = useMemo(() => devCcSwitch(), [])
+  const models = useMemo<ModelConfig[]>(() => {
+    if (!cc) return settings.models
+    return [
+      {
+        id: 'm-cc-switch',
+        name: `cc-switch · ${cc.name}`,
+        provider: 'anthropic',
+        modelId: cc.model || 'claude-sonnet-4-5',
+        context: 200000,
+        isDefault: true,
+      },
+      ...settings.models.map((m) => ({ ...m, isDefault: false })),
+    ]
+  }, [settings.models, cc])
   const [currentModelId, setCurrentModelId] = useState(() =>
-    pickInitialModel(settings.models, settings.apiKeys),
+    pickInitialModel(models, settings.apiKeys),
   )
   // harness 内部是可变对象，事件到达时 bump tick 触发重读
   const [, setHarnessTick] = useState(0)
@@ -79,8 +101,8 @@ function App() {
 
   // 设置 / 当前模型 → 装配 harness provider（下一条消息生效）
   useEffect(() => {
-    configureHarness(settings.models.find((m) => m.id === currentModelId), settings.apiKeys)
-  }, [settings, currentModelId])
+    configureHarness(models.find((m) => m.id === currentModelId), settings.apiKeys)
+  }, [models, settings, currentModelId])
 
   // 主题：html data-theme 切换 + localStorage 持久化
   useEffect(() => {
@@ -215,7 +237,7 @@ function App() {
       <main className="stage">
         <Topbar
           conversation={conversation}
-          models={settings.models}
+          models={models}
           currentModelId={currentModelId}
           popover={popover}
           onPopover={setPopover}

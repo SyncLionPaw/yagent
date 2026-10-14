@@ -51,6 +51,24 @@ export function devDeepseekKey(): string {
   return cleanKey(import.meta.env.DEV_DEEPSEEK_KEY as string | undefined)
 }
 
+interface CcSwitchConf {
+  token: string
+  baseURL: string
+  model: string
+  name: string
+}
+
+/** dev 下复用 cc-switch 的当前 Claude 渠道（~/.cc-switch，由 vite.config 注入；生产为 null） */
+export function devCcSwitch(): CcSwitchConf | null {
+  try {
+    return JSON.parse(
+      (import.meta.env.DEV_CC_SWITCH as string | undefined) ?? 'null',
+    ) as CcSwitchConf | null
+  } catch {
+    return null
+  }
+}
+
 /** DeepSeek 有效 key：dev 预填（.env）优先，设置页兜底 */
 export function effectiveDeepseekKey(keys: ApiKeys): string {
   return devDeepseekKey() || cleanKey(keys.deepseek)
@@ -59,7 +77,7 @@ export function effectiveDeepseekKey(keys: ApiKeys): string {
 export function hasKeyFor(model: ModelConfig, keys: ApiKeys): boolean {
   switch (model.provider) {
     case 'anthropic':
-      return !!cleanKey(keys.anthropic)
+      return !!cleanKey(keys.anthropic) || !!devCcSwitch()?.token
     case 'openai':
       return !!cleanKey(keys.openai)
     case 'deepseek':
@@ -94,9 +112,15 @@ export function resolveProvider(model: ModelConfig | undefined, keys: ApiKeys): 
   switch (model.provider) {
     case 'anthropic': {
       if (badKey(keys.anthropic)) return new MissingKeyProvider(BAD_KEY_MSG)
-      const key = cleanKey(keys.anthropic)
+      const cc = devCcSwitch()
+      const key = cleanKey(keys.anthropic) || cc?.token || ''
       return key
-        ? new AnthropicProvider({ apiKey: key })
+        ? new AnthropicProvider({
+            apiKey: key,
+            baseURL: cc?.baseURL,
+            // Claude Code 网关用 ANTHROPIC_AUTH_TOKEN（Authorization: Bearer）鉴权，两个头都给
+            extraHeaders: cc ? { authorization: `Bearer ${key}` } : {},
+          })
         : new MissingKeyProvider('未配置 Anthropic API Key，请在 设置 → API 密钥 中填写')
     }
     case 'openai': {
@@ -153,13 +177,16 @@ export async function testConnection(target: TestTarget, keys: ApiKeys): Promise
   }
   switch (target) {
     case 'anthropic': {
-      const key = keyOf(keys.anthropic)
+      const cc = devCcSwitch()
+      const key = keyOf(keys.anthropic) || cc?.token || ''
       if (!key) throw new Error('未填写密钥')
-      url = 'https://api.anthropic.com/v1/models'
+      const base = (cc?.baseURL ?? 'https://api.anthropic.com').replace(/\/+$/, '')
+      url = `${base}/v1/models`
       headers = {
         'x-api-key': key,
         'anthropic-version': '2023-06-01',
         'anthropic-dangerous-direct-browser-access': 'true',
+        ...(cc ? { authorization: `Bearer ${key}` } : {}),
       }
       break
     }
