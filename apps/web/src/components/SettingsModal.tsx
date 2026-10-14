@@ -1,7 +1,7 @@
 import { useState } from 'react'
 import { Cpu, KeyRound, Plus, Sparkles, Trash2, X } from 'lucide-react'
 import type { Settings } from '@yagent/core'
-import { devDeepseekKey, maskKey, testConnection, type TestTarget } from '../harness'
+import { devDeepseekKey, keyHasBadChars, maskKey, testConnection, type TestTarget } from '../harness'
 import { formatDaysAgo } from '../lib/utils'
 
 interface SettingsModalProps {
@@ -117,6 +117,14 @@ function ByokPane({ settings, onChange }: { settings: Settings; onChange: (s: Se
   const devKey = devDeepseekKey()
   const deepseekUsingDev = !settings.apiKeys.deepseek?.trim() && !!devKey
 
+  // key 粘贴带入非法字符（空格/换行/全角）时的就地警示
+  const badCharWarn = (v?: string) =>
+    keyHasBadChars(v) ? (
+      <div style={{ color: 'var(--red)', fontSize: 11.5, marginTop: 6 }}>
+        检测到非法字符（粘贴时带入了空格、换行或全角字符），请清空后重新粘贴；DeepSeek 留空则回退到 .env 开发预填
+      </div>
+    ) : null
+
   return (
     <>
       <div className="field">
@@ -129,6 +137,7 @@ function ByokPane({ settings, onChange }: { settings: Settings; onChange: (s: Se
           value={settings.apiKeys.anthropic ?? ''}
           onChange={(e) => setKey({ anthropic: e.target.value })}
         />
+        {badCharWarn(settings.apiKeys.anthropic)}
         <div className="byok-row">
           <button className="btn" onClick={() => runTest('anthropic')}>
             测试连接
@@ -147,6 +156,7 @@ function ByokPane({ settings, onChange }: { settings: Settings; onChange: (s: Se
           value={settings.apiKeys.openai ?? ''}
           onChange={(e) => setKey({ openai: e.target.value })}
         />
+        {badCharWarn(settings.apiKeys.openai)}
         <div className="byok-row">
           <button className="btn" onClick={() => runTest('openai')}>
             测试连接
@@ -167,6 +177,7 @@ function ByokPane({ settings, onChange }: { settings: Settings; onChange: (s: Se
           value={settings.apiKeys.deepseek ?? ''}
           onChange={(e) => setKey({ deepseek: e.target.value })}
         />
+        {badCharWarn(settings.apiKeys.deepseek)}
         <div className="byok-row">
           <button className="btn" onClick={() => runTest('deepseek')}>
             测试连接
@@ -190,12 +201,14 @@ function ByokPane({ settings, onChange }: { settings: Settings; onChange: (s: Se
           value={settings.apiKeys.customEndpoint ?? ''}
           onChange={(e) => setKey({ customEndpoint: e.target.value })}
         />
+        {badCharWarn(settings.apiKeys.customEndpoint)}
         <input
           type="password"
           placeholder="API Key"
           value={settings.apiKeys.customKey ?? ''}
           onChange={(e) => setKey({ customKey: e.target.value })}
         />
+        {badCharWarn(settings.apiKeys.customKey)}
         <div className="byok-row">
           <button className="btn" onClick={() => runTest('custom')}>
             测试连接
