@@ -4,18 +4,54 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>yagent</title>
+    <script>
+        (function () {
+            var pref = localStorage.getItem('yagent-color-scheme') || 'system';
+            var dark = pref === 'dark' || (pref !== 'light' && matchMedia('(prefers-color-scheme: dark)').matches);
+            document.documentElement.dataset.theme = dark ? 'dark' : 'light';
+            document.documentElement.dataset.themePref = pref === 'light' || pref === 'dark' ? pref : 'system';
+        })();
+    </script>
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@500&family=Space+Grotesk:wght@400;500&display=swap" rel="stylesheet">
     <style>
-        :root {
+        :root,
+        html[data-theme="dark"] {
+            color-scheme: dark;
             --bg: #0d0d0f;
             --ink: #f2f2f0;
             --muted: rgba(242, 242, 240, 0.55);
             --faint: rgba(242, 242, 240, 0.35);
             --accent: #8fa3ff;
             --hairline: rgba(255, 255, 255, 0.08);
+            --grid-faint: rgba(255, 255, 255, 0.03);
+            --grid-soft: rgba(255, 255, 255, 0.05);
+            --panel: rgba(20, 20, 24, 0.96);
+            --panel-border: rgba(255, 255, 255, 0.12);
+            --panel-shadow: 0 18px 40px rgba(0, 0, 0, 0.55);
+            --hover-fill: rgba(255, 255, 255, 0.07);
+            --control-hover-border: rgba(255, 255, 255, 0.25);
+            --cta-hover-ink: #0d0d0f;
             --cell: clamp(16px, 5.4vw, 25px);
+        }
+
+        html[data-theme="light"] {
+            color-scheme: light;
+            --bg: #f3f3ef;
+            --ink: #161618;
+            --muted: rgba(22, 22, 24, 0.58);
+            --faint: rgba(22, 22, 24, 0.38);
+            --accent: #4f66e8;
+            --hairline: rgba(22, 22, 24, 0.1);
+            --grid-faint: rgba(22, 22, 24, 0.045);
+            --grid-soft: rgba(22, 22, 24, 0.07);
+            --panel: rgba(255, 255, 255, 0.96);
+            --panel-border: rgba(22, 22, 24, 0.1);
+            --panel-shadow: 0 18px 40px rgba(22, 22, 24, 0.12);
+            --hover-fill: rgba(22, 22, 24, 0.06);
+            --control-hover-border: rgba(22, 22, 24, 0.28);
+            --cta-hover-ink: #ffffff;
         }
 
         * { box-sizing: border-box; }
@@ -25,12 +61,13 @@
             background-color: var(--bg);
             /* 方格线铺满整个背景，位置由 JS 与中央网格对齐 */
             background-image:
-                linear-gradient(to right, rgba(255, 255, 255, 0.03) 1px, transparent 1px),
-                linear-gradient(to bottom, rgba(255, 255, 255, 0.03) 1px, transparent 1px);
+                linear-gradient(to right, var(--grid-faint) 1px, transparent 1px),
+                linear-gradient(to bottom, var(--grid-faint) 1px, transparent 1px);
             background-size: var(--cell) var(--cell);
             color: var(--ink);
             font-family: 'Space Grotesk', 'Hiragino Sans', 'PingFang SC', 'Noto Sans JP', 'Microsoft YaHei', system-ui, sans-serif;
             -webkit-font-smoothing: antialiased;
+            transition: background-color 0.25s ease, color 0.25s ease;
         }
 
         /* ---------- 顶栏 ---------- */
@@ -100,9 +137,11 @@
         }
 
         .lang-btn:hover,
-        .lang.open .lang-btn {
+        .lang.open .lang-btn,
+        .theme-btn:hover,
+        .theme.open .theme-btn {
             color: var(--ink);
-            border-color: rgba(255, 255, 255, 0.25);
+            border-color: var(--control-hover-border);
         }
 
         .lang-caret {
@@ -114,7 +153,7 @@
             transform: rotate(180deg);
         }
 
-        .lang-menu {
+        .menu-panel {
             position: absolute;
             top: calc(100% + 8px);
             right: 0;
@@ -123,26 +162,27 @@
             margin: 0;
             padding: 6px;
             list-style: none;
-            background: rgba(20, 20, 24, 0.96);
+            background: var(--panel);
             backdrop-filter: blur(16px);
             -webkit-backdrop-filter: blur(16px);
-            border: 1px solid rgba(255, 255, 255, 0.12);
+            border: 1px solid var(--panel-border);
             border-radius: 12px;
-            box-shadow: 0 18px 40px rgba(0, 0, 0, 0.55);
+            box-shadow: var(--panel-shadow);
             opacity: 0;
             visibility: hidden;
             transform: translateY(-4px);
             transition: opacity 0.16s ease, transform 0.16s ease, visibility 0s linear 0.16s;
         }
 
-        .lang.open .lang-menu {
+        .lang.open .menu-panel,
+        .theme.open .menu-panel {
             opacity: 1;
             visibility: visible;
             transform: none;
             transition: opacity 0.16s ease, transform 0.16s ease, visibility 0s;
         }
 
-        .lang-menu li {
+        .menu-panel li {
             display: flex;
             align-items: center;
             justify-content: space-between;
@@ -156,24 +196,60 @@
             transition: background 0.15s ease, color 0.15s ease;
         }
 
-        .lang-menu li:hover,
-        .lang-menu li:focus-visible {
-            background: rgba(255, 255, 255, 0.07);
+        .menu-panel li:hover,
+        .menu-panel li:focus-visible {
+            background: var(--hover-fill);
             color: var(--ink);
             outline: none;
         }
 
-        .lang-menu li[aria-selected="true"] {
+        .menu-panel li[aria-selected="true"] {
             color: var(--ink);
         }
 
-        .lang-menu li[aria-selected="true"]::after {
+        .menu-panel li[aria-selected="true"]::after {
             content: '✓';
             font-size: 11px;
             color: var(--accent);
         }
 
+        .theme {
+            position: relative;
+        }
+
+        .theme-btn {
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            width: 34px;
+            height: 30px;
+            padding: 0;
+            background: transparent;
+            color: var(--faint);
+            border: 1px solid var(--hairline);
+            border-radius: 999px;
+            cursor: pointer;
+            transition: color 0.2s ease, border-color 0.2s ease;
+        }
+
+        .theme-btn svg {
+            display: block;
+        }
+
+        .theme-btn .icon-sun,
+        .theme-btn .icon-moon,
+        .theme-btn .icon-system {
+            display: none;
+        }
+
+        html[data-theme-pref="light"] .theme-btn .icon-sun,
+        html[data-theme-pref="dark"] .theme-btn .icon-moon,
+        html[data-theme-pref="system"] .theme-btn .icon-system {
+            display: block;
+        }
+
         .lang-btn:focus-visible,
+        .theme-btn:focus-visible,
         a:focus-visible {
             outline: 2px solid var(--accent);
             outline-offset: 3px;
@@ -196,8 +272,8 @@
             grid-template-rows: repeat(4, auto);
             gap: 0;
             background-image:
-                linear-gradient(to right, rgba(255, 255, 255, 0.05) 1px, transparent 1px),
-                linear-gradient(to bottom, rgba(255, 255, 255, 0.05) 1px, transparent 1px);
+                linear-gradient(to right, var(--grid-soft) 1px, transparent 1px),
+                linear-gradient(to bottom, var(--grid-soft) 1px, transparent 1px);
             background-size: var(--cell) var(--cell);
         }
 
@@ -277,6 +353,7 @@
 
         .cta:hover {
             background: var(--accent);
+            color: var(--cta-hover-ink);
             transform: translateY(-1px);
         }
 
@@ -365,6 +442,11 @@
                 padding: 6px 10px;
                 gap: 6px;
             }
+
+            .theme-btn {
+                width: 32px;
+                height: 28px;
+            }
         }
 
         @media (prefers-reduced-motion: reduce) {
@@ -388,12 +470,24 @@
             <a href="docs.html" data-i18n="navDocs">文档</a>
             <a href="gallery.html" data-i18n="navGallery">标志</a>
             <a href="pricing.html" data-i18n="navPricing">价格</a>
+            <div class="theme" id="theme">
+                <button class="theme-btn" type="button" aria-haspopup="listbox" aria-expanded="false" aria-label="Theme">
+                    <svg class="icon-system" width="14" height="14" viewBox="0 0 14 14" aria-hidden="true"><circle cx="7" cy="7" r="5.25" fill="none" stroke="currentColor" stroke-width="1.2"/><path d="M7 1.75v10.5A5.25 5.25 0 0 0 7 1.75z" fill="currentColor"/></svg>
+                    <svg class="icon-sun" width="14" height="14" viewBox="0 0 14 14" aria-hidden="true"><circle cx="7" cy="7" r="2.4" fill="none" stroke="currentColor" stroke-width="1.2"/><path d="M7 1.4v1.5M7 11.1v1.5M1.4 7h1.5M11.1 7h1.5M3.05 3.05l1.06 1.06M9.89 9.89l1.06 1.06M10.95 3.05l-1.06 1.06M4.11 9.89l-1.06 1.06" fill="none" stroke="currentColor" stroke-width="1.2" stroke-linecap="round"/></svg>
+                    <svg class="icon-moon" width="14" height="14" viewBox="0 0 14 14" aria-hidden="true"><path d="M11.2 8.55A4.75 4.75 0 0 1 5.45 2.8 4.9 4.9 0 1 0 11.2 8.55z" fill="none" stroke="currentColor" stroke-width="1.2" stroke-linejoin="round"/></svg>
+                </button>
+                <ul class="menu-panel" role="listbox" aria-label="Theme">
+                    <li role="option" data-theme-pref="system" aria-selected="true" tabindex="-1" data-i18n="themeSystem">跟随系统</li>
+                    <li role="option" data-theme-pref="light" aria-selected="false" tabindex="-1" data-i18n="themeLight">浅色</li>
+                    <li role="option" data-theme-pref="dark" aria-selected="false" tabindex="-1" data-i18n="themeDark">深色</li>
+                </ul>
+            </div>
             <div class="lang" id="lang">
                 <button class="lang-btn" type="button" aria-haspopup="listbox" aria-expanded="false" aria-label="Language">
                     <span class="lang-label">中文</span>
                     <svg class="lang-caret" width="10" height="6" viewBox="0 0 10 6" aria-hidden="true"><path d="M1 1l4 4 4-4" fill="none" stroke="currentColor" stroke-width="1.2" stroke-linecap="round" stroke-linejoin="round"/></svg>
                 </button>
-                <ul class="lang-menu" role="listbox" aria-label="Language">
+                <ul class="menu-panel" role="listbox" aria-label="Language">
                     <li role="option" data-lang="zh" aria-selected="true" tabindex="-1">中文</li>
                     <li role="option" data-lang="ja" aria-selected="false" tabindex="-1">日本語</li>
                     <li role="option" data-lang="en" aria-selected="false" tabindex="-1">English</li>
@@ -577,8 +671,10 @@
             cvs.style.width = size + 'px';
             cvs.style.height = size + 'px';
             const ctx = cvs.getContext('2d');
+            ctx.setTransform(1, 0, 0, 1, 0, 0);
+            ctx.clearRect(0, 0, cvs.width, cvs.height);
             ctx.scale(dpr, dpr);
-            ctx.fillStyle = '#f2f2f0';
+            ctx.fillStyle = getComputedStyle(document.documentElement).getPropertyValue('--ink').trim() || '#f2f2f0';
             const cell = size / 16;
             const r = cell * 0.42;
             presetPattern.forEach(id => {
@@ -675,6 +771,9 @@
                 navDocs: '文档',
                 navGallery: '标志',
                 navPricing: '价格',
+                themeSystem: '跟随系统',
+                themeLight: '浅色',
+                themeDark: '深色',
                 tagline: '说出目标，剩下的交给它。',
                 subline: 'yagent 是一个 AI agent：理解你的目标，自己拆解步骤、调用工具，把事情做完。',
                 cta: '开始使用',
@@ -691,6 +790,9 @@
                 navDocs: 'ドキュメント',
                 navGallery: 'ロゴ',
                 navPricing: '料金',
+                themeSystem: 'システム',
+                themeLight: 'ライト',
+                themeDark: 'ダーク',
                 tagline: '目標を伝えるだけ。あとは任せて。',
                 subline: 'yagent は AI エージェント。目標を理解し、手順を分解し、ツールを使って最後までやり遂げます。',
                 cta: 'はじめる',
@@ -707,6 +809,9 @@
                 navDocs: 'Docs',
                 navGallery: 'Gallery',
                 navPricing: 'Pricing',
+                themeSystem: 'System',
+                themeLight: 'Light',
+                themeDark: 'Dark',
                 tagline: 'Give it a goal. It does the rest.',
                 subline: 'yagent is an AI agent that understands your goal, plans the steps, and uses real tools to get it done.',
                 cta: 'Get started',
@@ -734,7 +839,33 @@
 
         const langRoot = document.getElementById('lang');
         const langBtn = langRoot.querySelector('.lang-btn');
-        const langMenu = langRoot.querySelector('.lang-menu');
+        const langMenu = langRoot.querySelector('.menu-panel');
+        const themeRoot = document.getElementById('theme');
+        const themeBtn = themeRoot.querySelector('.theme-btn');
+        const themeMenu = themeRoot.querySelector('.menu-panel');
+        const systemDark = window.matchMedia('(prefers-color-scheme: dark)');
+
+        function resolvedTheme(pref) {
+            if (pref === 'light' || pref === 'dark') return pref;
+            return systemDark.matches ? 'dark' : 'light';
+        }
+
+        function applyColorScheme(pref) {
+            const mode = pref === 'light' || pref === 'dark' ? pref : 'system';
+            const theme = resolvedTheme(mode);
+            document.documentElement.dataset.themePref = mode;
+            document.documentElement.dataset.theme = theme;
+            themeMenu.querySelectorAll('[data-theme-pref]').forEach(item => {
+                item.setAttribute('aria-selected', item.dataset.themePref === mode ? 'true' : 'false');
+            });
+            themeBtn.setAttribute('aria-label', {
+                system: 'Theme: system',
+                light: 'Theme: light',
+                dark: 'Theme: dark',
+            }[mode]);
+            localStorage.setItem('yagent-color-scheme', mode);
+            drawWordmark();
+        }
 
         function setLang(lang) {
             const dict = I18N[lang];
@@ -750,49 +881,80 @@
             localStorage.setItem('yagent-lang', lang);
         }
 
-        function openLangMenu() {
-            langRoot.classList.add('open');
-            langBtn.setAttribute('aria-expanded', 'true');
-            const current = langMenu.querySelector('[aria-selected="true"]');
-            (current || langMenu.firstElementChild).focus();
+        function openMenu(root, btn, menu) {
+            root.classList.add('open');
+            btn.setAttribute('aria-expanded', 'true');
+            const current = menu.querySelector('[aria-selected="true"]');
+            (current || menu.firstElementChild).focus();
         }
 
-        function closeLangMenu() {
-            langRoot.classList.remove('open');
-            langBtn.setAttribute('aria-expanded', 'false');
+        function closeMenu(root, btn) {
+            root.classList.remove('open');
+            btn.setAttribute('aria-expanded', 'false');
+        }
+
+        function closeAllMenus() {
+            closeMenu(langRoot, langBtn);
+            closeMenu(themeRoot, themeBtn);
         }
 
         langBtn.addEventListener('click', () => {
-            if (langRoot.classList.contains('open')) closeLangMenu();
-            else openLangMenu();
+            const open = langRoot.classList.contains('open');
+            closeAllMenus();
+            if (!open) openMenu(langRoot, langBtn, langMenu);
+        });
+
+        themeBtn.addEventListener('click', () => {
+            const open = themeRoot.classList.contains('open');
+            closeAllMenus();
+            if (!open) openMenu(themeRoot, themeBtn, themeMenu);
         });
 
         langMenu.addEventListener('click', e => {
             const item = e.target.closest('[data-lang]');
             if (!item) return;
             setLang(item.dataset.lang);
-            closeLangMenu();
+            closeAllMenus();
             langBtn.focus();
         });
 
+        themeMenu.addEventListener('click', e => {
+            const item = e.target.closest('[data-theme-pref]');
+            if (!item) return;
+            applyColorScheme(item.dataset.themePref);
+            closeAllMenus();
+            themeBtn.focus();
+        });
+
         document.addEventListener('click', e => {
-            if (!langRoot.contains(e.target)) closeLangMenu();
+            if (!langRoot.contains(e.target) && !themeRoot.contains(e.target)) closeAllMenus();
         });
 
         document.addEventListener('keydown', e => {
             if (e.key === 'Escape') {
-                closeLangMenu();
+                closeAllMenus();
                 return;
             }
-            if (!langRoot.classList.contains('open')) return;
-            if (e.key !== 'ArrowDown' && e.key !== 'ArrowUp') return;
+            const openRoot = langRoot.classList.contains('open')
+                ? { root: langRoot, menu: langMenu, sel: '[data-lang]' }
+                : themeRoot.classList.contains('open')
+                    ? { root: themeRoot, menu: themeMenu, sel: '[data-theme-pref]' }
+                    : null;
+            if (!openRoot || (e.key !== 'ArrowDown' && e.key !== 'ArrowUp')) return;
             e.preventDefault();
-            const items = [...langMenu.querySelectorAll('[data-lang]')];
+            const items = [...openRoot.menu.querySelectorAll(openRoot.sel)];
             const at = items.indexOf(document.activeElement);
             const step = e.key === 'ArrowDown' ? 1 : -1;
             items[(at + step + items.length) % items.length].focus();
         });
 
+        systemDark.addEventListener('change', () => {
+            if ((localStorage.getItem('yagent-color-scheme') || 'system') === 'system') {
+                applyColorScheme('system');
+            }
+        });
+
+        applyColorScheme(localStorage.getItem('yagent-color-scheme') || 'system');
         setLang(detectLang());
     </script>
 </body>
