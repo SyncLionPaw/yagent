@@ -450,6 +450,7 @@
 
         .marquee-group {
             display: flex;
+            flex-shrink: 0;
             gap: var(--marquee-gap);
             padding-right: var(--marquee-gap);
         }
@@ -519,11 +520,11 @@
 
         @keyframes marquee-left {
             from { transform: translateX(0); }
-            to { transform: translateX(-50%); }
+            to { transform: translateX(calc(-1 * var(--marquee-shift, 50%))); }
         }
 
         @keyframes marquee-right {
-            from { transform: translateX(-50%); }
+            from { transform: translateX(calc(-1 * var(--marquee-shift, 50%))); }
             to { transform: translateX(0); }
         }
 
@@ -1226,6 +1227,29 @@
             );
         }
 
+        function fillMarqueeTracks() {
+            document.querySelectorAll('#voiceMarquee .marquee').forEach(marquee => {
+                const track = marquee.querySelector('.marquee-track');
+                const first = track && track.querySelector('.marquee-group');
+                if (!track || !first) return;
+
+                while (track.children.length > 1) track.lastElementChild.remove();
+
+                const viewport = marquee.clientWidth || window.innerWidth;
+                const groupWidth = first.getBoundingClientRect().width;
+                if (groupWidth < 1) return;
+
+                // 至少 2 组；总长要超过两屏，循环时视口里始终有卡片
+                const copies = Math.max(2, Math.ceil((viewport * 2) / groupWidth) + 1);
+                for (let i = 1; i < copies; i++) {
+                    const clone = first.cloneNode(true);
+                    clone.setAttribute('aria-hidden', 'true');
+                    track.appendChild(clone);
+                }
+                track.style.setProperty('--marquee-shift', `${groupWidth}px`);
+            });
+        }
+
         function renderVoiceMarquee(lang) {
             const root = document.getElementById('voiceMarquee');
             if (!root) return;
@@ -1237,11 +1261,17 @@
                     `<div class="marquee">` +
                     `<div class="marquee-track ${dirs[i]}">` +
                     `<div class="marquee-group">${cards}</div>` +
-                    `<div class="marquee-group" aria-hidden="true">${cards}</div>` +
                     `</div></div>`
                 );
             }).join('');
+            requestAnimationFrame(fillMarqueeTracks);
         }
+
+        let marqueeResizeTimer = 0;
+        window.addEventListener('resize', () => {
+            clearTimeout(marqueeResizeTimer);
+            marqueeResizeTimer = setTimeout(fillMarqueeTracks, 120);
+        });
 
         const LANG_TAGS = { zh: 'zh-CN', ja: 'ja', en: 'en' };
 
