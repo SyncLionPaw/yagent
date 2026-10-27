@@ -4,11 +4,6 @@ on:
   push:
     tags: ['v*']
   workflow_dispatch:
-    inputs:
-      tag:
-        description: 'Optional tag name to create release for (e.g. v0.1.1); leave empty to build without publishing'
-        required: false
-        default: ''
 
 permissions:
   contents: write
@@ -52,6 +47,12 @@ jobs:
           restore-keys: |
             ${{ runner.os }}-pnpm-store-
 
+      - name: Install Linux packaging deps
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y rpm fakeroot
+
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
 
@@ -64,17 +65,9 @@ jobs:
         working-directory: apps/desktop
         shell: bash
         env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          # 无签名证书时跳过 mac 自动发现，产出未公证包
+          # 仅本地产出；Release 由汇总 job 上传，避免 draft/版本不一致
           CSC_IDENTITY_AUTO_DISCOVERY: 'false'
-        run: |
-          PUBLISH=never
-          if [[ "${{ github.ref }}" == refs/tags/v* ]]; then
-            PUBLISH=always
-          elif [[ -n "${{ inputs.tag }}" ]]; then
-            PUBLISH=always
-          fi
-          pnpm exec electron-builder ${{ matrix.args }} --publish "$PUBLISH"
+        run: pnpm exec electron-builder ${{ matrix.args }} --publish never
 
       - name: Upload artifacts
         uses: actions/upload-artifact@v4
@@ -84,4 +77,33 @@ jobs:
             apps/desktop/release/*.*
             !apps/desktop/release/*.blockmap
             !apps/desktop/release/builder-debug.yml
+            !apps/desktop/release/builder-effective-config.yaml
           if-no-files-found: warn
+
+  publish:
+    needs: package
+    # 即使某一平台失败，仍发布已成功平台的产物
+    if: always() && (needs.package.result == 'success' || needs.package.result == 'failure')
+    runs-on: ubuntu-latest
+    steps:
+      - name: Download all artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: dist
+          pattern: yagent-*
+          merge-multiple: true
+
+      - name: List files
+        run: find dist -type f | sort
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ github.ref_type == 'tag' && github.ref_name || format('v{0}', github.run_number) }}
+          name: ${{ github.ref_type == 'tag' && github.ref_name || format('Build {0}', github.run_number) }}
+          draft: false
+          generate_release_notes: true
+          files: |
+            dist/**
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

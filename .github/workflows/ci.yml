@@ -71,9 +71,13 @@ jobs:
       
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
+
+      # @yagent/core / ui 的 types 指向 dist，需先 emit
+      - name: Build packages for types
+        run: pnpm --filter @yagent/core build && pnpm --filter @yagent/ui build
       
       - name: Type check
-        run: pnpm typecheck
+        run: pnpm --recursive run typecheck
 
   test:
     runs-on: ubuntu-latest

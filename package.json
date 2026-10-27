@@ -14,7 +14,7 @@
     "build:web": "pnpm --filter @yagent/core build && pnpm --filter @yagent/ui build && pnpm --filter web build",
     "build:desktop": "pnpm build:web && pnpm --filter yagent-desktop dist",
     "lint": "eslint .",
-    "typecheck": "pnpm --recursive run typecheck",
+    "typecheck": "pnpm --filter @yagent/core build && pnpm --filter @yagent/ui build && pnpm --recursive run typecheck",
     "test": "vitest"
   },
   "devDependencies": {
