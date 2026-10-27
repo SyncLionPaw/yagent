@@ -1,0 +1,531 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>价格 · yagent</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@500&family=Space+Grotesk:wght@400;500&display=swap" rel="stylesheet">
+    <style>
+        :root {
+            --bg: #0d0d0f;
+            --ink: #f2f2f0;
+            --muted: rgba(242, 242, 240, 0.55);
+            --faint: rgba(242, 242, 240, 0.35);
+            --accent: #8fa3ff;
+            --hairline: rgba(255, 255, 255, 0.08);
+        }
+
+        * { box-sizing: border-box; }
+
+        body {
+            margin: 0;
+            background-color: var(--bg);
+            background-image:
+                linear-gradient(to right, rgba(255, 255, 255, 0.03) 1px, transparent 1px),
+                linear-gradient(to bottom, rgba(255, 255, 255, 0.03) 1px, transparent 1px);
+            background-size: 25px 25px;
+            color: var(--ink);
+            font-family: 'Space Grotesk', 'Hiragino Sans', 'PingFang SC', 'Noto Sans JP', 'Microsoft YaHei', system-ui, sans-serif;
+            -webkit-font-smoothing: antialiased;
+            min-height: 100vh;
+            display: flex;
+            flex-direction: column;
+        }
+
+        .topbar {
+            position: fixed;
+            top: 0;
+            left: 0;
+            right: 0;
+            z-index: 10;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 22px 32px;
+            background: rgba(13, 13, 15, 0.7);
+            backdrop-filter: blur(12px);
+            -webkit-backdrop-filter: blur(12px);
+        }
+
+        .wordmark {
+            display: inline-flex;
+            align-items: center;
+            gap: 1px;
+            font-family: 'JetBrains Mono', ui-monospace, monospace;
+            font-size: 17px;
+            font-weight: 500;
+            letter-spacing: -0.02em;
+            color: var(--ink);
+            text-decoration: none;
+        }
+
+        .wordmark canvas {
+            display: block;
+        }
+
+        .topnav {
+            display: flex;
+            align-items: center;
+            gap: 22px;
+        }
+
+        .topnav > a {
+            font-size: 13px;
+            color: var(--faint);
+            text-decoration: none;
+            transition: color 0.2s ease;
+        }
+
+        .topnav > a:hover {
+            color: var(--ink);
+        }
+
+        /* ---------- 语言选择 ---------- */
+        .lang {
+            position: relative;
+        }
+
+        .lang-btn {
+            display: inline-flex;
+            align-items: center;
+            gap: 8px;
+            background: transparent;
+            color: var(--faint);
+            border: 1px solid var(--hairline);
+            border-radius: 999px;
+            padding: 6px 12px;
+            font-size: 13px;
+            font-family: inherit;
+            line-height: 1.2;
+            cursor: pointer;
+            transition: color 0.2s ease, border-color 0.2s ease;
+        }
+
+        .lang-btn:hover,
+        .lang.open .lang-btn {
+            color: var(--ink);
+            border-color: rgba(255, 255, 255, 0.25);
+        }
+
+        .lang-caret {
+            opacity: 0.7;
+            transition: transform 0.2s ease;
+        }
+
+        .lang.open .lang-caret {
+            transform: rotate(180deg);
+        }
+
+        .lang-menu {
+            position: absolute;
+            top: calc(100% + 8px);
+            right: 0;
+            z-index: 20;
+            min-width: 132px;
+            margin: 0;
+            padding: 6px;
+            list-style: none;
+            background: rgba(20, 20, 24, 0.96);
+            backdrop-filter: blur(16px);
+            -webkit-backdrop-filter: blur(16px);
+            border: 1px solid rgba(255, 255, 255, 0.12);
+            border-radius: 12px;
+            box-shadow: 0 18px 40px rgba(0, 0, 0, 0.55);
+            opacity: 0;
+            visibility: hidden;
+            transform: translateY(-4px);
+            transition: opacity 0.16s ease, transform 0.16s ease, visibility 0s linear 0.16s;
+        }
+
+        .lang.open .lang-menu {
+            opacity: 1;
+            visibility: visible;
+            transform: none;
+            transition: opacity 0.16s ease, transform 0.16s ease, visibility 0s;
+        }
+
+        .lang-menu li {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: 16px;
+            padding: 8px 10px;
+            border-radius: 8px;
+            font-size: 13px;
+            color: var(--muted);
+            white-space: nowrap;
+            cursor: pointer;
+            transition: background 0.15s ease, color 0.15s ease;
+        }
+
+        .lang-menu li:hover,
+        .lang-menu li:focus-visible {
+            background: rgba(255, 255, 255, 0.07);
+            color: var(--ink);
+            outline: none;
+        }
+
+        .lang-menu li[aria-selected="true"] {
+            color: var(--ink);
+        }
+
+        .lang-menu li[aria-selected="true"]::after {
+            content: '✓';
+            font-size: 11px;
+            color: var(--accent);
+        }
+
+        .lang-btn:focus-visible,
+        a:focus-visible {
+            outline: 2px solid var(--accent);
+            outline-offset: 3px;
+        }
+
+        .page {
+            flex: 1;
+            max-width: 760px;
+            margin: 0 auto;
+            padding: 120px 24px 100px;
+        }
+
+        h1 {
+            font-size: 28px;
+            font-weight: 500;
+            letter-spacing: -0.02em;
+            margin: 0 0 48px;
+        }
+
+        .plans {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 48px;
+        }
+
+        .plan {
+            border-top: 1px solid var(--hairline);
+            padding-top: 24px;
+        }
+
+        .plan-name {
+            font-size: 15px;
+            font-weight: 500;
+            margin: 0;
+        }
+
+        .plan-price {
+            margin: 18px 0 6px;
+            font-size: 40px;
+            font-weight: 500;
+            letter-spacing: -0.03em;
+            line-height: 1;
+        }
+
+        .plan-cadence {
+            font-size: 13px;
+            color: var(--faint);
+        }
+
+        .plan ul {
+            list-style: none;
+            margin: 28px 0 32px;
+            padding: 0;
+        }
+
+        .plan li {
+            font-size: 14px;
+            line-height: 1.8;
+            color: var(--muted);
+            padding: 8px 0;
+            border-top: 1px solid var(--hairline);
+        }
+
+        .plan li:first-child {
+            border-top: none;
+        }
+
+        .plan .cta {
+            display: inline-block;
+            padding: 10px 26px;
+            font-size: 14px;
+            border-radius: 999px;
+            text-decoration: none;
+            transition: all 0.2s ease;
+        }
+
+        .plan .cta.primary {
+            color: var(--bg);
+            background: var(--ink);
+        }
+
+        .plan .cta.primary:hover {
+            background: var(--accent);
+            transform: translateY(-1px);
+        }
+
+        .plan .cta.plain {
+            color: var(--ink);
+            box-shadow: inset 0 0 0 1px var(--hairline);
+        }
+
+        .plan .cta.plain:hover {
+            box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.4);
+        }
+
+        footer {
+            padding: 32px;
+            text-align: center;
+            font-size: 12px;
+            color: var(--faint);
+            border-top: 1px solid var(--hairline);
+        }
+
+        @media (max-width: 600px) {
+            .topbar {
+                padding: 18px 20px;
+            }
+
+            .topnav {
+                gap: 14px;
+            }
+
+            .lang-btn {
+                padding: 6px 10px;
+                gap: 6px;
+            }
+
+            .plans {
+                grid-template-columns: 1fr;
+            }
+        }
+    </style>
+</head>
+<body>
+    <header class="topbar">
+        <a class="wordmark" href="index.html"><canvas id="logoY" aria-label="x"></canvas><span>agent</span></a>
+        <div class="topnav">
+            <a href="docs.html" data-i18n="navDocs"></a>
+            <a href="pricing.html" data-i18n="navPricing"></a>
+            <div class="lang" id="lang">
+                <button class="lang-btn" type="button" aria-haspopup="listbox" aria-expanded="false" aria-label="Language">
+                    <span class="lang-label">中文</span>
+                    <svg class="lang-caret" width="10" height="6" viewBox="0 0 10 6" aria-hidden="true"><path d="M1 1l4 4 4-4" fill="none" stroke="currentColor" stroke-width="1.2" stroke-linecap="round" stroke-linejoin="round"/></svg>
+                </button>
+                <ul class="lang-menu" role="listbox" aria-label="Language">
+                    <li role="option" data-lang="zh" aria-selected="true" tabindex="-1">中文</li>
+                    <li role="option" data-lang="ja" aria-selected="false" tabindex="-1">日本語</li>
+                    <li role="option" data-lang="en" aria-selected="false" tabindex="-1">English</li>
+                </ul>
+            </div>
+        </div>
+    </header>
+
+    <main class="page">
+        <h1 data-i18n="title"></h1>
+        <div class="plans">
+            <div class="plan">
+                <h2 class="plan-name">Free</h2>
+                <div class="plan-price">¥0</div>
+                <div class="plan-cadence" data-i18n="freeCadence"></div>
+                <ul>
+                    <li data-i18n="free1"></li>
+                    <li data-i18n="free2"></li>
+                    <li data-i18n="free3"></li>
+                </ul>
+                <a class="cta plain" href="#" data-i18n="freeCta"></a>
+            </div>
+            <div class="plan">
+                <h2 class="plan-name">Pro</h2>
+                <div class="plan-price">¥15 / $2</div>
+                <div class="plan-cadence" data-i18n="proCadence"></div>
+                <ul>
+                    <li data-i18n="pro1"></li>
+                    <li data-i18n="pro2"></li>
+                    <li data-i18n="pro3"></li>
+                </ul>
+                <a class="cta primary" href="#" data-i18n="proCta"></a>
+            </div>
+        </div>
+    </main>
+
+    <footer>
+        <span data-i18n="footer"></span>
+    </footer>
+
+    <script>
+        // 与主页图标相同的 16×16 粒子 X
+        // 16×16 的 X 位图（与主页图标一致；2 = 右下角半透明）
+        const LOGO_X = [
+            '0000000000000000',
+            '0000000000000000',
+            '0000000000000000',
+            '0000111100011000',
+            '0000001100111000',
+            '0000000101000000',
+            '0000000111000000',
+            '0000000110000000',
+            '0000000110000000',
+            '0000001022000000',
+            '0000001022000000',
+            '0001110022220000',
+            '0001100002200000',
+            '0000000000000000',
+            '0000000000000000',
+            '0000000000000000',
+        ];
+
+        function drawWordmark() {
+            const cvs = document.getElementById('logoY');
+            const size = 15;
+            const dpr = window.devicePixelRatio || 1;
+            cvs.width = size * dpr;
+            cvs.height = size * dpr;
+            cvs.style.width = size + 'px';
+            cvs.style.height = size + 'px';
+            const ctx = cvs.getContext('2d');
+            ctx.scale(dpr, dpr);
+            ctx.fillStyle = '#f2f2f0';
+            const cell = size / 16;
+            const r = cell * 0.42;
+            LOGO_X.forEach((rowStr, row) => {
+                for (let col = 0; col < 16; col++) {
+                    const ch = rowStr[col];
+                    if (ch !== '1' && ch !== '2') continue;
+                    ctx.globalAlpha = ch === '2' ? 0.3 : 1;
+                    ctx.beginPath();
+                    ctx.arc((col + 0.5) * cell, (row + 0.5) * cell, r, 0, Math.PI * 2);
+                    ctx.fill();
+                }
+            });
+            ctx.globalAlpha = 1;
+        }
+        drawWordmark();
+
+        const I18N = {
+            zh: {
+                navDocs: '文档',
+                navPricing: '价格',
+                title: '简单的定价',
+                freeCadence: '永久免费',
+                free1: '核心 agent 能力',
+                free2: '适合体验和轻量任务',
+                free3: '社区支持',
+                freeCta: '开始使用',
+                proCadence: '每月',
+                pro1: '不限量任务',
+                pro2: '优先支持',
+                pro3: '新功能抢先体验',
+                proCta: '升级到 Pro',
+                footer: '© 2026 yagent',
+            },
+            ja: {
+                navDocs: 'ドキュメント',
+                navPricing: '料金',
+                title: 'シンプルな料金',
+                freeCadence: 'ずっと無料',
+                free1: 'コアとなるエージェント機能',
+                free2: '試用や軽いタスクに',
+                free3: 'コミュニティサポート',
+                freeCta: 'はじめる',
+                proCadence: '月額',
+                pro1: '無制限のタスク',
+                pro2: '優先サポート',
+                pro3: '新機能の先行アクセス',
+                proCta: 'Pro にアップグレード',
+                footer: '© 2026 yagent',
+            },
+            en: {
+                navDocs: 'Docs',
+                navPricing: 'Pricing',
+                title: 'Simple pricing',
+                freeCadence: 'Free forever',
+                free1: 'Core agent capabilities',
+                free2: 'Good for trying things out',
+                free3: 'Community support',
+                freeCta: 'Get started',
+                proCadence: 'per month',
+                pro1: 'Unlimited tasks',
+                pro2: 'Priority support',
+                pro3: 'Early access to new features',
+                proCta: 'Upgrade to Pro',
+                footer: '© 2026 yagent',
+            },
+        };
+
+        const LANG_TAGS = { zh: 'zh-CN', ja: 'ja', en: 'en' };
+
+        function detectLang() {
+            const saved = localStorage.getItem('yagent-lang');
+            if (saved && I18N[saved]) return saved;
+            const nav = (navigator.language || 'en').toLowerCase();
+            if (nav.startsWith('zh')) return 'zh';
+            if (nav.startsWith('ja')) return 'ja';
+            return 'en';
+        }
+
+        const langRoot = document.getElementById('lang');
+        const langBtn = langRoot.querySelector('.lang-btn');
+        const langMenu = langRoot.querySelector('.lang-menu');
+
+        function setLang(lang) {
+            const dict = I18N[lang];
+            document.documentElement.lang = LANG_TAGS[lang];
+            document.querySelectorAll('[data-i18n]').forEach(el => {
+                el.textContent = dict[el.dataset.i18n] || '';
+            });
+            langMenu.querySelectorAll('[data-lang]').forEach(item => {
+                const on = item.dataset.lang === lang;
+                item.setAttribute('aria-selected', on ? 'true' : 'false');
+                if (on) langRoot.querySelector('.lang-label').textContent = item.textContent.trim();
+            });
+            localStorage.setItem('yagent-lang', lang);
+        }
+
+        function openLangMenu() {
+            langRoot.classList.add('open');
+            langBtn.setAttribute('aria-expanded', 'true');
+            const current = langMenu.querySelector('[aria-selected="true"]');
+            (current || langMenu.firstElementChild).focus();
+        }
+
+        function closeLangMenu() {
+            langRoot.classList.remove('open');
+            langBtn.setAttribute('aria-expanded', 'false');
+        }
+
+        langBtn.addEventListener('click', () => {
+            if (langRoot.classList.contains('open')) closeLangMenu();
+            else openLangMenu();
+        });
+
+        langMenu.addEventListener('click', e => {
+            const item = e.target.closest('[data-lang]');
+            if (!item) return;
+            setLang(item.dataset.lang);
+            closeLangMenu();
+            langBtn.focus();
+        });
+
+        document.addEventListener('click', e => {
+            if (!langRoot.contains(e.target)) closeLangMenu();
+        });
+
+        document.addEventListener('keydown', e => {
+            if (e.key === 'Escape') {
+                closeLangMenu();
+                return;
+            }
+            if (!langRoot.classList.contains('open')) return;
+            if (e.key !== 'ArrowDown' && e.key !== 'ArrowUp') return;
+            e.preventDefault();
+            const items = [...langMenu.querySelectorAll('[data-lang]')];
+            const at = items.indexOf(document.activeElement);
+            const step = e.key === 'ArrowDown' ? 1 : -1;
+            items[(at + step + items.length) % items.length].focus();
+        });
+
+        setLang(detectLang());
+    </script>
+</body>
+</html>

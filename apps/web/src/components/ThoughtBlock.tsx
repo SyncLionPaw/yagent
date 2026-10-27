@@ -12,10 +12,17 @@ export function ThoughtBlock({ text, status, durationMs }: ThoughtBlockProps) {
   const [open, setOpen] = useState(false)
 
   if (status === 'streaming') {
+    // 无文字时转圈；开始流出文字后换成低调的光标，避免圆圈一直挂在文本旁
     return (
       <div className="thinking">
-        <span className="ring"></span>
-        {text}
+        {text ? (
+          <>
+            {text}
+            <span className="stream-caret"></span>
+          </>
+        ) : (
+          <span className="ring"></span>
+        )}
       </div>
     )
   }

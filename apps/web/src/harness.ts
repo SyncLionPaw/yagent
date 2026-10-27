@@ -1,18 +1,23 @@
 /* ============ Web 端 Harness 单例 + provider 装配 ============
  * provider 选择：设置里的当前模型 → 按 provider 字段选 Anthropic / OpenAI 兼容端点 + 对应 key。
- * 本期不接工具执行（不传 executor，tool_use 走 "tool not available" 降级，符合预期）。
+ * 工具注入：绑定工作目录的会话给文件工具（读/写文件、执行命令）；
+ * fetch_url 始终可用，search_web 跟随设置里的「网络搜索」开关；两者都不依赖目录。
+ * 工具经 Electron IPC 在主进程执行，浏览器端工具不可用。
  * DeepSeek 直连（其 API 支持浏览器 CORS，已验证 preflight）；dev 下未填 key 时
  * 回退到 vite 注入的 DEV_DEEPSEEK_KEY（见 vite.config.ts，仅 dev server 注入）。
  */
 
 import {
   AnthropicProvider,
+  DEFAULT_TOOLS,
+  formatSkillsSystemAppendix,
   Harness,
   OpenAIProvider,
+  type ToolExecutor,
 } from '@yagent/core'
 import type { ChatRequest, ModelConfig, ModelProvider, Settings, StreamEvent } from '@yagent/core'
-
-type ApiKeys = Settings['apiKeys']
+import { requestApproval } from './approval'
+import { listSkills, skillsAvailable } from './skills'
 
 const DEEPSEEK_BASE_URL = 'https://api.deepseek.com'
 
@@ -44,60 +49,29 @@ export function keyHasBadChars(raw: string | undefined): boolean {
   return /[^\x20-\x7e]/.test((raw ?? '').trim().replace(/^["']+|["']+$/g, ''))
 }
 
-const BAD_KEY_MSG = 'API Key 含非法字符（可能粘贴时带入了空格、换行或全角字符），请在 设置 → API 密钥 中重新粘贴'
+const BAD_KEY_MSG = 'API Key 含非法字符（可能粘贴时带入了空格、换行或全角字符），请在 设置 → 模型配置 中重新粘贴'
 
 /** dev 预填的 DeepSeek key（生产为空串） */
 export function devDeepseekKey(): string {
   return cleanKey(import.meta.env.DEV_DEEPSEEK_KEY as string | undefined)
 }
 
-interface CcSwitchConf {
-  token: string
-  baseURL: string
-  model: string
-  name: string
+/** 模型的有效 key：deepseek 在 dev 下可用 .env 预填兜底，其余只认模型条目里的 apiKey */
+export function effectiveKey(model: ModelConfig): string {
+  if (model.provider === 'deepseek') return devDeepseekKey() || cleanKey(model.apiKey)
+  return cleanKey(model.apiKey)
 }
 
-/** dev 下复用 cc-switch 的当前 Claude 渠道（~/.cc-switch，由 vite.config 注入；生产为 null） */
-export function devCcSwitch(): CcSwitchConf | null {
-  const raw = import.meta.env.DEV_CC_SWITCH as unknown
-  if (!raw) return null
-  // vite define 注入的是对象字面量；兼容字符串形式
-  if (typeof raw === 'string') {
-    try {
-      return JSON.parse(raw) as CcSwitchConf
-    } catch {
-      return null
-    }
-  }
-  return raw as CcSwitchConf
-}
-
-/** DeepSeek 有效 key：dev 预填（.env）优先，设置页兜底 */
-export function effectiveDeepseekKey(keys: ApiKeys): string {
-  return devDeepseekKey() || cleanKey(keys.deepseek)
-}
-
-export function hasKeyFor(model: ModelConfig, keys: ApiKeys): boolean {
-  switch (model.provider) {
-    case 'anthropic':
-      return !!cleanKey(keys.anthropic) || !!devCcSwitch()?.token
-    case 'openai':
-      return !!cleanKey(keys.openai)
-    case 'deepseek':
-      return !!effectiveDeepseekKey(keys)
-    case 'custom':
-      return !!cleanKey(keys.customEndpoint) && !!cleanKey(keys.customKey)
-    default:
-      return false
-  }
+export function hasKeyFor(model: ModelConfig): boolean {
+  if (model.provider === 'custom') return !!cleanKey(model.baseURL) && !!effectiveKey(model)
+  return !!effectiveKey(model)
 }
 
 /** 初始模型：默认模型有 key 用默认；否则选第一个有 key 的（dev 下通常是 DeepSeek） */
-export function pickInitialModel(models: ModelConfig[], keys: ApiKeys): string {
+export function pickInitialModel(models: ModelConfig[]): string {
   const def = models.find((m) => m.isDefault) ?? models[0]
-  if (def && hasKeyFor(def, keys)) return def.id
-  const usable = models.find((m) => hasKeyFor(m, keys))
+  if (def && hasKeyFor(def)) return def.id
+  const usable = models.find((m) => hasKeyFor(m))
   return (usable ?? def)?.id ?? ''
 }
 
@@ -110,44 +84,30 @@ export function maskKey(key: string): string {
 
 /* ---------- provider 装配 ---------- */
 
-export function resolveProvider(model: ModelConfig | undefined, keys: ApiKeys): ModelProvider {
+export function resolveProvider(model: ModelConfig | undefined): ModelProvider {
   if (!model) return new MissingKeyProvider('尚未选择模型')
-  const badKey = (raw: string | undefined) => keyHasBadChars(raw)
+  if (keyHasBadChars(model.apiKey) || keyHasBadChars(model.baseURL)) {
+    return new MissingKeyProvider(BAD_KEY_MSG)
+  }
+  const key = effectiveKey(model)
   switch (model.provider) {
-    case 'anthropic': {
-      if (badKey(keys.anthropic)) return new MissingKeyProvider(BAD_KEY_MSG)
-      const cc = devCcSwitch()
-      const key = cleanKey(keys.anthropic) || cc?.token || ''
+    case 'anthropic':
       return key
-        ? new AnthropicProvider({
-            apiKey: key,
-            baseURL: cc?.baseURL,
-            // Claude Code 网关用 ANTHROPIC_AUTH_TOKEN（Authorization: Bearer）鉴权，两个头都给
-            extraHeaders: cc ? { authorization: `Bearer ${key}` } : {},
-          })
-        : new MissingKeyProvider('未配置 Anthropic API Key，请在 设置 → API 密钥 中填写')
-    }
-    case 'openai': {
-      if (badKey(keys.openai)) return new MissingKeyProvider(BAD_KEY_MSG)
-      const key = cleanKey(keys.openai)
+        ? new AnthropicProvider({ apiKey: key })
+        : new MissingKeyProvider('未配置 API Key，请在 设置 → 模型配置 中填写')
+    case 'openai':
       return key
         ? new OpenAIProvider({ apiKey: key })
-        : new MissingKeyProvider('未配置 OpenAI API Key，请在 设置 → API 密钥 中填写')
-    }
-    case 'deepseek': {
-      if (badKey(keys.deepseek)) return new MissingKeyProvider(BAD_KEY_MSG)
-      const key = effectiveDeepseekKey(keys)
+        : new MissingKeyProvider('未配置 API Key，请在 设置 → 模型配置 中填写')
+    case 'deepseek':
       return key
         ? new OpenAIProvider({ apiKey: key, baseURL: DEEPSEEK_BASE_URL })
-        : new MissingKeyProvider('未配置 DeepSeek API Key，请在 设置 → API 密钥 中填写')
-    }
+        : new MissingKeyProvider('未配置 API Key，请在 设置 → 模型配置 中填写')
     case 'custom': {
-      const baseURL = cleanKey(keys.customEndpoint).replace(/\/+$/, '')
-      const key = cleanKey(keys.customKey)
-      if (badKey(keys.customEndpoint) || badKey(keys.customKey)) return new MissingKeyProvider(BAD_KEY_MSG)
+      const baseURL = cleanKey(model.baseURL).replace(/\/+$/, '')
       return baseURL && key
         ? new OpenAIProvider({ apiKey: key, baseURL })
-        : new MissingKeyProvider('自定义端点未填完整（端点 + Key），请在 设置 → API 密钥 中填写')
+        : new MissingKeyProvider('自定义端点未填完整（端点 + Key），请在 设置 → 模型配置 中填写')
     }
     default:
       return new MissingKeyProvider(`未知 provider：${model.provider}`)
@@ -156,66 +116,123 @@ export function resolveProvider(model: ModelConfig | undefined, keys: ApiKeys): 
 
 /* ---------- 单例 ---------- */
 
+// 需要用户在审批条上确认的危险工具
+const APPROVAL_TOOLS = new Set(['write_file', 'run_command'])
+
+const createExecutor = (workdir: string): ToolExecutor => {
+  return async (name, input, signal) => {
+    const ipcTools = window.yagentDesktop?.tools
+    if (!ipcTools) throw new Error('Tool execution not available (requires Electron)')
+    if (APPROVAL_TOOLS.has(name)) {
+      const ok = await requestApproval({ name, input }, signal)
+      if (!ok) throw new Error('用户拒绝了该操作')
+    }
+    return ipcTools.execute(name, input, workdir)
+  }
+}
+
+const BASE_SYSTEM =
+  '你是 yagent，一个 AI Agent 客户端里的助手。回答简洁、直接，使用用户的语言。' +
+  '用户附件保存在应用数据目录（…/projects/<slug>/uploads/<convId>/ 或 …/chats/uploads/<convId>/），消息里若给出「绝对路径」请原样传给 read_file，不要猜测 .yagent/uploads/ 这类相对路径。' +
+  '引用网页来源时，在相关句子后插入标签（不要只写裸 [1]）：' +
+  '<ref url="完整https地址" title="短标题">一两句摘要</ref>；也可简写 <ref_link>完整https地址</ref_link>。' +
+  '同一 URL 可重复标签；客户端会汇总到右栏「搜索」并显示为角标。'
+
 export const harness = new Harness({
   provider: new MissingKeyProvider('尚未配置模型'),
   model: '',
-  system: '你是 yagent，一个 AI Agent 客户端里的助手。回答简洁、直接，使用用户的语言。',
+  system: BASE_SYSTEM,
 })
 
-/** 设置 / 当前模型变化时调用，下一条消息生效 */
-export function configureHarness(model: ModelConfig | undefined, keys: ApiKeys): void {
-  harness.configure({ provider: resolveProvider(model, keys), model: model?.modelId ?? '' })
+/** 从磁盘扫 skills，把 L1 目录写入 system；无桌面端则清空附录 */
+export async function syncSkillsIntoHarness(): Promise<{ total: number; invocable: number }> {
+  if (!skillsAvailable()) {
+    harness.configure({ system: BASE_SYSTEM })
+    return { total: 0, invocable: 0 }
+  }
+  try {
+    const skills = await listSkills()
+    harness.configure({
+      system: BASE_SYSTEM + formatSkillsSystemAppendix(skills),
+    })
+    return {
+      total: skills.length,
+      invocable: skills.filter((s) => !s.disableModelInvocation).length,
+    }
+  } catch {
+    harness.configure({ system: BASE_SYSTEM })
+    return { total: 0, invocable: 0 }
+  }
 }
 
-/* ---------- 连通性测试（BYOK 设置页） ---------- */
+/** 根据会话工作目录 + 工具开关动态配置工具：
+ *  fetch_url / read_file / load_skill 始终可用（桌面端）；search_web 跟随设置；
+ *  write_file / run_command 需绑定目录。 */
+export function updateToolsFor(convId: string, toolFlags?: Settings['tools']): void {
+  const conv = harness.getConversation(convId)
+  if (!conv) return
+  const workdir = conv.workdir?.trim() ?? ''
+  const canSkills = skillsAvailable()
+  const tools = DEFAULT_TOOLS.filter((t) => {
+    if (t.name === 'load_skill') return canSkills
+    if (t.name === 'fetch_url' || t.name === 'read_file') return true
+    if (t.name === 'search_web') return toolFlags?.webSearch ?? true
+    return !!workdir
+  })
+  harness.configure({ tools, executor: createExecutor(workdir) })
+}
 
-export type TestTarget = 'anthropic' | 'openai' | 'deepseek' | 'custom'
+/** 设置 / 当前模型变化时调用，下一条消息生效 */
+export function configureHarness(model: ModelConfig | undefined): void {
+  harness.configure({
+    provider: resolveProvider(model),
+    model: model?.modelId ?? '',
+    contextLimit: model?.context ?? 128_000,
+  })
+}
+
+/* ---------- 连通性测试（模型配置页，按模型条目测） ---------- */
 
 /** 真发一次 GET /models 验证连通；成功返回耗时文案，失败抛出可读错误 */
-export async function testConnection(target: TestTarget, keys: ApiKeys): Promise<string> {
+export async function testConnection(model: ModelConfig): Promise<string> {
   let url: string
   let headers: Record<string, string>
-  const keyOf = (raw: string | undefined): string => {
-    if (keyHasBadChars(raw)) throw new Error('密钥含非法字符（可能粘贴时带入了空格、换行或全角字符），请重新粘贴')
-    return cleanKey(raw)
+  if (keyHasBadChars(model.apiKey) || keyHasBadChars(model.baseURL)) {
+    throw new Error('密钥含非法字符（可能粘贴时带入了空格、换行或全角字符），请重新粘贴')
   }
-  switch (target) {
+  const key = effectiveKey(model)
+  switch (model.provider) {
     case 'anthropic': {
-      const cc = devCcSwitch()
-      const key = keyOf(keys.anthropic) || cc?.token || ''
       if (!key) throw new Error('未填写密钥')
-      const base = (cc?.baseURL ?? 'https://api.anthropic.com').replace(/\/+$/, '')
-      url = `${base}/v1/models`
+      url = 'https://api.anthropic.com/v1/models'
       headers = {
         'x-api-key': key,
         'anthropic-version': '2023-06-01',
         'anthropic-dangerous-direct-browser-access': 'true',
-        ...(cc ? { authorization: `Bearer ${key}` } : {}),
       }
       break
     }
     case 'openai': {
-      const key = keyOf(keys.openai)
       if (!key) throw new Error('未填写密钥')
       url = 'https://api.openai.com/v1/models'
       headers = { authorization: `Bearer ${key}` }
       break
     }
     case 'deepseek': {
-      const key = devDeepseekKey() || keyOf(keys.deepseek)
       if (!key) throw new Error('未填写密钥')
       url = `${DEEPSEEK_BASE_URL}/models`
       headers = { authorization: `Bearer ${key}` }
       break
     }
     case 'custom': {
-      const base = keyOf(keys.customEndpoint).replace(/\/+$/, '')
-      const key = keyOf(keys.customKey)
+      const base = cleanKey(model.baseURL).replace(/\/+$/, '')
       if (!base || !key) throw new Error('端点或密钥未填完整')
       url = `${base}/models`
       headers = { authorization: `Bearer ${key}` }
       break
     }
+    default:
+      throw new Error(`未知 provider：${model.provider}`)
   }
 
   const t0 = Date.now()

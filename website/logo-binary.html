@@ -1,0 +1,236 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>yagent — binary logo</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+    <style>
+        :root {
+            --bg: #0d0d0f;
+            --ink: #f2f2f0;
+            --green: #34c68a;
+            --cell: 26px;
+        }
+
+        * { box-sizing: border-box; }
+
+        body {
+            margin: 0;
+            min-height: 100vh;
+            background: var(--bg);
+            overflow: hidden;
+            font-family: 'JetBrains Mono', ui-monospace, monospace;
+        }
+
+        .wordmark {
+            position: fixed;
+            top: 22px;
+            left: 32px;
+            display: inline-flex;
+            align-items: center;
+            gap: 1px;
+            font-size: 17px;
+            font-weight: 500;
+            letter-spacing: -0.02em;
+            color: var(--ink);
+            text-decoration: none;
+            z-index: 10;
+        }
+
+        .wordmark canvas {
+            display: block;
+        }
+
+        /* 铺满全屏的比特场 */
+        .bits {
+            position: fixed;
+            inset: 0;
+            display: grid;
+            justify-content: center;
+            align-content: center;
+            overflow: hidden;
+        }
+
+        .bit {
+            width: var(--cell);
+            height: var(--cell);
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            font-size: calc(var(--cell) * 0.52);
+            color: rgba(242, 242, 240, 0.09);
+            user-select: none;
+        }
+
+        /* X 的笔画：同样的 0/1 混合，只是更亮 */
+        .bit.one {
+            color: rgba(242, 242, 240, 0.8);
+        }
+
+        /* 右下角笔画：半透明淡出 */
+        .bit.one.ghost {
+            color: rgba(242, 242, 240, 0.24);
+        }
+
+        /* hover：所在区域染绿（黑客帝国式磷光块），字形保持亮色，且取反 */
+        .bit.hot {
+            background: rgba(52, 198, 138, calc(var(--b, 0) * 0.5));
+            box-shadow: 0 0 calc(var(--b, 0) * 12px) rgba(52, 198, 138, calc(var(--b, 0) * 0.4));
+            color: rgba(242, 242, 240, calc(0.35 + var(--b, 0) * 0.65));
+        }
+
+        .bit.one.hot {
+            color: var(--ink);
+        }
+
+        @media (max-width: 600px) {
+            :root {
+                --cell: 22px;
+            }
+        }
+    </style>
+</head>
+<body>
+    <a class="wordmark" href="index.html"><canvas id="logoY" aria-label="x"></canvas><span>agent</span></a>
+    <div class="bits" id="bits"></div>
+
+    <script>
+        // 16×16 的 X 位图（与主页图标一致；2 = 右下角半透明）
+        // 16×16 的 X 位图（与主页图标一致；2 = 右下角半透明）
+        const LOGO_X = [
+            '0000000000000000',
+            '0000000000000000',
+            '0000000000000000',
+            '0000111100011000',
+            '0000001100111000',
+            '0000000101000000',
+            '0000000111000000',
+            '0000000110000000',
+            '0000000110000000',
+            '0000001022000000',
+            '0000001022000000',
+            '0001110022220000',
+            '0001100002200000',
+            '0000000000000000',
+            '0000000000000000',
+            '0000000000000000',
+        ];
+
+        // wordmark 的迷你粒子 X
+        (function drawWordmark() {
+            const cvs = document.getElementById('logoY');
+            const size = 15;
+            const dpr = window.devicePixelRatio || 1;
+            cvs.width = size * dpr;
+            cvs.height = size * dpr;
+            cvs.style.width = size + 'px';
+            cvs.style.height = size + 'px';
+            const ctx = cvs.getContext('2d');
+            ctx.scale(dpr, dpr);
+            ctx.fillStyle = '#f2f2f0';
+            const cell = size / 16;
+            const r = cell * 0.42;
+            LOGO_X.forEach((rowStr, row) => {
+                for (let col = 0; col < 16; col++) {
+                    const ch = rowStr[col];
+                    if (ch !== '1' && ch !== '2') continue;
+                    ctx.globalAlpha = ch === '2' ? 0.3 : 1;
+                    ctx.beginPath();
+                    ctx.arc((col + 0.5) * cell, (row + 0.5) * cell, r, 0, Math.PI * 2);
+                    ctx.fill();
+                }
+            });
+            ctx.globalAlpha = 1;
+        })();
+
+        const bitsEl = document.getElementById('bits');
+        const reducedMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+        const RADIUS = 55; // hover 半径（px）
+        let cells = [];
+        let cols = 0, rows = 0, offX = 0, offY = 0;
+        let mouse = null;
+
+        function build() {
+            const cs = parseFloat(getComputedStyle(document.documentElement).getPropertyValue('--cell'));
+            cols = Math.ceil(window.innerWidth / cs);
+            rows = Math.ceil(window.innerHeight / cs);
+            // X 居中放置
+            offX = Math.floor((cols - 16) / 2);
+            offY = Math.floor((rows - 16) / 2);
+
+            bitsEl.style.gridTemplateColumns = `repeat(${cols}, var(--cell))`;
+            bitsEl.style.gridTemplateRows = `repeat(${rows}, var(--cell))`;
+            bitsEl.innerHTML = '';
+            cells = [];
+
+            for (let row = 0; row < rows; row++) {
+                for (let col = 0; col < cols; col++) {
+                    const bit = document.createElement('div');
+                    const ch = (row >= offY && row < offY + 16 && col >= offX && col < offX + 16)
+                        ? LOGO_X[row - offY][col - offX] : '0';
+                    const inX = ch === '1' || ch === '2';
+                    bit.className = 'bit' + (inX ? ' one' : '') + (ch === '2' ? ' ghost' : '');
+                    // X 内也是 0/1 混合，实心格里 1 略多
+                    bit._v = Math.random() < (ch === '1' ? 0.6 : ch === '2' ? 0.45 : 0.25) ? '1' : '0';
+                    bit.textContent = bit._v;
+                    bit._b = 0;
+                    bit.dataset.row = row;
+                    bit.dataset.col = col;
+                    cells.push(bit);
+                    bitsEl.appendChild(bit);
+                }
+            }
+        }
+        build();
+        window.addEventListener('resize', build);
+
+        window.addEventListener('mousemove', e => {
+            mouse = { x: e.clientX, y: e.clientY };
+        });
+        window.addEventListener('mouseleave', () => { mouse = null; });
+        window.addEventListener('touchmove', e => {
+            mouse = { x: e.touches[0].clientX, y: e.touches[0].clientY };
+        }, { passive: true });
+        window.addEventListener('touchend', () => { mouse = null; });
+
+        function tick() {
+            const rect = bitsEl.getBoundingClientRect();
+            const cs = cells.length ? cells[0].offsetWidth : 26;
+            cells.forEach(bit => {
+                const cx = rect.left + (+bit.dataset.col) * cs + cs / 2;
+                const cy = rect.top + (+bit.dataset.row) * cs + cs / 2;
+
+                let target = 0;
+                if (mouse) {
+                    const d = Math.hypot(cx - mouse.x, cy - mouse.y);
+                    if (d < RADIUS) target = Math.pow(1 - d / RADIUS, 2.2);
+                }
+                bit._b += (target - bit._b) * 0.15;
+                const b = bit._b;
+
+                // hover：变绿且取反
+                if (b > 0.08) {
+                    bit.classList.add('hot');
+                    const inv = bit._v === '1' ? '0' : '1';
+                    if (bit.textContent !== inv) bit.textContent = inv;
+                    bit.style.setProperty('--b', b.toFixed(3));
+                } else {
+                    bit.classList.remove('hot');
+                    if (bit.textContent !== bit._v) bit.textContent = bit._v;
+                    bit.style.removeProperty('--b');
+                    // 环境噪声：低频随机翻转
+                    if (Math.random() < 0.002) {
+                        bit._v = bit._v === '1' ? '0' : '1';
+                        bit.textContent = bit._v;
+                    }
+                }
+            });
+            requestAnimationFrame(tick);
+        }
+        if (!reducedMotion) requestAnimationFrame(tick);
+    </script>
+</body>
+</html>

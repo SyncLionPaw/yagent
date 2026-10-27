@@ -11,6 +11,15 @@ dist-ssr/
 
 # Electron
 release/
+# iconutil 中间产物；保留 build 下 png/icns/ico/svg
+apps/desktop/build/*.iconset/
+
+# dev 模式的本地数据目录（项目根 .yagent）
+.yagent/
+
+# 本地备份包
+*.backup*.tar.gz
+website.backup-*.tar.gz
 
 # Logs
 *.log
@@ -21,3 +30,7 @@ pnpm-debug.log*
 .vscode/*
 !.vscode/extensions.json
 .idea/
+
+# Test / coverage
+coverage/
+*.tsbuildinfo

@@ -1,0 +1,390 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>yagent — conv logo</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@500&display=swap" rel="stylesheet">
+    <style>
+        :root {
+            --bg: #0d0d0f;
+            --ink: #f2f2f0;
+            --accent: #8fa3ff;
+            --cell: clamp(9px, 3.2vw, 15px);
+        }
+
+        * { box-sizing: border-box; }
+
+        body {
+            margin: 0;
+            min-height: 100vh;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            background: var(--bg);
+            font-family: 'JetBrains Mono', ui-monospace, monospace;
+        }
+
+        .wordmark {
+            position: fixed;
+            top: 22px;
+            left: 32px;
+            display: inline-flex;
+            align-items: center;
+            gap: 1px;
+            font-size: 17px;
+            font-weight: 500;
+            letter-spacing: -0.02em;
+            color: var(--ink);
+            text-decoration: none;
+            z-index: 10;
+        }
+
+        .wordmark canvas {
+            display: block;
+        }
+
+        /* 28×28 输入层，和 MNIST 同尺寸 */
+        .grid {
+            position: relative;
+            display: grid;
+            grid-template-columns: repeat(28, var(--cell));
+            grid-template-rows: repeat(28, var(--cell));
+            /* 像素网格线 */
+            background-image:
+                linear-gradient(to right, rgba(255, 255, 255, 0.05) 1px, transparent 1px),
+                linear-gradient(to bottom, rgba(255, 255, 255, 0.05) 1px, transparent 1px);
+            background-size: var(--cell) var(--cell);
+            box-shadow: 0 0 0 1px rgba(255, 255, 255, 0.05);
+        }
+
+        /* 输入 → 特征图 的布局 */
+        .stage {
+            display: flex;
+            align-items: center;
+            gap: 36px;
+        }
+
+        .pane-label {
+            font-size: 11px;
+            color: rgba(242, 242, 240, 0.35);
+            letter-spacing: 0.06em;
+            margin-bottom: 10px;
+        }
+
+        .arrow {
+            color: rgba(242, 242, 240, 0.25);
+            font-size: 18px;
+        }
+
+        /* 特征图：卷积核每停一处，对应输出像素亮起响应值 */
+        .fmap {
+            display: grid;
+            grid-template-columns: repeat(28, 7px);
+            grid-template-rows: repeat(28, 7px);
+            background-image:
+                linear-gradient(to right, rgba(255, 255, 255, 0.04) 1px, transparent 1px),
+                linear-gradient(to bottom, rgba(255, 255, 255, 0.04) 1px, transparent 1px);
+            background-size: 7px 7px;
+            box-shadow: 0 0 0 1px rgba(255, 255, 255, 0.04);
+        }
+
+        .fm-px {
+            width: 7px;
+            height: 7px;
+            background: rgba(143, 163, 255, var(--fv, 0));
+        }
+
+        @media (max-width: 700px) {
+            .stage {
+                flex-direction: column;
+            }
+
+            .arrow {
+                transform: rotate(90deg);
+            }
+        }
+
+        .px {
+            width: var(--cell);
+            height: var(--cell);
+            position: relative;
+        }
+
+        .px::after {
+            content: '';
+            position: absolute;
+            inset: 8%;
+            border-radius: 1px;
+            background: var(--ink);
+            opacity: var(--fo, 0);
+            transform: scale(calc(0.3 + var(--boost, 0) * 0.5));
+            transition: opacity 0.15s ease, transform 0.15s ease;
+        }
+
+        /* 数字笔画：常驻可见，卷积核经过时变亮变大 */
+        .px.ink::after {
+            opacity: calc(0.55 + var(--boost, 0) * 0.45);
+            transform: scale(calc(0.75 + var(--boost, 0) * 0.4));
+            box-shadow: 0 0 calc(var(--boost, 0) * 8px) var(--ink);
+        }
+
+        /* 右下角笔画：半透明淡出 */
+        .px.ink.ghost::after {
+            opacity: calc(0.165 + var(--boost, 0) * 0.45);
+        }
+
+        /* 卷积核窗口：跟随鼠标的 5×5 方块 */
+        .kernel {
+            position: absolute;
+            top: 0;
+            left: 0;
+            display: grid;
+            grid-template-columns: repeat(5, 1fr);
+            grid-template-rows: repeat(5, 1fr);
+            border: 1px solid rgba(242, 242, 240, 0.35);
+            border-radius: 3px;
+            pointer-events: none;
+            box-shadow: 0 0 12px rgba(242, 242, 240, 0.08);
+            will-change: transform;
+        }
+
+        .kernel i {
+            display: block;
+            background: rgba(242, 242, 240, var(--kw, 0));
+        }
+
+        @media (prefers-reduced-motion: reduce) {
+            .px::after {
+                transition: none;
+            }
+        }
+    </style>
+</head>
+<body>
+    <a class="wordmark" href="index.html"><canvas id="logoY" aria-label="x"></canvas><span>agent</span></a>
+    <div class="stage">
+        <div class="pane">
+            <div class="pane-label">input 28×28</div>
+            <div class="grid" id="grid">
+                <div class="kernel" id="kernel"></div>
+            </div>
+        </div>
+        <div class="arrow">→</div>
+        <div class="pane">
+            <div class="pane-label">feature map</div>
+            <div class="fmap" id="fmap"></div>
+        </div>
+    </div>
+
+    <script>
+        // 16×16 的 X 位图（与主页图标一致；2 = 右下角半透明）
+        // 16×16 的 X 位图（与主页图标一致；2 = 右下角半透明）
+        const LOGO_X = [
+            '0000000000000000',
+            '0000000000000000',
+            '0000000000000000',
+            '0000111100011000',
+            '0000001100111000',
+            '0000000101000000',
+            '0000000111000000',
+            '0000000110000000',
+            '0000000110000000',
+            '0000001022000000',
+            '0000001022000000',
+            '0001110022220000',
+            '0001100002200000',
+            '0000000000000000',
+            '0000000000000000',
+            '0000000000000000',
+        ];
+
+        // wordmark 的迷你粒子 X
+        (function drawWordmark() {
+            const cvs = document.getElementById('logoY');
+            const size = 15;
+            const dpr = window.devicePixelRatio || 1;
+            cvs.width = size * dpr;
+            cvs.height = size * dpr;
+            cvs.style.width = size + 'px';
+            cvs.style.height = size + 'px';
+            const ctx = cvs.getContext('2d');
+            ctx.scale(dpr, dpr);
+            ctx.fillStyle = '#f2f2f0';
+            const cell = size / 16;
+            const r = cell * 0.42;
+            LOGO_X.forEach((rowStr, row) => {
+                for (let col = 0; col < 16; col++) {
+                    const ch = rowStr[col];
+                    if (ch !== '1' && ch !== '2') continue;
+                    ctx.globalAlpha = ch === '2' ? 0.3 : 1;
+                    ctx.beginPath();
+                    ctx.arc((col + 0.5) * cell, (row + 0.5) * cell, r, 0, Math.PI * 2);
+                    ctx.fill();
+                }
+            });
+            ctx.globalAlpha = 1;
+        })();
+
+        const N = 28; // MNIST 尺寸
+        const grid = document.getElementById('grid');
+        const kernelEl = document.getElementById('kernel');
+        const cells = [];
+
+        // 最近邻放大到 28×28，保留像素感
+        function logoChar(row, col) {
+            const r16 = Math.min(15, Math.floor(row * 16 / N));
+            const c16 = Math.min(15, Math.floor(col * 16 / N));
+            return LOGO_X[r16][c16];
+        }
+
+        for (let row = 0; row < N; row++) {
+            for (let col = 0; col < N; col++) {
+                const px = document.createElement('div');
+                const ch = logoChar(row, col);
+                px.className = 'px' + (ch === '1' || ch === '2' ? ' ink' : '') + (ch === '2' ? ' ghost' : '');
+                px.dataset.row = row;
+                px.dataset.col = col;
+                cells.push(px);
+                grid.appendChild(px);
+            }
+        }
+
+        // 特征图像素
+        const fmap = document.getElementById('fmap');
+        const fcells = [];
+        for (let i = 0; i < N * N; i++) {
+            const px = document.createElement('div');
+            px.className = 'fm-px';
+            fcells.push(px);
+            fmap.appendChild(px);
+        }
+
+        const reducedMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+
+        // ---------- 卷积核：经典 5×5 二项式（高斯）核，帕斯卡行 1-4-6-4-1 的外积 ----------
+        const KERNEL = [
+            [1, 4, 6, 4, 1],
+            [4, 16, 24, 16, 4],
+            [6, 24, 36, 24, 6],
+            [4, 16, 24, 16, 4],
+            [1, 4, 6, 4, 1],
+        ];
+        const KMAX = 36;          // 核中心权重，用于归一化
+        const KHALF = 2;          // 核半径（格）
+        const CUTOFF = 2.9;       // 激活半径（格）
+        const kernel = { x: N / 2, y: N / 2 };
+        let mouse = null;
+        let lastMouseAt = 0;
+
+        // 双线性插值采样核权重（核外为 0），返回 0..1
+        function kernelWeight(dx, dy) {
+            const gx = dx + KHALF, gy = dy + KHALF;
+            const i = Math.floor(gx), j = Math.floor(gy);
+            const fx = gx - i, fy = gy - j;
+            const at = (r, c) => (r >= 0 && r < 5 && c >= 0 && c < 5) ? KERNEL[r][c] / KMAX : 0;
+            return at(j, i) * (1 - fx) * (1 - fy)
+                 + at(j, i + 1) * fx * (1 - fy)
+                 + at(j + 1, i) * (1 - fx) * fy
+                 + at(j + 1, i + 1) * fx * fy;
+        }
+
+        // 在卷积核窗口里画出 5×5 权重
+        (function buildKernelView() {
+            for (let r = 0; r < 5; r++) {
+                for (let c = 0; c < 5; c++) {
+                    const cell = document.createElement('i');
+                    cell.style.setProperty('--kw', (KERNEL[r][c] / KMAX * 0.45).toFixed(3));
+                    kernelEl.appendChild(cell);
+                }
+            }
+        })();
+
+        function cellSize() {
+            return cells.length ? cells[0].offsetWidth : 15;
+        }
+
+        function onMove(x, y) {
+            const rect = grid.getBoundingClientRect();
+            const cs = cellSize();
+            mouse = {
+                x: Math.max(0, Math.min(N - 1, (x - rect.left) / cs)),
+                y: Math.max(0, Math.min(N - 1, (y - rect.top) / cs)),
+            };
+            lastMouseAt = performance.now();
+        }
+
+        grid.addEventListener('mousemove', e => onMove(e.clientX, e.clientY));
+        grid.addEventListener('mouseleave', () => { mouse = null; });
+        grid.addEventListener('touchmove', e => {
+            onMove(e.touches[0].clientX, e.touches[0].clientY);
+        }, { passive: true });
+        grid.addEventListener('touchend', () => { mouse = null; lastMouseAt = 0; });
+
+        // 鼠标静止 3 秒后，卷积核自动扫描：stride=3，逐格跳动
+        const STRIDE = 3;
+        const STEP_TIME = 0.6; // 每步停留（秒）
+        const SCAN_MIN = 2;    // 5×5 核中心的活动范围，保证窗口不出界
+        const SCAN_STEPS = 8;  // 每行/每列的步数
+
+        function autoScanTarget(now) {
+            const idle = (now - lastMouseAt) / 1000 - 3;
+            if (idle < 0) return null;
+            const step = Math.floor(idle / STEP_TIME);
+            const row = Math.floor(step / SCAN_STEPS) % SCAN_STEPS;
+            const col = step % SCAN_STEPS;
+            return {
+                x: SCAN_MIN + col * STRIDE,
+                y: SCAN_MIN + row * STRIDE,
+            };
+        }
+
+        function tick(now) {
+            const target = mouse || autoScanTarget(now);
+            if (target) {
+                kernel.x += (target.x - kernel.x) * 0.14;
+                kernel.y += (target.y - kernel.y) * 0.14;
+            }
+
+            const cs = cellSize();
+            kernelEl.style.width = kernelEl.style.height = `${5 * cs}px`;
+            kernelEl.style.transform = `translate(${((kernel.x - 2.5) * cs).toFixed(2)}px, ${((kernel.y - 2.5) * cs).toFixed(2)}px)`;
+
+            let overlap = 0;
+            cells.forEach(px => {
+                const dx = (+px.dataset.col) - kernel.x;
+                const dy = (+px.dataset.row) - kernel.y;
+                const d2 = dx * dx + dy * dy;
+                let w = 0;
+                if (target && d2 < CUTOFF * CUTOFF) {
+                    w = kernelWeight(dx, dy);
+                }
+                if (px.classList.contains('ink')) {
+                    px.style.setProperty('--boost', w.toFixed(3));
+                    overlap += w;
+                } else {
+                    if (w > 0.02) px.style.setProperty('--fo', (w * 0.5).toFixed(3));
+                    else px.style.removeProperty('--fo');
+                }
+            });
+
+            // 卷积核压在笔画上越多，窗口边框越亮
+            const glow = Math.min(1, overlap / 6);
+            kernelEl.style.borderColor = `rgba(143, 163, 255, ${(0.35 + glow * 0.65).toFixed(3)})`;
+
+            // 把当前位置的卷积响应写进特征图
+            if (target) {
+                const orow = Math.round(kernel.y);
+                const ocol = Math.round(kernel.x);
+                const response = Math.min(1, overlap / 2.8);
+                fcells[orow * N + ocol].style.setProperty('--fv', response.toFixed(3));
+            }
+
+            requestAnimationFrame(tick);
+        }
+        if (!reducedMotion) requestAnimationFrame(tick);
+    </script>
+</body>
+</html>

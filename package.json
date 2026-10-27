@@ -2,6 +2,7 @@
   "name": "yagent",
   "private": true,
   "type": "module",
+  "packageManager": "pnpm@10.0.0",
   "engines": {
     "node": ">=20"
   },
@@ -9,8 +10,27 @@
     "dev": "pnpm dev:web",
     "dev:web": "pnpm --filter web dev",
     "dev:desktop": "pnpm --filter yagent-desktop dev",
-    "build": "pnpm --filter @yagent/core build && pnpm --filter web build && pnpm --filter yagent-desktop build",
-    "build:web": "pnpm --filter @yagent/core build && pnpm --filter web build",
-    "build:desktop": "pnpm build:web && pnpm --filter yagent-desktop dist"
+    "build": "pnpm --filter @yagent/core build && pnpm --filter @yagent/ui build && pnpm --filter web build && pnpm --filter yagent-desktop build",
+    "build:web": "pnpm --filter @yagent/core build && pnpm --filter @yagent/ui build && pnpm --filter web build",
+    "build:desktop": "pnpm build:web && pnpm --filter yagent-desktop dist",
+    "lint": "eslint .",
+    "typecheck": "pnpm --recursive run typecheck",
+    "test": "vitest"
+  },
+  "devDependencies": {
+    "@eslint/js": "^9.18.0",
+    "@testing-library/jest-dom": "^6.9.1",
+    "@testing-library/react": "^16.2.0",
+    "@types/node": "^24.13.3",
+    "@typescript-eslint/eslint-plugin": "^8.23.0",
+    "@typescript-eslint/parser": "^8.23.0",
+    "@vitejs/plugin-react": "^5.0.0",
+    "@vitest/coverage-v8": "^3.0.0",
+    "eslint": "^9.18.0",
+    "eslint-plugin-react": "^7.37.4",
+    "eslint-plugin-react-hooks": "^5.1.0",
+    "jsdom": "^26.0.0",
+    "typescript": "~6.0.2",
+    "vitest": "^3.0.0"
   }
 }

@@ -1,0 +1,599 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>标志实验 · yagent</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@500&family=Space+Grotesk:wght@400;500&display=swap" rel="stylesheet">
+    <style>
+        :root {
+            --bg: #0d0d0f;
+            --ink: #f2f2f0;
+            --muted: rgba(242, 242, 240, 0.55);
+            --faint: rgba(242, 242, 240, 0.35);
+            --accent: #8fa3ff;
+            --hairline: rgba(255, 255, 255, 0.08);
+        }
+
+        * { box-sizing: border-box; }
+
+        body {
+            margin: 0;
+            background-color: var(--bg);
+            background-image:
+                linear-gradient(to right, rgba(255, 255, 255, 0.03) 1px, transparent 1px),
+                linear-gradient(to bottom, rgba(255, 255, 255, 0.03) 1px, transparent 1px);
+            background-size: 25px 25px;
+            color: var(--ink);
+            font-family: 'Space Grotesk', 'Hiragino Sans', 'PingFang SC', 'Noto Sans JP', 'Microsoft YaHei', system-ui, sans-serif;
+            -webkit-font-smoothing: antialiased;
+            min-height: 100vh;
+            display: flex;
+            flex-direction: column;
+        }
+
+        /* ---------- 顶栏 ---------- */
+        .topbar {
+            position: fixed;
+            top: 0;
+            left: 0;
+            right: 0;
+            z-index: 10;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 22px 32px;
+            background: rgba(13, 13, 15, 0.7);
+            backdrop-filter: blur(12px);
+            -webkit-backdrop-filter: blur(12px);
+        }
+
+        .wordmark {
+            display: inline-flex;
+            align-items: center;
+            gap: 1px;
+            font-family: 'JetBrains Mono', ui-monospace, monospace;
+            font-size: 17px;
+            font-weight: 500;
+            letter-spacing: -0.02em;
+            color: var(--ink);
+            text-decoration: none;
+        }
+
+        .wordmark canvas {
+            display: block;
+        }
+
+        .topnav {
+            display: flex;
+            align-items: center;
+            gap: 22px;
+        }
+
+        .topnav > a {
+            font-size: 13px;
+            color: var(--faint);
+            text-decoration: none;
+            transition: color 0.2s ease;
+        }
+
+        .topnav > a:hover {
+            color: var(--ink);
+        }
+
+        .topnav > a[aria-current="page"] {
+            color: var(--ink);
+        }
+
+        /* ---------- 语言选择 ---------- */
+        .lang {
+            position: relative;
+        }
+
+        .lang-btn {
+            display: inline-flex;
+            align-items: center;
+            gap: 8px;
+            background: transparent;
+            color: var(--faint);
+            border: 1px solid var(--hairline);
+            border-radius: 999px;
+            padding: 6px 12px;
+            font-size: 13px;
+            font-family: inherit;
+            line-height: 1.2;
+            cursor: pointer;
+            transition: color 0.2s ease, border-color 0.2s ease;
+        }
+
+        .lang-btn:hover,
+        .lang.open .lang-btn {
+            color: var(--ink);
+            border-color: rgba(255, 255, 255, 0.25);
+        }
+
+        .lang-caret {
+            opacity: 0.7;
+            transition: transform 0.2s ease;
+        }
+
+        .lang.open .lang-caret {
+            transform: rotate(180deg);
+        }
+
+        .lang-menu {
+            position: absolute;
+            top: calc(100% + 8px);
+            right: 0;
+            z-index: 20;
+            min-width: 132px;
+            margin: 0;
+            padding: 6px;
+            list-style: none;
+            background: rgba(20, 20, 24, 0.96);
+            backdrop-filter: blur(16px);
+            -webkit-backdrop-filter: blur(16px);
+            border: 1px solid rgba(255, 255, 255, 0.12);
+            border-radius: 12px;
+            box-shadow: 0 18px 40px rgba(0, 0, 0, 0.55);
+            opacity: 0;
+            visibility: hidden;
+            transform: translateY(-4px);
+            transition: opacity 0.16s ease, transform 0.16s ease, visibility 0s linear 0.16s;
+        }
+
+        .lang.open .lang-menu {
+            opacity: 1;
+            visibility: visible;
+            transform: none;
+            transition: opacity 0.16s ease, transform 0.16s ease, visibility 0s;
+        }
+
+        .lang-menu li {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: 16px;
+            padding: 8px 10px;
+            border-radius: 8px;
+            font-size: 13px;
+            color: var(--muted);
+            white-space: nowrap;
+            cursor: pointer;
+            transition: background 0.15s ease, color 0.15s ease;
+        }
+
+        .lang-menu li:hover,
+        .lang-menu li:focus-visible {
+            background: rgba(255, 255, 255, 0.07);
+            color: var(--ink);
+            outline: none;
+        }
+
+        .lang-menu li[aria-selected="true"] {
+            color: var(--ink);
+        }
+
+        .lang-menu li[aria-selected="true"]::after {
+            content: '✓';
+            font-size: 11px;
+            color: var(--accent);
+        }
+
+        .lang-btn:focus-visible,
+        a:focus-visible {
+            outline: 2px solid var(--accent);
+            outline-offset: 3px;
+        }
+
+        /* ---------- 页面 ---------- */
+        .page {
+            flex: 1;
+            max-width: 1120px;
+            width: 100%;
+            margin: 0 auto;
+            padding: 132px 32px 100px;
+        }
+
+        h1 {
+            font-size: 28px;
+            font-weight: 500;
+            letter-spacing: -0.02em;
+            margin: 0 0 14px;
+        }
+
+        .intro {
+            font-size: 14px;
+            line-height: 1.9;
+            color: var(--muted);
+            margin: 0 0 48px;
+            max-width: 34em;
+        }
+
+        .grid {
+            display: grid;
+            grid-template-columns: repeat(2, 1fr);
+            gap: 24px;
+        }
+
+        .card {
+            border: 1px solid var(--hairline);
+            border-radius: 10px;
+            overflow: hidden;
+            background: #101013;
+            transition: border-color 0.2s ease, transform 0.3s cubic-bezier(0.22, 1, 0.36, 1);
+        }
+
+        .card:hover {
+            border-color: rgba(255, 255, 255, 0.22);
+            transform: translateY(-2px);
+        }
+
+        .shot {
+            display: block;
+            position: relative;
+            aspect-ratio: 4 / 3;
+            overflow: hidden;
+            background: var(--bg);
+            border-bottom: 1px solid var(--hairline);
+        }
+
+        .shot iframe {
+            display: block;
+            width: 100%;
+            height: 100%;
+            border: 0;
+            pointer-events: none;
+        }
+
+        .meta {
+            display: grid;
+            grid-template-columns: auto 1fr auto;
+            align-items: baseline;
+            gap: 12px;
+            padding: 16px 18px 18px;
+        }
+
+        .num {
+            font-family: 'JetBrains Mono', ui-monospace, monospace;
+            font-size: 11px;
+            color: var(--faint);
+            letter-spacing: 0.04em;
+        }
+
+        .name {
+            font-size: 15px;
+            font-weight: 500;
+            letter-spacing: -0.01em;
+            margin: 0 0 4px;
+        }
+
+        .desc {
+            font-size: 13px;
+            line-height: 1.7;
+            color: var(--muted);
+            margin: 0;
+        }
+
+        .open {
+            font-size: 13px;
+            color: var(--faint);
+            text-decoration: none;
+            white-space: nowrap;
+            transition: color 0.2s ease;
+        }
+
+        .open:hover {
+            color: var(--ink);
+        }
+
+        footer {
+            padding: 32px;
+            text-align: center;
+            font-size: 12px;
+            color: var(--faint);
+            border-top: 1px solid var(--hairline);
+        }
+
+        @media (max-width: 760px) {
+            .grid {
+                grid-template-columns: 1fr;
+            }
+
+            .topbar {
+                padding: 18px 20px;
+            }
+
+            .topnav {
+                gap: 14px;
+            }
+
+            .lang-btn {
+                padding: 6px 10px;
+                gap: 6px;
+            }
+
+            .page {
+                padding-left: 16px;
+                padding-right: 16px;
+            }
+        }
+    </style>
+</head>
+<body>
+    <header class="topbar">
+        <a class="wordmark" href="index.html"><canvas id="logoY" aria-label="x"></canvas><span>agent</span></a>
+        <div class="topnav">
+            <a href="docs.html" data-i18n="navDocs"></a>
+            <a href="gallery.html" data-i18n="navGallery" aria-current="page"></a>
+            <a href="pricing.html" data-i18n="navPricing"></a>
+            <div class="lang" id="lang">
+                <button class="lang-btn" type="button" aria-haspopup="listbox" aria-expanded="false" aria-label="Language">
+                    <span class="lang-label">中文</span>
+                    <svg class="lang-caret" width="10" height="6" viewBox="0 0 10 6" aria-hidden="true"><path d="M1 1l4 4 4-4" fill="none" stroke="currentColor" stroke-width="1.2" stroke-linecap="round" stroke-linejoin="round"/></svg>
+                </button>
+                <ul class="lang-menu" role="listbox" aria-label="Language">
+                    <li role="option" data-lang="zh" aria-selected="true" tabindex="-1">中文</li>
+                    <li role="option" data-lang="ja" aria-selected="false" tabindex="-1">日本語</li>
+                    <li role="option" data-lang="en" aria-selected="false" tabindex="-1">English</li>
+                </ul>
+            </div>
+        </div>
+    </header>
+
+    <main class="page">
+        <h1 data-i18n="title"></h1>
+        <p class="intro" data-i18n="intro"></p>
+
+        <div class="grid">
+            <div class="card">
+                <a class="shot" href="logo-conv.html" tabindex="-1" aria-hidden="true">
+                    <iframe data-src="logo-conv.html" title="conv logo" loading="lazy"></iframe>
+                </a>
+                <div class="meta">
+                    <span class="num">02</span>
+                    <div>
+                        <h2 class="name">conv</h2>
+                        <p class="desc" data-i18n="dConv"></p>
+                    </div>
+                    <a class="open" href="logo-conv.html" data-i18n="open"></a>
+                </div>
+            </div>
+
+            <div class="card">
+                <a class="shot" href="logo-binary.html" tabindex="-1" aria-hidden="true">
+                    <iframe data-src="logo-binary.html" title="binary logo" loading="lazy"></iframe>
+                </a>
+                <div class="meta">
+                    <span class="num">03</span>
+                    <div>
+                        <h2 class="name">binary</h2>
+                        <p class="desc" data-i18n="dBinary"></p>
+                    </div>
+                    <a class="open" href="logo-binary.html" data-i18n="open"></a>
+                </div>
+            </div>
+
+            <div class="card">
+                <a class="shot" href="logo-em.html" tabindex="-1" aria-hidden="true">
+                    <iframe data-src="logo-em.html" title="field logo" loading="lazy"></iframe>
+                </a>
+                <div class="meta">
+                    <span class="num">04</span>
+                    <div>
+                        <h2 class="name">field</h2>
+                        <p class="desc" data-i18n="dField"></p>
+                    </div>
+                    <a class="open" href="logo-em.html" data-i18n="open"></a>
+                </div>
+            </div>
+
+            <div class="card">
+                <a class="shot" href="logo-lego.html" tabindex="-1" aria-hidden="true">
+                    <iframe data-src="logo-lego.html" title="lego logo" loading="lazy"></iframe>
+                </a>
+                <div class="meta">
+                    <span class="num">05</span>
+                    <div>
+                        <h2 class="name">lego</h2>
+                        <p class="desc" data-i18n="dLego"></p>
+                    </div>
+                    <a class="open" href="logo-lego.html" data-i18n="open"></a>
+                </div>
+            </div>
+        </div>
+    </main>
+
+    <footer>
+        <span data-i18n="footer"></span>
+    </footer>
+
+    <script>
+        // 16×16 的 X 位图（与主页图标一致；2 = 右下角半透明）
+        const LOGO_X = [
+            '0000000000000000',
+            '0000000000000000',
+            '0000000000000000',
+            '0000111100011000',
+            '0000001100111000',
+            '0000000101000000',
+            '0000000111000000',
+            '0000000110000000',
+            '0000000110000000',
+            '0000001022000000',
+            '0000001022000000',
+            '0001110022220000',
+            '0001100002200000',
+            '0000000000000000',
+            '0000000000000000',
+            '0000000000000000',
+        ];
+
+        (function drawWordmark() {
+            const cvs = document.getElementById('logoY');
+            const size = 15;
+            const dpr = window.devicePixelRatio || 1;
+            cvs.width = size * dpr;
+            cvs.height = size * dpr;
+            cvs.style.width = size + 'px';
+            cvs.style.height = size + 'px';
+            const ctx = cvs.getContext('2d');
+            ctx.scale(dpr, dpr);
+            ctx.fillStyle = '#f2f2f0';
+            const cell = size / 16;
+            const r = cell * 0.42;
+            LOGO_X.forEach((rowStr, row) => {
+                for (let col = 0; col < 16; col++) {
+                    const ch = rowStr[col];
+                    if (ch !== '1' && ch !== '2') continue;
+                    ctx.globalAlpha = ch === '2' ? 0.3 : 1;
+                    ctx.beginPath();
+                    ctx.arc((col + 0.5) * cell, (row + 0.5) * cell, r, 0, Math.PI * 2);
+                    ctx.fill();
+                }
+            });
+            ctx.globalAlpha = 1;
+        })();
+
+        // 每张卡片进入视口时才加载 iframe，避免四个动画同时常驻运行
+        const frames = document.querySelectorAll('iframe[data-src]');
+        const io = new IntersectionObserver(entries => {
+            entries.forEach(entry => {
+                if (!entry.isIntersecting) return;
+                const frame = entry.target;
+                io.unobserve(frame);
+                frame.src = frame.dataset.src;
+                frame.addEventListener('load', () => {
+                    // 预览里不需要页面自带的 wordmark，卡片本身已经说明了
+                    try {
+                        const style = frame.contentDocument.createElement('style');
+                        style.textContent = '.wordmark { display: none; }';
+                        frame.contentDocument.head.appendChild(style);
+                    } catch (e) {
+                        // 以 file:// 打开时跨源读取会失败，忽略
+                    }
+                });
+            });
+        }, { rootMargin: '200px' });
+        frames.forEach(frame => io.observe(frame));
+
+        const I18N = {
+            zh: {
+                navDocs: '文档',
+                navGallery: '标志',
+                navPricing: '价格',
+                title: '标志实验',
+                intro: '同一个 X 的四种画法。每个预览都是可以交互的原页面，点开即可细看。',
+                dConv: '把 X 当作一张 28×28 的输入图像，用 5×5 卷积核扫出特征图。',
+                dBinary: '铺满全屏的 0/1 比特场，被点亮的比特拼出 X。',
+                dField: '由箭头组成的向量场，方向与长度汇聚成 X。',
+                dLego: '俯视的乐高底板，用螺柱和砖块的颜色拼出 X。',
+                open: '打开',
+                footer: '© 2026 yagent',
+            },
+            ja: {
+                navDocs: 'ドキュメント',
+                navGallery: 'ロゴ',
+                navPricing: '料金',
+                title: 'ロゴの実験',
+                intro: '同じ X を描く 4 つの方法。プレビューはそのまま操作できる実ページです。',
+                dConv: 'X を 28×28 の入力画像として扱い、5×5 のカーネルで特徴マップを走査します。',
+                dBinary: '画面いっぱいの 0/1 ビット場。点灯したビットが X を描きます。',
+                dField: '矢印でできたベクトル場。向きと長さが X に収束します。',
+                dLego: '見下ろしたレゴのプレート。スタッドとブロックの色で X を組みます。',
+                open: '開く',
+                footer: '© 2026 yagent',
+            },
+            en: {
+                navDocs: 'Docs',
+                navGallery: 'Gallery',
+                navPricing: 'Pricing',
+                title: 'Logo experiments',
+                intro: 'Four ways to draw the same X. Every preview is the real, interactive page — open one to look closer.',
+                dConv: 'Treats the X as a 28×28 input image and sweeps a 5×5 kernel across it to build a feature map.',
+                dBinary: 'A full-screen field of 0s and 1s, where the lit bits form the X.',
+                dField: 'A vector field of arrows whose direction and length converge into the X.',
+                dLego: 'A top-down LEGO plate, the X built from studs and brick colors.',
+                open: 'Open',
+                footer: '© 2026 yagent',
+            },
+        };
+
+        const LANG_TAGS = { zh: 'zh-CN', ja: 'ja', en: 'en' };
+
+        function detectLang() {
+            const saved = localStorage.getItem('yagent-lang');
+            if (saved && I18N[saved]) return saved;
+            const nav = (navigator.language || 'en').toLowerCase();
+            if (nav.startsWith('zh')) return 'zh';
+            if (nav.startsWith('ja')) return 'ja';
+            return 'en';
+        }
+
+        const langRoot = document.getElementById('lang');
+        const langBtn = langRoot.querySelector('.lang-btn');
+        const langMenu = langRoot.querySelector('.lang-menu');
+
+        function setLang(lang) {
+            const dict = I18N[lang];
+            document.documentElement.lang = LANG_TAGS[lang];
+            document.querySelectorAll('[data-i18n]').forEach(el => {
+                el.textContent = dict[el.dataset.i18n] || '';
+            });
+            langMenu.querySelectorAll('[data-lang]').forEach(item => {
+                const on = item.dataset.lang === lang;
+                item.setAttribute('aria-selected', on ? 'true' : 'false');
+                if (on) langRoot.querySelector('.lang-label').textContent = item.textContent.trim();
+            });
+            localStorage.setItem('yagent-lang', lang);
+        }
+
+        function openLangMenu() {
+            langRoot.classList.add('open');
+            langBtn.setAttribute('aria-expanded', 'true');
+            const current = langMenu.querySelector('[aria-selected="true"]');
+            (current || langMenu.firstElementChild).focus();
+        }
+
+        function closeLangMenu() {
+            langRoot.classList.remove('open');
+            langBtn.setAttribute('aria-expanded', 'false');
+        }
+
+        langBtn.addEventListener('click', () => {
+            if (langRoot.classList.contains('open')) closeLangMenu();
+            else openLangMenu();
+        });
+
+        langMenu.addEventListener('click', e => {
+            const item = e.target.closest('[data-lang]');
+            if (!item) return;
+            setLang(item.dataset.lang);
+            closeLangMenu();
+            langBtn.focus();
+        });
+
+        document.addEventListener('click', e => {
+            if (!langRoot.contains(e.target)) closeLangMenu();
+        });
+
+        document.addEventListener('keydown', e => {
+            if (e.key === 'Escape') {
+                closeLangMenu();
+                return;
+            }
+            if (!langRoot.classList.contains('open')) return;
+            if (e.key !== 'ArrowDown' && e.key !== 'ArrowUp') return;
+            e.preventDefault();
+            const items = [...langMenu.querySelectorAll('[data-lang]')];
+            const at = items.indexOf(document.activeElement);
+            const step = e.key === 'ArrowDown' ? 1 : -1;
+            items[(at + step + items.length) % items.length].focus();
+        });
+
+        setLang(detectLang());
+    </script>
+</body>
+</html>

@@ -36,8 +36,21 @@ export function DeepSeekIcon({ className = 'brand-ic' }: { className?: string })
   )
 }
 
+/** 自定义端点：中性几何标，避免误用某一家品牌 */
+export function CustomIcon({ className = 'brand-ic' }: { className?: string }) {
+  return (
+    <svg className={className} viewBox="0 0 24 24" aria-label="Custom">
+      <path
+        fill="currentColor"
+        d="M12 2.5l8.66 5v9L12 21.5 3.34 16.5v-9L12 2.5zm0 2.3L5.34 8.2v7.6L12 19.2l6.66-3.4V8.2L12 4.8zm0 3.45a3.75 3.75 0 110 7.5 3.75 3.75 0 010-7.5zm0 1.8a1.95 1.95 0 100 3.9 1.95 1.95 0 000-3.9z"
+      />
+    </svg>
+  )
+}
+
 export function BrandIcon({ provider, className }: { provider: string; className?: string }) {
   if (provider === 'openai') return <OpenAIIcon className={className} />
   if (provider === 'deepseek') return <DeepSeekIcon className={className} />
+  if (provider === 'custom') return <CustomIcon className={className} />
   return <ClaudeIcon className={className} />
 }

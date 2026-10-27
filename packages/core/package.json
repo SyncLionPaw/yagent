@@ -9,6 +9,10 @@
     ".": {
       "types": "./dist/index.d.ts",
       "import": "./dist/index.js"
+    },
+    "./node": {
+      "types": "./dist/node.d.ts",
+      "import": "./dist/node.js"
     }
   },
   "files": [
@@ -16,9 +20,13 @@
   ],
   "scripts": {
     "build": "tsc -p tsconfig.json",
-    "smoke": "pnpm build && node scripts/smoke.mjs"
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "smoke": "pnpm build && node scripts/smoke.mjs",
+    "smoke:settings": "pnpm build && node scripts/smoke-settings.mjs",
+    "smoke:conversations": "pnpm build && node scripts/smoke-conversations.mjs"
   },
   "devDependencies": {
+    "@types/node": "^24.13.3",
     "typescript": "~6.0.2"
   }
 }

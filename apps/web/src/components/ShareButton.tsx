@@ -29,7 +29,7 @@ export function ShareButton({ link, open, onToggle }: ShareButtonProps) {
   return (
     <div className="model-wrap">
       <button
-        className="theme-toggle"
+        className={`icon-btn${open ? ' active' : ''}`}
         title="分享对话"
         onClick={(e) => {
           e.stopPropagation()

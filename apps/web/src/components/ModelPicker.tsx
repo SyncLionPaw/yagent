@@ -16,7 +16,7 @@ export function ModelPicker({ models, currentId, open, onToggle, onSelect }: Mod
   return (
     <div className="model-wrap">
       <button
-        className="theme-toggle"
+        className={`icon-btn${open ? ' active' : ''}`}
         title="切换模型"
         onClick={(e) => {
           e.stopPropagation()
@@ -39,7 +39,11 @@ export function ModelPicker({ models, currentId, open, onToggle, onSelect }: Mod
             <span>
               <span className="m-title">{m.name}</span>
               <span className="m-desc">
-                {m.provider} · {Math.round(m.context / 1000)}k 上下文
+                {m.provider} ·{' '}
+                {m.context >= 1_000_000 && m.context % 1_000_000 === 0
+                  ? `${m.context / 1_000_000}M`
+                  : `${Math.round(m.context / 1000)}k`}{' '}
+                上下文
               </span>
             </span>
             <span className="m-check">

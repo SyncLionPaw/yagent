@@ -1,0 +1,357 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>yagent — lego logo</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@500&display=swap" rel="stylesheet">
+    <style>
+        :root {
+            --bg: #17171b;
+            --ink: #f2f2f0;
+            --cell: 32px;
+        }
+
+        * { box-sizing: border-box; }
+
+        body {
+            margin: 0;
+            min-height: 100vh;
+            background: var(--bg);
+            overflow: hidden;
+            font-family: 'JetBrains Mono', ui-monospace, monospace;
+        }
+
+        .wordmark {
+            position: fixed;
+            top: 22px;
+            left: 32px;
+            display: inline-flex;
+            align-items: center;
+            gap: 1px;
+            font-size: 17px;
+            font-weight: 500;
+            letter-spacing: -0.02em;
+            color: var(--ink);
+            text-decoration: none;
+            z-index: 10;
+        }
+
+        .wordmark canvas {
+            display: block;
+        }
+
+        /* 俯视的乐高底板：铺满全屏的螺柱阵列，带凹槽格缝 */
+        .plate {
+            position: fixed;
+            inset: 0;
+            display: grid;
+            justify-content: center;
+            align-content: center;
+            overflow: hidden;
+            background-image:
+                linear-gradient(to right, rgba(0, 0, 0, 0.5) 1px, transparent 1px),
+                linear-gradient(to bottom, rgba(0, 0, 0, 0.5) 1px, transparent 1px);
+            background-size: var(--cell) var(--cell);
+        }
+
+        .cell {
+            width: var(--cell);
+            height: var(--cell);
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            user-select: none;
+            position: relative;
+        }
+
+        /* 螺柱：平顶圆柱——硬边的平顶面 + 侧壁暗环 + 顶部受光 */
+        .stud {
+            width: calc(var(--cell) * 0.6);
+            height: calc(var(--cell) * 0.6);
+            border-radius: 50%;
+            background:
+                linear-gradient(rgba(255, 255, 255, 0.09), rgba(255, 255, 255, 0) 45%),
+                radial-gradient(circle, #2c2c33 60%, #17171c 64%);
+            box-shadow: 0 2px 3px rgba(0, 0, 0, 0.6);
+            transform: translateY(calc(var(--b, 0) * -5px)) scale(calc(1 + var(--b, 0) * 0.18));
+            transition: transform 0.22s cubic-bezier(0.34, 1.56, 0.64, 1), filter 0.22s ease, box-shadow 0.22s ease;
+            filter: brightness(calc(1 + var(--b, 0) * 0.4));
+            position: relative;
+            z-index: 1;
+        }
+
+        /* hover / 冒起时投影跟着变大变淡 */
+        .stud::after {
+            content: '';
+            position: absolute;
+            bottom: -4px;
+            left: 10%;
+            right: 10%;
+            height: 4px;
+            border-radius: 50%;
+            background: rgba(0, 0, 0, calc(0.35 + var(--b, 0) * 0.25));
+            transform: scaleX(calc(1 + var(--b, 0) * 0.3));
+            z-index: -1;
+        }
+
+        /* X 的笔画：乐高积木块（1×1 / 1×2 / 2×2），底板托螺柱，整块一起抬升 */
+        .brick-plate {
+            position: absolute;
+            top: 3px;
+            left: 3px;
+            bottom: 3px;
+            border-radius: 3px;
+            box-shadow:
+                0 3px 5px rgba(0, 0, 0, 0.55),
+                inset 0 1px 0 rgba(255, 255, 255, 0.35);
+            z-index: 0;
+            transform: translateY(calc(var(--b, 0) * -5px)) scale(calc(1 + var(--b, 0) * 0.18));
+            transition: transform 0.22s cubic-bezier(0.34, 1.56, 0.64, 1);
+        }
+
+        .cell.brick .stud {
+            background:
+                linear-gradient(rgba(255, 255, 255, 0.6), rgba(255, 255, 255, 0) 45%),
+                radial-gradient(circle, #f7f7f9 58%, #b8b8c2 62%);
+            box-shadow: 0 2px 3px rgba(0, 0, 0, 0.4);
+        }
+
+        /* 右下角笔画：半透明淡出 */
+        .cell.ghost .stud {
+            opacity: 0.3;
+        }
+
+        @media (max-width: 600px) {
+            :root {
+                --cell: 26px;
+            }
+        }
+    </style>
+</head>
+<body>
+    <a class="wordmark" href="index.html"><canvas id="logoY" aria-label="x"></canvas><span>agent</span></a>
+    <div class="plate" id="plate"></div>
+
+    <script>
+        // 16×16 的 X 位图（与主页图标一致；2 = 右下角半透明）
+        // 16×16 的 X 位图（与主页图标一致；2 = 右下角半透明）
+        const LOGO_X = [
+            '0000000000000000',
+            '0000000000000000',
+            '0000000000000000',
+            '0000111100011000',
+            '0000001100111000',
+            '0000000101000000',
+            '0000000111000000',
+            '0000000110000000',
+            '0000000110000000',
+            '0000001022000000',
+            '0000001022000000',
+            '0001110022220000',
+            '0001100002200000',
+            '0000000000000000',
+            '0000000000000000',
+            '0000000000000000',
+        ];
+
+        // wordmark 的迷你粒子 X
+        (function drawWordmark() {
+            const cvs = document.getElementById('logoY');
+            const size = 15;
+            const dpr = window.devicePixelRatio || 1;
+            cvs.width = size * dpr;
+            cvs.height = size * dpr;
+            cvs.style.width = size + 'px';
+            cvs.style.height = size + 'px';
+            const ctx = cvs.getContext('2d');
+            ctx.scale(dpr, dpr);
+            ctx.fillStyle = '#f2f2f0';
+            const cell = size / 16;
+            const r = cell * 0.42;
+            LOGO_X.forEach((rowStr, row) => {
+                for (let col = 0; col < 16; col++) {
+                    const ch = rowStr[col];
+                    if (ch !== '1' && ch !== '2') continue;
+                    ctx.globalAlpha = ch === '2' ? 0.3 : 1;
+                    ctx.beginPath();
+                    ctx.arc((col + 0.5) * cell, (row + 0.5) * cell, r, 0, Math.PI * 2);
+                    ctx.fill();
+                }
+            });
+            ctx.globalAlpha = 1;
+        })();
+
+        const plateEl = document.getElementById('plate');
+        const reducedMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+        const RADIUS = 70; // hover 半径（px）
+        let cells = [];
+        let cellEls = {};
+        let bricks = [];
+        let mouse = null;
+
+        function logoChar(row, col, offX, offY) {
+            if (row < offY || row >= offY + 16 || col < offX || col >= offX + 16) return '0';
+            return LOGO_X[row - offY][col - offX];
+        }
+
+        function build() {
+            const cs = parseFloat(getComputedStyle(document.documentElement).getPropertyValue('--cell'));
+            const cols = Math.ceil(window.innerWidth / cs);
+            const rows = Math.ceil(window.innerHeight / cs);
+            const offX = Math.floor((cols - 16) / 2);
+            const offY = Math.floor((rows - 16) / 2);
+
+            plateEl.style.gridTemplateColumns = `repeat(${cols}, var(--cell))`;
+            plateEl.style.gridTemplateRows = `repeat(${rows}, var(--cell))`;
+            plateEl.innerHTML = '';
+            cells = [];
+            cellEls = {};
+            bricks = [];
+
+            // 乐高经典配色（顶面 / 侧壁暗色）
+            const BRICK_COLORS = [
+                { base: '#ececf0', dark: '#b4b4be' },  // 白
+                { base: '#c92a25', dark: '#8f1b17' },  // 红
+                { base: '#2a6fc2', dark: '#1c4f8c' },  // 蓝
+                { base: '#f0b90b', dark: '#b8890a' },  // 黄
+            ];
+
+            // 把 X 贪心拼成 2×2 → 1×2 → 1×1 的砖块，每块随机一个颜色
+            const plateAt = {};   // key → { w, h, color }
+            const cellColor = {}; // key → color（该格被哪块砖覆盖）
+            const covered = new Set();
+            const key = (r, c) => r * 10000 + c;
+            const free = (r, c) => logoChar(r, c, offX, offY) === '1' && !covered.has(key(r, c));
+
+            for (let row = 0; row < rows; row++) {
+                for (let col = 0; col < cols; col++) {
+                    if (!free(row, col)) continue;
+                    const color = BRICK_COLORS[Math.floor(Math.random() * BRICK_COLORS.length)];
+                    let w = 1, h = 1;
+                    if (free(row, col + 1) && free(row + 1, col) && free(row + 1, col + 1)) {
+                        w = 2; h = 2;
+                    } else if (free(row, col + 1)) {
+                        w = 2;
+                    }
+                    plateAt[key(row, col)] = { w, h, color };
+                    for (let dr = 0; dr < h; dr++) {
+                        for (let dc = 0; dc < w; dc++) {
+                            covered.add(key(row + dr, col + dc));
+                            cellColor[key(row + dr, col + dc)] = color;
+                        }
+                    }
+                }
+            }
+
+            for (let row = 0; row < rows; row++) {
+                for (let col = 0; col < cols; col++) {
+                    const ch = logoChar(row, col, offX, offY);
+                    const inX = ch === '1' || ch === '2';
+
+                    const cell = document.createElement('div');
+                    cell.className = 'cell' + (inX ? ' brick' : '') + (ch === '2' ? ' ghost' : '');
+
+                    const brick = plateAt[key(row, col)];
+                    if (brick) {
+                        const plate = document.createElement('div');
+                        plate.className = 'brick-plate';
+                        plate.style.width = `calc(${brick.w * 100}% - 6px)`;
+                        plate.style.height = `calc(${brick.h * 100}% - 6px)`;
+                        plate.style.background = `linear-gradient(rgba(255,255,255,0.25), rgba(255,255,255,0) 60%), ${brick.color.base}`;
+                        cell.appendChild(plate);
+                    }
+
+                    const stud = document.createElement('div');
+                    stud.className = 'stud';
+                    const color = cellColor[key(row, col)];
+                    if (color) {
+                        stud.style.background =
+                            `linear-gradient(rgba(255,255,255,0.45), rgba(255,255,255,0) 45%),` +
+                            `radial-gradient(circle, ${color.base} 58%, ${color.dark} 62%)`;
+                    }
+                    cell.appendChild(stud);
+                    cell.dataset.row = row;
+                    cell.dataset.col = col;
+                    cell._b = 0;
+                    cells.push(cell);
+                    cellEls[key(row, col)] = cell;
+                    plateEl.appendChild(cell);
+                }
+            }
+
+            // 积木块：整块一起抬升（底板 + 上面的螺柱）
+            bricks = [];
+            Object.entries(plateAt).forEach(([k, brick]) => {
+                const r = Math.floor(k / 10000), c = k % 10000;
+                const memberCells = [];
+                for (let dr = 0; dr < brick.h; dr++) {
+                    for (let dc = 0; dc < brick.w; dc++) {
+                        memberCells.push(cellEls[key(r + dr, c + dc)]);
+                    }
+                }
+                brick.row = r;
+                brick.col = c;
+                brick.memberCells = memberCells;
+                brick._b = 0;
+                memberCells.forEach(c => { c._brick = brick; });
+                bricks.push(brick);
+            });
+        }
+        build();
+        window.addEventListener('resize', build);
+
+        window.addEventListener('mousemove', e => {
+            mouse = { x: e.clientX, y: e.clientY };
+        });
+        window.addEventListener('mouseleave', () => { mouse = null; });
+        window.addEventListener('touchmove', e => {
+            mouse = { x: e.touches[0].clientX, y: e.touches[0].clientY };
+        }, { passive: true });
+        window.addEventListener('touchend', () => { mouse = null; });
+
+        function tick() {
+            const rect = plateEl.getBoundingClientRect();
+            const cs = cells.length ? cells[0].offsetWidth : 32;
+
+            // 积木块：以砖块中心计算 hover 强度，整块一起抬升
+            bricks.forEach(brick => {
+                const cx = rect.left + (brick.col + brick.w / 2) * cs;
+                const cy = rect.top + (brick.row + brick.h / 2) * cs;
+                let boost = 0;
+                if (mouse) {
+                    const d = Math.hypot(cx - mouse.x, cy - mouse.y);
+                    if (d < RADIUS + brick.w * cs / 2) boost = Math.pow(1 - Math.max(0, d - brick.w * cs / 2) / RADIUS, 1.6);
+                }
+                brick._b += (boost - brick._b) * 0.25;
+                const b = brick._b;
+                brick.memberCells.forEach(cell => {
+                    if (b > 0.005) cell.style.setProperty('--b', b.toFixed(3));
+                    else cell.style.removeProperty('--b');
+                });
+            });
+
+            // 底板上的散螺柱：逐格计算
+            cells.forEach(cell => {
+                if (cell._brick) return;
+                const cx = rect.left + (+cell.dataset.col) * cs + cs / 2;
+                const cy = rect.top + (+cell.dataset.row) * cs + cs / 2;
+
+                let boost = 0;
+                if (mouse) {
+                    const d = Math.hypot(cx - mouse.x, cy - mouse.y);
+                    if (d < RADIUS) boost = Math.pow(1 - d / RADIUS, 1.6);
+                }
+                cell._b += (boost - cell._b) * 0.25;
+                const b = cell._b;
+                if (b > 0.005) cell.style.setProperty('--b', b.toFixed(3));
+                else cell.style.removeProperty('--b');
+            });
+            requestAnimationFrame(tick);
+        }
+        if (!reducedMotion) requestAnimationFrame(tick);
+    </script>
+</body>
+</html>

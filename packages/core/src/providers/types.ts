@@ -6,6 +6,7 @@ export type ChatRole = 'user' | 'assistant'
 
 export type ContentBlock =
   | { type: 'text'; text: string }
+  | { type: 'image'; mime: string; data: string } // data = raw base64，无 data: 前缀
   | { type: 'thinking'; text: string; signature?: string }
   | { type: 'tool_use'; id: string; name: string; input: Record<string, unknown> }
   | { type: 'tool_result'; toolUseId: string; content: string; isError?: boolean }
@@ -25,7 +26,17 @@ export type StreamEvent =
   | { type: 'text_delta'; text: string }
   | { type: 'thinking_delta'; text: string }
   | { type: 'tool_use'; id: string; name: string; input: Record<string, unknown> }
-  | { type: 'done'; usage?: { input: number; output: number } }
+  | {
+      type: 'done'
+      usage?: {
+        input: number
+        output: number
+        /** prompt cache 读命中（Anthropic cache_read / OpenAI cached_tokens） */
+        cacheRead?: number
+        /** prompt cache 写入（Anthropic cache_creation） */
+        cacheWrite?: number
+      }
+    }
   | { type: 'error'; error: Error }
 
 export interface ChatRequest {

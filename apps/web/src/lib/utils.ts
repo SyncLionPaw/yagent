@@ -15,45 +15,19 @@ export function pathToActive(
   return path
 }
 
-export function childrenMap(nodes: Record<string, ConversationNode>): Map<string, string[]> {
-  // 保持插入序：第一个 child 是主干延续（分叉时 = 分支A）
-  const map = new Map<string, string[]>()
-  for (const n of Object.values(nodes)) {
-    if (!n.parentId) continue
-    const arr = map.get(n.parentId) ?? []
-    arr.push(n.id)
-    map.set(n.parentId, arr)
-  }
-  return map
-}
+/* ---------- 文件类型（附件气泡 / 徽章着色共用） ---------- */
 
-/** 主干 = 从根开始始终走第一个 child 的链 */
-export function trunkIds(nodes: Record<string, ConversationNode>): Set<string> {
-  const kids = childrenMap(nodes)
-  const set = new Set<string>()
-  let cur = Object.values(nodes).find((n) => n.parentId === null)
-  while (cur) {
-    set.add(cur.id)
-    const next = kids.get(cur.id)?.[0]
-    cur = next ? nodes[next] : undefined
-  }
-  return set
-}
+export type FileKind = 'image' | 'code' | 'doc' | 'sheet' | 'archive' | 'media' | 'file'
 
-export function hasChildren(nodes: Record<string, ConversationNode>, id: string): boolean {
-  return Object.values(nodes).some((n) => n.parentId === id)
-}
-
-/** 节点标签：取首个 text 块，去掉行内标记后截断 */
-export function nodeLabel(node: ConversationNode, max = 14): string {
-  const text = node.blocks.find((b) => b.type === 'text')
-  if (!text || text.type !== 'text') return node.role === 'user' ? '消息' : '回复'
-  const clean = text.text
-    .replace(/`([^`]*)`/g, '$1')
-    .replace(/\[\d+\]/g, '')
-    .replace(/\s+/g, ' ')
-    .trim()
-  return clean.length > max ? clean.slice(0, max) + '…' : clean
+export function fileKindOf(name: string): FileKind {
+  if (/\.(png|jpe?g|gif|webp|svg|bmp|ico)$/i.test(name)) return 'image'
+  if (/\.(ts|tsx|js|jsx|css|html|sql|py|rs|go|java|c|cpp|h|json|ya?ml|sh|toml)$/i.test(name)) return 'code'
+  if (/\.(txt|md|pdf|docx?|rtf)$/i.test(name)) return 'doc'
+  if (/\.(csv|tsv|xlsx?|numbers)$/i.test(name)) return 'sheet'
+  if (/\.(zip|tar|gz|rar|7z)$/i.test(name)) return 'archive'
+  if (/\.(mp3|wav|ogg|m4a|flac)$/i.test(name)) return 'media'
+  if (/\.(mp4|mov|webm|mkv|avi)$/i.test(name)) return 'media'
+  return 'file'
 }
 
 /* ---------- 时间 / 大小格式化 ---------- */

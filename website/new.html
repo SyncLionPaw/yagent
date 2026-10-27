@@ -1,0 +1,432 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>点阵 Logo 设计</title>
+    <style>
+        body {
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            min-height: 100vh;
+            margin: 0;
+            background-color: #0d0d0f;
+            /* 方格线铺满整个背景，位置由 JS 与中央网格对齐 */
+            background-image:
+                linear-gradient(to right, rgba(255, 255, 255, 0.03) 1px, transparent 1px),
+                linear-gradient(to bottom, rgba(255, 255, 255, 0.03) 1px, transparent 1px);
+            background-size: 25px 25px;
+            font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
+        }
+
+        .container {
+            text-align: center;
+            padding: 40px;
+        }
+
+        .main-grid {
+            display: inline-grid;
+            grid-template-columns: repeat(4, auto);
+            grid-template-rows: repeat(4, auto);
+            gap: 0;
+            background-image:
+                linear-gradient(to right, rgba(255, 255, 255, 0.05) 1px, transparent 1px),
+                linear-gradient(to bottom, rgba(255, 255, 255, 0.05) 1px, transparent 1px);
+            background-size: 25px 25px;
+        }
+
+        .big-cell {
+            display: grid;
+            grid-template-columns: repeat(4, 25px);
+            grid-template-rows: repeat(4, 25px);
+            gap: 0;
+        }
+
+        .small-cell {
+            width: 25px;
+            height: 25px;
+            background: transparent;
+            cursor: pointer;
+            box-sizing: border-box;
+            position: relative;
+            transition: transform 0.4s cubic-bezier(0.22, 1, 0.36, 1);
+        }
+
+        /* 选中：内嵌圆形，与方块边界留出 1px */
+        .small-cell::after {
+            content: '';
+            position: absolute;
+            inset: 2px; /* 1px 边框 + 1px 留白 */
+            border-radius: 50%;
+            background: var(--dot-color, #ffffff);
+            box-shadow: 0 0 6px var(--dot-color, #ffffff);
+            opacity: var(--fo, 0);
+            transform: scale(0.4);
+            transition: opacity 0.18s ease, transform 0.18s ease;
+        }
+
+        .small-cell.selected::after {
+            opacity: 1;
+            transform: scale(1);
+        }
+
+        /* 右下角笔画：半透明淡出 */
+        .small-cell.selected.ghost::after {
+            opacity: 0.10;
+        }
+
+        .small-cell:hover {
+            background: rgba(255, 255, 255, 0.03);
+        }
+
+        .theme-panel {
+            margin-top: 28px;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            gap: 14px;
+            color: rgba(255, 255, 255, 0.65);
+            font-size: 13px;
+            letter-spacing: 0.04em;
+            flex-wrap: wrap;
+        }
+
+        .theme-panel label {
+            display: inline-flex;
+            align-items: center;
+            gap: 6px;
+            cursor: pointer;
+        }
+
+        .theme-panel input[type="radio"] {
+            accent-color: #ffffff;
+            width: 14px;
+            height: 14px;
+            margin: 0;
+            cursor: pointer;
+        }
+
+        .theme-panel input[type="color"] {
+            width: 26px;
+            height: 26px;
+            padding: 0;
+            border: 1px solid rgba(255, 255, 255, 0.25);
+            border-radius: 50%;
+            background: transparent;
+            cursor: pointer;
+            appearance: none;
+            -webkit-appearance: none;
+        }
+
+        .theme-panel input[type="color"]::-webkit-color-swatch-wrapper {
+            padding: 2px;
+        }
+
+        .theme-panel input[type="color"]::-webkit-color-swatch {
+            border: none;
+            border-radius: 50%;
+        }
+
+        #gradientControls {
+            display: none;
+            align-items: center;
+            gap: 8px;
+        }
+
+        #gradientControls.active {
+            display: inline-flex;
+        }
+
+        .arrow {
+            color: rgba(255, 255, 255, 0.4);
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="main-grid" id="mainGrid"></div>
+        <div class="theme-panel">
+            <label><input type="radio" name="colorMode" value="solid"> 单色</label>
+            <input type="color" id="solidColor" value="#ffffff">
+            <label><input type="radio" name="colorMode" value="gradient"> 渐变</label>
+            <span id="gradientControls">
+                <input type="color" id="gradFrom" value="#ff8a5c">
+                <span class="arrow">→</span>
+                <input type="color" id="gradTo" value="#5c8aff">
+            </span>
+        </div>
+    </div>
+
+    <script>
+        const mainGrid = document.getElementById('mainGrid');
+        const selected = new Set();
+        let serverOnline = false;
+        const allCells = [];
+        const CELL = 25;
+
+        // ---------- 动效：常驻细微扰动 + 光标力场 ----------
+        const FORCE_RADIUS = 90;  // 力场半径（px）
+        const MAX_SHIFT = 9;      // 力场最大偏移（px）
+        const DRIFT = 1.3;        // 常驻扰动幅度（px）
+        let mouse = null;
+
+        mainGrid.addEventListener('mousemove', e => {
+            mouse = { x: e.clientX, y: e.clientY };
+        });
+        mainGrid.addEventListener('mouseleave', () => {
+            mouse = null;
+        });
+
+        function tick(t) {
+            const time = t / 1000;
+            const rect = mainGrid.getBoundingClientRect();
+            allCells.forEach(cell => {
+                // 每个粒子按自己的相位和频率轻微漂移
+                let ox = Math.sin(time * cell._w1 + cell._p1) * DRIFT;
+                let oy = Math.cos(time * cell._w2 + cell._p2) * DRIFT;
+                let faint = 0;
+                if (mouse) {
+                    const cx = rect.left + (+cell.dataset.col) * CELL + CELL / 2;
+                    const cy = rect.top + (+cell.dataset.row) * CELL + CELL / 2;
+                    const dx = cx - mouse.x, dy = cy - mouse.y;
+                    const d = Math.hypot(dx, dy);
+                    if (d < FORCE_RADIUS && d > 0.01) {
+                        const strength = Math.pow(1 - d / FORCE_RADIUS, 2);
+                        ox += (dx / d) * strength * MAX_SHIFT;
+                        oy += (dy / d) * strength * MAX_SHIFT;
+                        faint = 0.25 * (1 - d / FORCE_RADIUS);
+                    }
+                }
+                cell.style.transform = `translate(${ox.toFixed(2)}px, ${oy.toFixed(2)}px)`;
+                if (!cell.classList.contains('selected')) {
+                    if (faint > 0.01) cell.style.setProperty('--fo', faint.toFixed(3));
+                    else cell.style.removeProperty('--fo');
+                }
+            });
+            requestAnimationFrame(tick);
+        }
+        requestAnimationFrame(tick);
+
+        // 让整页背景的方格线与中央网格对齐
+        function alignBackgroundGrid() {
+            const rect = mainGrid.getBoundingClientRect();
+            document.body.style.backgroundPosition = `${rect.left}px ${rect.top}px`;
+        }
+        window.addEventListener('resize', alignBackgroundGrid);
+
+        // 创建 4×4 的大格子，每个大格子内含 4×4 的小格子
+        for (let bigRow = 0; bigRow < 4; bigRow++) {
+            for (let bigCol = 0; bigCol < 4; bigCol++) {
+                const bigCell = document.createElement('div');
+                bigCell.className = 'big-cell';
+
+                for (let smallRow = 0; smallRow < 4; smallRow++) {
+                    for (let smallCol = 0; smallCol < 4; smallCol++) {
+                        const cell = document.createElement('div');
+                        cell.className = 'small-cell';
+                        const cellId = `${bigRow}-${bigCol}-${smallRow}-${smallCol}`;
+                        cell.dataset.id = cellId;
+                        cell.dataset.row = bigRow * 4 + smallRow;
+                        cell.dataset.col = bigCol * 4 + smallCol;
+
+                        cell.addEventListener('click', function() {
+                            if (selected.has(cellId)) {
+                                selected.delete(cellId);
+                                this.classList.remove('selected');
+                            } else {
+                                selected.add(cellId);
+                                this.classList.add('selected');
+                                this.classList.toggle('ghost', ghostIds.has(cellId));
+                                this.style.removeProperty('--fo');
+                                applyDotColor(this);
+                            }
+                            saveSelection();
+                        });
+
+                        allCells.push(cell);
+                        bigCell.appendChild(cell);
+                    }
+                }
+
+                mainGrid.appendChild(bigCell);
+            }
+        }
+
+        // 为每个粒子生成随机相位和频率，用于常驻扰动
+        allCells.forEach(cell => {
+            cell._p1 = Math.random() * Math.PI * 2;
+            cell._p2 = Math.random() * Math.PI * 2;
+            cell._w1 = 0.4 + Math.random() * 0.6;
+            cell._w2 = 0.4 + Math.random() * 0.6;
+        });
+
+        // 内置预设（无法连接服务器时的回退图案）
+        // 数学斜体 𝑥（STIX Two Math 字形采样，保留衬线与曲线细节）
+        const presetPattern = [
+            // 第 3 行
+            '0-1-3-0', '0-1-3-1', '0-1-3-2', '0-1-3-3', '0-2-3-3', '0-3-3-0',
+            // 第 4 行
+            '1-1-0-2', '1-1-0-3', '1-2-0-2', '1-2-0-3', '1-3-0-0',
+            // 第 5 行
+            '1-1-1-3', '1-2-1-1',
+            // 第 6 行
+            '1-1-2-3', '1-2-2-0', '1-2-2-1',
+            // 第 7 行（交叉处）
+            '1-1-3-3', '1-2-3-0',
+            // 第 8 行（交叉处）
+            '2-1-0-3', '2-2-0-0',
+            // 第 9 行
+            '2-1-1-2', '2-2-1-0', '2-2-1-1',
+            // 第 10 行
+            '2-1-2-2', '2-2-2-0', '2-2-2-1',
+            // 第 11 行
+            '2-0-3-3', '2-1-3-0', '2-1-3-1', '2-2-3-0', '2-2-3-1', '2-2-3-2', '2-2-3-3',
+            // 第 12 行
+            '3-0-0-3', '3-1-0-0', '3-2-0-1', '3-2-0-2',
+        ];
+
+        // 右下角笔画设为半透明（可在这里增删坐标）
+        const ghostIds = new Set([
+            '2-2-1-0', '2-2-1-1',
+            '2-2-2-0', '2-2-2-1',
+            '2-2-3-0', '2-2-3-1', '2-2-3-2', '2-2-3-3',
+            '3-2-0-1', '3-2-0-2',
+        ]);
+
+        // ---------- 颜色主题（服务器 theme.json 优先，localStorage 兜底） ----------
+        const theme = Object.assign(
+            { mode: 'solid', solid: '#ffffff', from: '#ff8a5c', to: '#5c8aff' },
+            JSON.parse(localStorage.getItem('logo-theme') || '{}')
+        );
+
+        async function loadTheme() {
+            try {
+                const resp = await fetch('/api/theme');
+                if (resp.ok) {
+                    const data = await resp.json();
+                    if (Object.keys(data).length === 0) {
+                        saveTheme(); // 服务器还没有主题，把本机设置推上去
+                    } else {
+                        Object.assign(theme, data);
+                    }
+                }
+            } catch (e) {
+                // 直接以 file:// 打开时走这里
+            }
+            syncThemeUI();
+            refreshColors();
+        }
+
+        const solidColorInput = document.getElementById('solidColor');
+        const gradFromInput = document.getElementById('gradFrom');
+        const gradToInput = document.getElementById('gradTo');
+        const gradientControls = document.getElementById('gradientControls');
+
+        function hexToRgb(hex) {
+            const n = parseInt(hex.slice(1), 16);
+            return [n >> 16 & 255, n >> 8 & 255, n & 255];
+        }
+
+        function lerpColor(a, b, t) {
+            const c1 = hexToRgb(a), c2 = hexToRgb(b);
+            const mix = c1.map((v, i) => Math.round(v + (c2[i] - v) * t));
+            return `rgb(${mix[0]}, ${mix[1]}, ${mix[2]})`;
+        }
+
+        // 渐变固定为从中心向外
+        function dotColor(row, col) {
+            if (theme.mode === 'solid') return theme.solid;
+            const t = Math.hypot(row - 7.5, col - 7.5) / Math.hypot(7.5, 7.5);
+            return lerpColor(theme.from, theme.to, t);
+        }
+
+        function applyDotColor(cell) {
+            cell.style.setProperty('--dot-color', dotColor(+cell.dataset.row, +cell.dataset.col));
+        }
+
+        function refreshColors() {
+            document.querySelectorAll('.small-cell.selected').forEach(applyDotColor);
+        }
+
+        function syncThemeUI() {
+            document.querySelector(`input[name="colorMode"][value="${theme.mode}"]`).checked = true;
+            solidColorInput.value = theme.solid;
+            gradFromInput.value = theme.from;
+            gradToInput.value = theme.to;
+            gradientControls.classList.toggle('active', theme.mode === 'gradient');
+        }
+
+        function saveTheme() {
+            localStorage.setItem('logo-theme', JSON.stringify(theme));
+            fetch('/api/theme', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(theme),
+            }).catch(() => {});
+        }
+
+        document.querySelectorAll('input[name="colorMode"]').forEach(radio => {
+            radio.addEventListener('change', () => {
+                theme.mode = radio.value;
+                syncThemeUI();
+                saveTheme();
+                refreshColors();
+            });
+        });
+        solidColorInput.addEventListener('input', () => { theme.solid = solidColorInput.value; saveTheme(); refreshColors(); });
+        gradFromInput.addEventListener('input', () => { theme.from = gradFromInput.value; saveTheme(); refreshColors(); });
+        gradToInput.addEventListener('input', () => { theme.to = gradToInput.value; saveTheme(); refreshColors(); });
+
+        syncThemeUI();
+        loadTheme();
+
+        // ---------- 坐标的读取与保存 ----------
+        async function loadSelection() {
+            let ids = presetPattern;
+            try {
+                const resp = await fetch('/api/selection');
+                if (resp.ok) {
+                    ids = await resp.json();
+                    serverOnline = true;
+                }
+            } catch (e) {
+                // 直接以 file:// 打开时走这里
+            }
+            applySelection(ids);
+        }
+
+        function applySelection(ids) {
+            selected.clear();
+            document.querySelectorAll('.small-cell').forEach(cell => {
+                cell.classList.remove('selected');
+            });
+            ids.forEach(cellId => {
+                const cell = document.querySelector(`[data-id="${cellId}"]`);
+                if (cell) {
+                    selected.add(cellId);
+                    cell.classList.add('selected');
+                    cell.classList.toggle('ghost', ghostIds.has(cellId));
+                }
+            });
+            refreshColors();
+        }
+
+        async function saveSelection() {
+            if (!serverOnline) return;
+            try {
+                await fetch('/api/selection', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(Array.from(selected)),
+                });
+            } catch (e) {
+                serverOnline = false;
+            }
+        }
+
+        loadSelection();
+        alignBackgroundGrid();
+    </script>
+</body>
+</html>

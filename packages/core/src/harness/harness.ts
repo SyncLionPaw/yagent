@@ -1,27 +1,26 @@
 /* ============ Harness：会话状态机 + agent loop ============
  * 内部维护 SPEC §8 的 Conversation 形状，所有状态变化通过 HarnessEvent 外发。
  * getConversation 返回的是活引用（UI 订阅事件后重新读取即可）。
+ * agent loop 在 agent-loop.ts，树操作 / 消息拼装 / 工具执行 / 钩子各自成模块。
  */
 
-import type { Block, Conversation, ConversationNode, Role } from '../index.js'
-import { toError } from '../providers/types.js'
-import type { ChatMessage, ContentBlock, ModelProvider, ToolDef } from '../providers/types.js'
-
-export type HarnessEvent =
-  | { type: 'node_added'; convId: string; node: ConversationNode }
-  | { type: 'node_updated'; convId: string; nodeId: string }
-  | { type: 'conv_updated'; convId: string } // 创建 / 改名 / activeNode 切换
-  | { type: 'conv_status_changed'; convId: string; status: Conversation['status'] }
-  | { type: 'text_delta'; convId: string; nodeId: string; delta: string }
-  | { type: 'thinking_delta'; convId: string; nodeId: string; delta: string }
-  | { type: 'tool_status'; convId: string; nodeId: string; blockIndex: number; status: 'running' | 'done' | 'error' }
-  | { type: 'error'; convId: string; nodeId?: string; error: Error }
-
-export type ToolExecutor = (
-  name: string,
-  input: Record<string, unknown>,
-  signal: AbortSignal,
-) => Promise<string>
+import type {
+  Block,
+  Conversation,
+  ConversationNode,
+  UserFileAttach,
+  UserImageAttach,
+} from '../model.js'
+import type { ModelProvider, ToolDef } from '../providers/types.js'
+import { ContextManager } from './context.js'
+import type { ContextSnapshot } from './context.js'
+import { createConversationState, makeNode, pathTo } from './conversation.js'
+import { runAgentLoop } from './agent-loop.js'
+import { HookRunner } from './hooks.js'
+import type { HarnessHooks } from './hooks.js'
+import type { HarnessEvent } from './events.js'
+import type { ToolExecutor } from './tools.js'
+import { buildMessages } from './messages.js'
 
 export interface HarnessOptions {
   provider: ModelProvider
@@ -30,16 +29,9 @@ export interface HarnessOptions {
   tools?: ToolDef[]
   executor?: ToolExecutor // 缺省时 tool_use 返回 "tool not available"
   maxTurns?: number // 默认 25
-}
-
-const TOOL_DETAIL_MAX = 4000
-const TOOL_RESULT_MAX = 10_000
-
-interface PendingToolCall {
-  id: string
-  name: string
-  input: Record<string, unknown>
-  blockIndex: number
+  /** 模型上下文窗口（token）；缺省 128_000，可经 configure({ contextLimit }) 更新 */
+  contextLimit?: number
+  hooks?: HarnessHooks | HarnessHooks[] // 观测型生命周期钩子
 }
 
 export class Harness {
@@ -49,10 +41,12 @@ export class Harness {
   private tools?: ToolDef[]
   private executor?: ToolExecutor
   private readonly maxTurns: number
+  private readonly context: ContextManager
 
   private readonly convs = new Map<string, Conversation>()
   private readonly listeners = new Set<(e: HarnessEvent) => void>()
   private readonly controllers = new Map<string, AbortController>()
+  private readonly hooks = new HookRunner()
 
   constructor(opts: HarnessOptions) {
     this.provider = opts.provider
@@ -61,6 +55,10 @@ export class Harness {
     this.tools = opts.tools
     this.executor = opts.executor
     this.maxTurns = opts.maxTurns ?? 25
+    this.context = new ContextManager({ limit: opts.contextLimit ?? 128_000 })
+    if (opts.hooks) {
+      for (const h of Array.isArray(opts.hooks) ? opts.hooks : [opts.hooks]) this.hooks.add(h)
+    }
   }
 
   /* ---------- 订阅 ---------- */
@@ -70,6 +68,11 @@ export class Harness {
     return () => {
       this.listeners.delete(listener)
     }
+  }
+
+  /** 运行时注册钩子，返回注销函数 */
+  addHooks(hooks: HarnessHooks): () => void {
+    return this.hooks.add(hooks)
   }
 
   private emit(e: HarnessEvent): void {
@@ -85,19 +88,10 @@ export class Harness {
   /* ---------- 会话管理 ---------- */
 
   createConversation(title = '新会话', workdir: string | null = null): Conversation {
-    const conv: Conversation = {
-      id: uid('conv'),
-      title,
-      workdir,
-      nodes: {},
-      activeNodeId: '',
-      status: 'done',
-      refs: [],
-      attachments: [],
-      outputs: [],
-    }
+    const conv = createConversationState(title, workdir)
     this.convs.set(conv.id, conv)
     this.emit({ type: 'conv_updated', convId: conv.id })
+    this.hooks.runDetached('onConversationCreated', conv)
     return conv
   }
 
@@ -116,10 +110,32 @@ export class Harness {
     this.emit({ type: 'conv_updated', convId })
   }
 
-  /** 切换当前节点（查看其他分支）；下一条 sendMessage 从该节点继续 */
+  /** 归档 / 取消归档：只改元数据，不删落盘 */
+  setArchived(convId: string, archived: boolean): void {
+    const conv = this.mustGet(convId)
+    conv.archived = archived
+    this.emit({ type: 'conv_updated', convId })
+  }
+
+  /** 追加用户附件元数据（文件本体由桌面端写入工作目录） */
+  addAttachments(convId: string, files: { name: string; size: number }[]): void {
+    const conv = this.mustGet(convId)
+    if (!files.length) return
+    conv.attachments.push(...files)
+    this.emit({ type: 'conv_updated', convId })
+  }
+
+  /** 更新会话的工作目录绑定 */
+  setWorkdir(convId: string, workdir: string | null): void {
+    const conv = this.mustGet(convId)
+    conv.workdir = workdir?.trim() || null
+    this.emit({ type: 'conv_updated', convId })
+  }
+
+  /** 切换当前节点（查看其他分支）；下一条 sendMessage 从该节点继续。空串 = 回到根（编辑首条消息时用） */
   setActiveNode(convId: string, nodeId: string): void {
     const conv = this.mustGet(convId)
-    if (!conv.nodes[nodeId]) throw new Error(`node not found: ${nodeId}`)
+    if (nodeId !== '' && !conv.nodes[nodeId]) throw new Error(`node not found: ${nodeId}`)
     conv.activeNodeId = nodeId
     this.emit({ type: 'conv_updated', convId })
   }
@@ -135,21 +151,91 @@ export class Harness {
     return pathTo(conv, conv.activeNodeId)
   }
 
+  /** 导入外部恢复的会话（持久化层 loadAll 用）；同 id 已存在则跳过 */
+  importConversation(conv: Conversation): void {
+    if (this.convs.has(conv.id)) return
+    this.convs.set(conv.id, conv)
+    this.emit({ type: 'conv_updated', convId: conv.id })
+  }
+
+  /** 删除会话：若在跑先中断 */
+  deleteConversation(convId: string): void {
+    if (!this.convs.has(convId)) return
+    this.abort(convId)
+    this.convs.delete(convId)
+    this.context.clear(convId)
+    this.emit({ type: 'conv_updated', convId })
+  }
+
+  /** 当前会话的上下文占用快照（估算拆分 + 最近 usage / 缓存占比） */
+  getContextSnapshot(convId: string): ContextSnapshot {
+    const conv = this.mustGet(convId)
+    return this.context.snapshot(convId, buildMessages(conv), {
+      system: this.system,
+      tools: this.tools,
+    })
+  }
+
   /* ---------- 核心入口 ---------- */
 
-  async sendMessage(convId: string, text: string): Promise<void> {
+  async sendMessage(
+    convId: string,
+    text: string,
+    extras?: { images?: UserImageAttach[]; files?: UserFileAttach[] },
+  ): Promise<void> {
     const conv = this.mustGet(convId)
-    if (!text.trim()) throw new Error('message is empty')
+    if (!text.trim() && !(extras?.images?.length) && !(extras?.files?.length)) {
+      throw new Error('message is empty')
+    }
     if (this.controllers.has(convId)) throw new Error('conversation is already running')
 
-    const userNode = makeNode('user', conv.activeNodeId || null, [{ type: 'text', text }])
-    this.addNode(conv, userNode)
+    const blocks: Block[] = [{ type: 'text', text: text || '请查看附件' }]
+    for (const img of extras?.images ?? []) {
+      blocks.push({
+        type: 'image',
+        mime: img.mime,
+        name: img.name,
+        path: img.path,
+        data: img.data,
+      })
+    }
+    for (const f of extras?.files ?? []) {
+      blocks.push({
+        type: 'file',
+        name: f.name,
+        size: f.size,
+        path: f.path,
+        mime: f.mime,
+        preview: f.preview,
+      })
+    }
+    const roundNode = makeNode('round', conv.activeNodeId || null, blocks)
+    this.addNode(conv, roundNode)
+    await this.hooks.run('onNodeAdded', conv, roundNode)
     this.setStatus(conv, 'running')
 
     const controller = new AbortController()
     this.controllers.set(convId, controller)
     try {
-      await this.runLoop(conv, controller.signal)
+      const reason = await runAgentLoop(
+        conv,
+        roundNode,
+        {
+          resolveConfig: () => ({
+            provider: this.provider,
+            model: this.model,
+            system: this.system,
+            tools: this.tools,
+          }),
+          executor: this.executor,
+          maxTurns: this.maxTurns,
+          hooks: this.hooks,
+          context: this.context,
+          emit: (e) => this.emit(e),
+        },
+        controller.signal,
+      )
+      await this.hooks.run('onRunEnd', conv, reason)
     } finally {
       this.controllers.delete(convId)
       // abort → waiting（暂停，等用户）；其余（done / error / maxTurns）→ done
@@ -162,159 +248,23 @@ export class Harness {
   }
 
   /** 运行时切换模型 / provider（UI 换模型即调）；进行中的会话不受影响（下一条消息生效） */
-  configure(opts: { provider?: ModelProvider; model?: string; system?: string }): void {
+  configure(opts: {
+    provider?: ModelProvider
+    model?: string
+    system?: string
+    tools?: ToolDef[]
+    executor?: ToolExecutor
+    contextLimit?: number
+  }): void {
     if (opts.provider !== undefined) this.provider = opts.provider
     if (opts.model !== undefined) this.model = opts.model
     if (opts.system !== undefined) this.system = opts.system
+    if (opts.tools !== undefined) this.tools = opts.tools
+    if (opts.executor !== undefined) this.executor = opts.executor
+    if (opts.contextLimit !== undefined) this.context.setLimit(opts.contextLimit)
   }
 
-  /* ---------- agent loop ---------- */
-
-  private async runLoop(conv: Conversation, signal: AbortSignal): Promise<void> {
-    for (let turn = 0; turn < this.maxTurns; turn++) {
-      if (signal.aborted) return
-
-      const messages = this.buildMessages(conv)
-      const agentNode = makeNode('agent', conv.activeNodeId || null, [])
-      this.addNode(conv, agentNode)
-      const nodeStart = Date.now()
-      const thinkingStarts = new Map<number, number>()
-      const pending: PendingToolCall[] = []
-
-      try {
-        for await (const ev of this.provider.streamChat({
-          model: this.model,
-          system: this.system,
-          messages,
-          tools: this.tools,
-          signal,
-        })) {
-          if (signal.aborted) break
-          switch (ev.type) {
-            case 'text_delta': {
-              const last = agentNode.blocks[agentNode.blocks.length - 1]
-              if (last?.type === 'text') last.text += ev.text
-              else agentNode.blocks.push({ type: 'text', text: ev.text })
-              this.emit({ type: 'text_delta', convId: conv.id, nodeId: agentNode.id, delta: ev.text })
-              break
-            }
-            case 'thinking_delta': {
-              const last = agentNode.blocks[agentNode.blocks.length - 1]
-              if (last?.type === 'thinking' && last.status === 'streaming') {
-                last.text += ev.text
-              } else {
-                agentNode.blocks.push({ type: 'thinking', text: ev.text, status: 'streaming' })
-                thinkingStarts.set(agentNode.blocks.length - 1, Date.now())
-              }
-              this.emit({ type: 'thinking_delta', convId: conv.id, nodeId: agentNode.id, delta: ev.text })
-              break
-            }
-            case 'tool_use': {
-              agentNode.blocks.push({
-                type: 'tool',
-                tool: ev.name,
-                summary: summarizeInput(ev.input),
-                status: 'running',
-                toolUseId: ev.id,
-                input: ev.input,
-              })
-              pending.push({ id: ev.id, name: ev.name, input: ev.input, blockIndex: agentNode.blocks.length - 1 })
-              this.emit({ type: 'node_updated', convId: conv.id, nodeId: agentNode.id })
-              break
-            }
-            case 'done':
-              break // usage 暂不持久化
-            case 'error':
-              throw ev.error
-          }
-        }
-      } catch (err) {
-        if (signal.aborted) return
-        const error = toError(err)
-        this.finishThinking(agentNode, thinkingStarts)
-        agentNode.blocks.push({ type: 'text', text: `[error] ${error.message}` })
-        agentNode.durationMs = Date.now() - nodeStart
-        this.emit({ type: 'error', convId: conv.id, nodeId: agentNode.id, error })
-        this.emit({ type: 'node_updated', convId: conv.id, nodeId: agentNode.id })
-        return
-      }
-
-      this.finishThinking(agentNode, thinkingStarts)
-      agentNode.durationMs = Date.now() - nodeStart
-      this.emit({ type: 'node_updated', convId: conv.id, nodeId: agentNode.id })
-
-      if (signal.aborted) return
-      if (pending.length === 0) return // 纯文本回答，本轮结束
-
-      // 执行工具调用
-      const resultBlocks: Block[] = []
-      for (const call of pending) {
-        this.emit({
-          type: 'tool_status',
-          convId: conv.id,
-          nodeId: agentNode.id,
-          blockIndex: call.blockIndex,
-          status: 'running',
-        })
-        const t0 = Date.now()
-        const block = agentNode.blocks[call.blockIndex]
-        try {
-          const out = this.executor
-            ? await this.executor(call.name, call.input, signal)
-            : 'tool not available'
-          if (block?.type === 'tool') {
-            block.status = 'done'
-            block.detail = truncate(out, TOOL_DETAIL_MAX)
-            block.stats = `${((Date.now() - t0) / 1000).toFixed(1)}s`
-          }
-          resultBlocks.push({
-            type: 'tool_result',
-            tool: call.name,
-            toolUseId: call.id,
-            content: truncate(out, TOOL_RESULT_MAX),
-          })
-          this.emit({ type: 'tool_status', convId: conv.id, nodeId: agentNode.id, blockIndex: call.blockIndex, status: 'done' })
-        } catch (err) {
-          if (signal.aborted) {
-            if (block?.type === 'tool') {
-              block.status = 'error'
-              block.detail = 'aborted'
-            }
-            this.emit({ type: 'tool_status', convId: conv.id, nodeId: agentNode.id, blockIndex: call.blockIndex, status: 'error' })
-            this.emit({ type: 'node_updated', convId: conv.id, nodeId: agentNode.id })
-            return
-          }
-          const msg = toError(err).message
-          if (block?.type === 'tool') {
-            block.status = 'error'
-            block.detail = msg
-          }
-          resultBlocks.push({ type: 'tool_result', tool: call.name, toolUseId: call.id, content: msg, isError: true })
-          this.emit({ type: 'tool_status', convId: conv.id, nodeId: agentNode.id, blockIndex: call.blockIndex, status: 'error' })
-        }
-        this.emit({ type: 'node_updated', convId: conv.id, nodeId: agentNode.id })
-      }
-
-      if (signal.aborted) return
-      // 工具结果作为新的 user 节点，继续 loop
-      const resultNode = makeNode('user', agentNode.id, resultBlocks)
-      this.addNode(conv, resultNode)
-    }
-    this.emit({ type: 'error', convId: conv.id, error: new Error(`max turns reached (${this.maxTurns})`) })
-  }
-
-  private finishThinking(node: ConversationNode, starts: Map<number, number>): void {
-    for (let i = 0; i < node.blocks.length; i++) {
-      const b = node.blocks[i]
-      if (b.type === 'thinking' && b.status === 'streaming') {
-        b.status = 'done'
-        const t0 = starts.get(i)
-        if (t0) b.durationMs = Date.now() - t0
-      }
-    }
-  }
-
-  /* ---------- 树操作 / 消息拼装 ---------- */
+  /* ---------- 内部状态变更 ---------- */
 
   private addNode(conv: Conversation, node: ConversationNode): void {
     conv.nodes[node.id] = node
@@ -328,82 +278,9 @@ export class Harness {
     this.emit({ type: 'conv_status_changed', convId: conv.id, status })
   }
 
-  /** 根 → activeNode 路径拼成 messages；相邻同角色合并（provider 要求交替） */
-  private buildMessages(conv: Conversation): ChatMessage[] {
-    const out: ChatMessage[] = []
-    for (const node of pathTo(conv, conv.activeNodeId)) {
-      const msg = nodeToMessage(node)
-      if (!msg) continue
-      const last = out[out.length - 1]
-      if (last && last.role === msg.role && Array.isArray(last.content) && Array.isArray(msg.content)) {
-        last.content = [...last.content, ...msg.content]
-      } else {
-        out.push(msg)
-      }
-    }
-    return out
-  }
-
   private mustGet(convId: string): Conversation {
     const conv = this.convs.get(convId)
     if (!conv) throw new Error(`conversation not found: ${convId}`)
     return conv
   }
-}
-
-/* ---------- helpers ---------- */
-
-function pathTo(conv: Conversation, nodeId: string): ConversationNode[] {
-  const path: ConversationNode[] = []
-  let id: string | null = nodeId || null
-  while (id) {
-    const node = conv.nodes[id]
-    if (!node) break
-    path.push(node)
-    id = node.parentId
-  }
-  return path.reverse()
-}
-
-function nodeToMessage(node: ConversationNode): ChatMessage | null {
-  const blocks: ContentBlock[] = []
-  for (const b of node.blocks) {
-    switch (b.type) {
-      case 'text':
-        if (b.text) blocks.push({ type: 'text', text: b.text })
-        break
-      case 'thinking':
-        break // 不回放（见 providers 转换层）
-      case 'tool':
-        if (b.toolUseId) blocks.push({ type: 'tool_use', id: b.toolUseId, name: b.tool, input: b.input ?? {} })
-        break
-      case 'tool_result':
-        blocks.push({ type: 'tool_result', toolUseId: b.toolUseId ?? '', content: b.content, isError: b.isError })
-        break
-      case 'artifacts':
-        break
-    }
-  }
-  if (blocks.length === 0) return null
-  return { role: node.role === 'user' ? 'user' : 'assistant', content: blocks }
-}
-
-function summarizeInput(input: Record<string, unknown>): string {
-  const cand = input.command ?? input.cmd ?? input.path ?? input.file_path ?? input.filePath ?? input.query ?? input.url
-  const s = (typeof cand === 'string' ? cand : JSON.stringify(input)).replace(/\s+/g, ' ').trim()
-  return s.length > 80 ? `${s.slice(0, 79)}…` : s
-}
-
-function truncate(s: string, max: number): string {
-  return s.length > max ? `${s.slice(0, max)}\n… (truncated, ${s.length} chars total)` : s
-}
-
-let counter = 0
-function uid(prefix: string): string {
-  counter = (counter + 1) % 0xffff
-  return `${prefix}_${Date.now().toString(36)}${counter.toString(36)}${Math.random().toString(36).slice(2, 8)}`
-}
-
-function makeNode(role: Role, parentId: string | null, blocks: Block[]): ConversationNode {
-  return { id: uid(role === 'user' ? 'u' : 'a'), parentId, role, blocks, createdAt: Date.now() }
 }

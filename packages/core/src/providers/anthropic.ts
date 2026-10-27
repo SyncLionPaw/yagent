@@ -14,15 +14,41 @@ export interface AnthropicProviderOptions {
 
 const API_VERSION = '2023-06-01'
 
+interface AnthropicUsage {
+  input_tokens?: number
+  output_tokens?: number
+  cache_read_input_tokens?: number
+  cache_creation_input_tokens?: number
+}
+
 /* Anthropic 流事件里我们关心的字段（其余忽略） */
 interface WireEvent {
   type?: string
   index?: number
-  message?: { usage?: { input_tokens?: number; output_tokens?: number } }
+  message?: { usage?: AnthropicUsage }
   content_block?: { type?: string; id?: string; name?: string }
   delta?: { type?: string; text?: string; thinking?: string; partial_json?: string }
-  usage?: { output_tokens?: number }
+  usage?: AnthropicUsage
   error?: { message?: string }
+}
+
+type UsageState = {
+  input: number
+  output: number
+  cacheRead?: number
+  cacheWrite?: number
+}
+
+function mergeAnthropicUsage(prev: UsageState | undefined, u: AnthropicUsage): UsageState {
+  const next: UsageState = {
+    input: u.input_tokens ?? prev?.input ?? 0,
+    output: u.output_tokens ?? prev?.output ?? 0,
+  }
+  const cacheRead = u.cache_read_input_tokens ?? prev?.cacheRead
+  const cacheWrite = u.cache_creation_input_tokens ?? prev?.cacheWrite
+  if (cacheRead != null) next.cacheRead = cacheRead
+  if (cacheWrite != null) next.cacheWrite = cacheWrite
+  return next
 }
 
 interface BlockState {
@@ -80,7 +106,7 @@ export class AnthropicProvider implements ModelProvider {
 
   private async *parse(res: Response, signal?: AbortSignal): AsyncGenerator<StreamEvent> {
     const blocks = new Map<number, BlockState>()
-    let usage: { input: number; output: number } | undefined
+    let usage: UsageState | undefined
     for await (const sse of parseSSE(res, signal)) {
       if (signal?.aborted) return
       let data: WireEvent
@@ -92,7 +118,7 @@ export class AnthropicProvider implements ModelProvider {
       switch (data.type) {
         case 'message_start': {
           const u = data.message?.usage
-          if (u) usage = { input: u.input_tokens ?? 0, output: u.output_tokens ?? 0 }
+          if (u) usage = mergeAnthropicUsage(usage, u)
           break
         }
         case 'content_block_start': {
@@ -143,7 +169,7 @@ export class AnthropicProvider implements ModelProvider {
         }
         case 'message_delta': {
           const u = data.usage
-          if (u) usage = { input: usage?.input ?? 0, output: u.output_tokens ?? usage?.output ?? 0 }
+          if (u) usage = mergeAnthropicUsage(usage, u)
           break
         }
         case 'message_stop':
@@ -172,6 +198,12 @@ function toWireMessages(req: ChatRequest): unknown[] {
       switch (b.type) {
         case 'text':
           if (b.text) blocks.push({ type: 'text', text: b.text })
+          break
+        case 'image':
+          blocks.push({
+            type: 'image',
+            source: { type: 'base64', media_type: b.mime, data: b.data },
+          })
           break
         case 'thinking':
           break // 不回放：无 signature 会被 API 拒绝，多轮里服务端本就会剥离

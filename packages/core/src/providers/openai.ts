@@ -28,7 +28,11 @@ interface WireChunk {
     }
     finish_reason?: string | null
   }[]
-  usage?: { prompt_tokens?: number; completion_tokens?: number } | null
+  usage?: {
+    prompt_tokens?: number
+    completion_tokens?: number
+    prompt_tokens_details?: { cached_tokens?: number } | null
+  } | null
 }
 
 interface ToolCallState {
@@ -76,7 +80,7 @@ export class OpenAIProvider implements ModelProvider {
 
   private async *parse(res: Response, signal?: AbortSignal): AsyncGenerator<StreamEvent> {
     const calls = new Map<number, ToolCallState>()
-    let usage: { input: number; output: number } | undefined
+    let usage: { input: number; output: number; cacheRead?: number } | undefined
 
     const drainToolCalls = (): StreamEvent[] => {
       const out: StreamEvent[] = []
@@ -126,7 +130,12 @@ export class OpenAIProvider implements ModelProvider {
         for (const ev of drainToolCalls()) yield ev
       }
       if (chunk.usage) {
-        usage = { input: chunk.usage.prompt_tokens ?? 0, output: chunk.usage.completion_tokens ?? 0 }
+        const cached = chunk.usage.prompt_tokens_details?.cached_tokens
+        usage = {
+          input: chunk.usage.prompt_tokens ?? 0,
+          output: chunk.usage.completion_tokens ?? 0,
+          ...(cached != null ? { cacheRead: cached } : {}),
+        }
       }
     }
     if (signal?.aborted) return
@@ -165,14 +174,24 @@ function toWireMessages(req: ChatRequest): unknown[] {
       })
     } else {
       // tool_result 必须展开成紧跟 assistant 的独立 role:'tool' 消息，先于本节点的文本
-      const texts: string[] = []
+      const parts: unknown[] = []
       for (const b of msg.content) {
-        if (b.type === 'text') texts.push(b.text)
-        else if (b.type === 'tool_result') {
+        if (b.type === 'text') {
+          if (b.text) parts.push({ type: 'text', text: b.text })
+        } else if (b.type === 'image') {
+          parts.push({
+            type: 'image_url',
+            image_url: { url: `data:${b.mime};base64,${b.data}` },
+          })
+        } else if (b.type === 'tool_result') {
           out.push({ role: 'tool', tool_call_id: b.toolUseId, content: b.content })
         }
       }
-      if (texts.length) out.push({ role: 'user', content: texts.join('\n') })
+      if (parts.length === 1 && (parts[0] as { type?: string }).type === 'text') {
+        out.push({ role: 'user', content: (parts[0] as { text: string }).text })
+      } else if (parts.length) {
+        out.push({ role: 'user', content: parts })
+      }
     }
   }
   return out

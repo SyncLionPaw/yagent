@@ -1,0 +1,264 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>yagent — field logo</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+    <style>
+        :root {
+            --bg: #0d0d0f;
+            --ink: #f2f2f0;
+            --accent: #8fa3ff;
+            --cell: 34px;
+        }
+
+        * { box-sizing: border-box; }
+
+        body {
+            margin: 0;
+            min-height: 100vh;
+            background: var(--bg);
+            overflow: hidden;
+            font-family: 'JetBrains Mono', ui-monospace, monospace;
+        }
+
+        .wordmark {
+            position: fixed;
+            top: 22px;
+            left: 32px;
+            display: inline-flex;
+            align-items: center;
+            gap: 1px;
+            font-size: 17px;
+            font-weight: 500;
+            letter-spacing: -0.02em;
+            color: var(--ink);
+            text-decoration: none;
+            z-index: 10;
+        }
+
+        .wordmark canvas {
+            display: block;
+        }
+
+        /* 铺满全屏的向量场 */
+        .field {
+            position: fixed;
+            inset: 0;
+            display: grid;
+            justify-content: center;
+            align-content: center;
+            overflow: hidden;
+        }
+
+        .arrow {
+            width: var(--cell);
+            height: var(--cell);
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            user-select: none;
+        }
+
+        .arrow .shaft {
+            display: block;
+            font-size: calc(var(--cell) * 0.48);
+            line-height: 1;
+            color: rgba(242, 242, 240, calc(0.08 + var(--b, 0) * 0.85));
+            will-change: transform;
+        }
+
+        /* X 的笔画：⊙ —— 电磁学里"箭头垂直指出屏幕"的符号 */
+        .arrow.out {
+            position: relative;
+        }
+
+        /* 右下角笔画：半透明淡出 */
+        .arrow.out.ghost::before,
+        .arrow.out.ghost::after {
+            opacity: 0.3;
+        }
+
+        .arrow.out .shaft {
+            display: none;
+        }
+
+        .arrow.out::before {
+            content: '';
+            width: calc(var(--cell) * 0.34);
+            height: calc(var(--cell) * 0.34);
+            border: 1.5px solid rgba(242, 242, 240, calc(0.6 + var(--b, 0) * 0.4));
+            border-radius: 50%;
+            box-shadow: 0 0 calc(2px + var(--b, 0) * 8px) rgba(242, 242, 240, 0.3);
+        }
+
+        .arrow.out::after {
+            content: '';
+            position: absolute;
+            width: 3px;
+            height: 3px;
+            border-radius: 50%;
+            background: rgba(242, 242, 240, calc(0.6 + var(--b, 0) * 0.4));
+        }
+
+        @media (max-width: 600px) {
+            :root {
+                --cell: 28px;
+            }
+        }
+    </style>
+</head>
+<body>
+    <a class="wordmark" href="index.html"><canvas id="logoY" aria-label="x"></canvas><span>agent</span></a>
+    <div class="field" id="field"></div>
+
+    <script>
+        // 16×16 的 X 位图（与主页图标一致；2 = 右下角半透明）
+        // 16×16 的 X 位图（与主页图标一致；2 = 右下角半透明）
+        const LOGO_X = [
+            '0000000000000000',
+            '0000000000000000',
+            '0000000000000000',
+            '0000111100011000',
+            '0000001100111000',
+            '0000000101000000',
+            '0000000111000000',
+            '0000000110000000',
+            '0000000110000000',
+            '0000001022000000',
+            '0000001022000000',
+            '0001110022220000',
+            '0001100002200000',
+            '0000000000000000',
+            '0000000000000000',
+            '0000000000000000',
+        ];
+
+        // wordmark 的迷你粒子 X
+        (function drawWordmark() {
+            const cvs = document.getElementById('logoY');
+            const size = 15;
+            const dpr = window.devicePixelRatio || 1;
+            cvs.width = size * dpr;
+            cvs.height = size * dpr;
+            cvs.style.width = size + 'px';
+            cvs.style.height = size + 'px';
+            const ctx = cvs.getContext('2d');
+            ctx.scale(dpr, dpr);
+            ctx.fillStyle = '#f2f2f0';
+            const cell = size / 16;
+            const r = cell * 0.42;
+            LOGO_X.forEach((rowStr, row) => {
+                for (let col = 0; col < 16; col++) {
+                    const ch = rowStr[col];
+                    if (ch !== '1' && ch !== '2') continue;
+                    ctx.globalAlpha = ch === '2' ? 0.3 : 1;
+                    ctx.beginPath();
+                    ctx.arc((col + 0.5) * cell, (row + 0.5) * cell, r, 0, Math.PI * 2);
+                    ctx.fill();
+                }
+            });
+            ctx.globalAlpha = 1;
+        })();
+
+        const fieldEl = document.getElementById('field');
+        const reducedMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+        let cells = [];
+        let mouse = null;
+
+        function build() {
+            const cs = parseFloat(getComputedStyle(document.documentElement).getPropertyValue('--cell'));
+            const cols = Math.ceil(window.innerWidth / cs);
+            const rows = Math.ceil(window.innerHeight / cs);
+            const offX = Math.floor((cols - 16) / 2);
+            const offY = Math.floor((rows - 16) / 2);
+
+            fieldEl.style.gridTemplateColumns = `repeat(${cols}, var(--cell))`;
+            fieldEl.style.gridTemplateRows = `repeat(${rows}, var(--cell))`;
+            fieldEl.innerHTML = '';
+            cells = [];
+
+            for (let row = 0; row < rows; row++) {
+                for (let col = 0; col < cols; col++) {
+                    const ch = (row >= offY && row < offY + 16 && col >= offX && col < offX + 16)
+                        ? LOGO_X[row - offY][col - offX] : '0';
+                    const inX = ch === '1' || ch === '2';
+
+                    const cell = document.createElement('div');
+                    cell.className = 'arrow' + (inX ? ' out' : '') + (ch === '2' ? ' ghost' : '');
+                    if (!inX) {
+                        const shaft = document.createElement('span');
+                        shaft.className = 'shaft';
+                        shaft.textContent = '→';
+                        cell.appendChild(shaft);
+                        cell._a = Math.random() * Math.PI * 2;
+                    }
+                    cell.dataset.row = row;
+                    cell.dataset.col = col;
+                    cell._b = 0;
+                    cells.push(cell);
+                    fieldEl.appendChild(cell);
+                }
+            }
+        }
+        build();
+        window.addEventListener('resize', build);
+
+        window.addEventListener('mousemove', e => {
+            mouse = { x: e.clientX, y: e.clientY };
+        });
+        window.addEventListener('mouseleave', () => { mouse = null; });
+        window.addEventListener('touchmove', e => {
+            mouse = { x: e.touches[0].clientX, y: e.touches[0].clientY };
+        }, { passive: true });
+        window.addEventListener('touchend', () => { mouse = null; });
+
+        function tick(t) {
+            const time = t / 1000;
+            const rect = fieldEl.getBoundingClientRect();
+            const cs = cells.length ? cells[0].offsetWidth : 34;
+            cells.forEach(cell => {
+                const cx = rect.left + (+cell.dataset.col) * cs + cs / 2;
+                const cy = rect.top + (+cell.dataset.row) * cs + cs / 2;
+
+                let boost = 0;
+                if (cell.classList.contains('out')) {
+                    // ⊙ 轻微呼吸，靠近鼠标时变亮
+                    if (mouse) {
+                        const d = Math.hypot(cx - mouse.x, cy - mouse.y);
+                        boost = Math.max(0, 1 - d / 160);
+                    }
+                    boost = Math.max(boost, 0.12 + 0.08 * Math.sin(time * 1.5 + cx * 0.01 + cy * 0.013));
+                    cell._b += (boost - cell._b) * 0.12;
+                    cell.style.setProperty('--b', cell._b.toFixed(3));
+                    return;
+                }
+
+                if (mouse) {
+                    const d = Math.hypot(cx - mouse.x, cy - mouse.y);
+                    boost = Math.max(0, 1 - d / 240);
+                }
+                cell._b += (boost - cell._b) * 0.12;
+                cell.style.setProperty('--b', cell._b.toFixed(3));
+
+                const shaft = cell.firstChild;
+                if (mouse) {
+                    // 箭头指向鼠标所在位置
+                    const target = Math.atan2(mouse.y - cy, mouse.x - cx);
+                    const diff = Math.atan2(Math.sin(target - cell._a), Math.cos(target - cell._a));
+                    cell._a += diff * 0.12;
+                } else {
+                    // 无鼠标时缓慢漂移
+                    cell._a += Math.sin(time * 0.4 + cx * 0.008 + cy * 0.011) * 0.004;
+                }
+                shaft.style.transform = `rotate(${cell._a.toFixed(3)}rad)`;
+            });
+            requestAnimationFrame(tick);
+        }
+        if (!reducedMotion) requestAnimationFrame(tick);
+    </script>
+</body>
+</html>

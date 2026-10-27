@@ -1,0 +1,799 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>yagent</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@500&family=Space+Grotesk:wght@400;500&display=swap" rel="stylesheet">
+    <style>
+        :root {
+            --bg: #0d0d0f;
+            --ink: #f2f2f0;
+            --muted: rgba(242, 242, 240, 0.55);
+            --faint: rgba(242, 242, 240, 0.35);
+            --accent: #8fa3ff;
+            --hairline: rgba(255, 255, 255, 0.08);
+            --cell: clamp(16px, 5.4vw, 25px);
+        }
+
+        * { box-sizing: border-box; }
+
+        body {
+            margin: 0;
+            background-color: var(--bg);
+            /* 方格线铺满整个背景，位置由 JS 与中央网格对齐 */
+            background-image:
+                linear-gradient(to right, rgba(255, 255, 255, 0.03) 1px, transparent 1px),
+                linear-gradient(to bottom, rgba(255, 255, 255, 0.03) 1px, transparent 1px);
+            background-size: var(--cell) var(--cell);
+            color: var(--ink);
+            font-family: 'Space Grotesk', 'Hiragino Sans', 'PingFang SC', 'Noto Sans JP', 'Microsoft YaHei', system-ui, sans-serif;
+            -webkit-font-smoothing: antialiased;
+        }
+
+        /* ---------- 顶栏 ---------- */
+        .topbar {
+            position: fixed;
+            top: 0;
+            left: 0;
+            right: 0;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 22px 32px;
+            z-index: 10;
+        }
+
+        .wordmark {
+            display: inline-flex;
+            align-items: center;
+            gap: 1px;
+            font-family: 'JetBrains Mono', ui-monospace, monospace;
+            font-size: 17px;
+            font-weight: 500;
+            letter-spacing: -0.02em;
+            color: var(--ink);
+        }
+
+        .wordmark canvas {
+            display: block;
+        }
+
+        .topnav {
+            display: flex;
+            align-items: center;
+            gap: 22px;
+        }
+
+        .topnav a {
+            font-size: 13px;
+            color: var(--faint);
+            text-decoration: none;
+            transition: color 0.2s ease;
+        }
+
+        .topnav a:hover {
+            color: var(--ink);
+        }
+
+        /* ---------- 语言选择 ---------- */
+        .lang {
+            position: relative;
+        }
+
+        .lang-btn {
+            display: inline-flex;
+            align-items: center;
+            gap: 8px;
+            background: transparent;
+            color: var(--faint);
+            border: 1px solid var(--hairline);
+            border-radius: 999px;
+            padding: 6px 12px;
+            font-size: 13px;
+            font-family: inherit;
+            line-height: 1.2;
+            cursor: pointer;
+            transition: color 0.2s ease, border-color 0.2s ease;
+        }
+
+        .lang-btn:hover,
+        .lang.open .lang-btn {
+            color: var(--ink);
+            border-color: rgba(255, 255, 255, 0.25);
+        }
+
+        .lang-caret {
+            opacity: 0.7;
+            transition: transform 0.2s ease;
+        }
+
+        .lang.open .lang-caret {
+            transform: rotate(180deg);
+        }
+
+        .lang-menu {
+            position: absolute;
+            top: calc(100% + 8px);
+            right: 0;
+            z-index: 20;
+            min-width: 132px;
+            margin: 0;
+            padding: 6px;
+            list-style: none;
+            background: rgba(20, 20, 24, 0.96);
+            backdrop-filter: blur(16px);
+            -webkit-backdrop-filter: blur(16px);
+            border: 1px solid rgba(255, 255, 255, 0.12);
+            border-radius: 12px;
+            box-shadow: 0 18px 40px rgba(0, 0, 0, 0.55);
+            opacity: 0;
+            visibility: hidden;
+            transform: translateY(-4px);
+            transition: opacity 0.16s ease, transform 0.16s ease, visibility 0s linear 0.16s;
+        }
+
+        .lang.open .lang-menu {
+            opacity: 1;
+            visibility: visible;
+            transform: none;
+            transition: opacity 0.16s ease, transform 0.16s ease, visibility 0s;
+        }
+
+        .lang-menu li {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: 16px;
+            padding: 8px 10px;
+            border-radius: 8px;
+            font-size: 13px;
+            color: var(--muted);
+            white-space: nowrap;
+            cursor: pointer;
+            transition: background 0.15s ease, color 0.15s ease;
+        }
+
+        .lang-menu li:hover,
+        .lang-menu li:focus-visible {
+            background: rgba(255, 255, 255, 0.07);
+            color: var(--ink);
+            outline: none;
+        }
+
+        .lang-menu li[aria-selected="true"] {
+            color: var(--ink);
+        }
+
+        .lang-menu li[aria-selected="true"]::after {
+            content: '✓';
+            font-size: 11px;
+            color: var(--accent);
+        }
+
+        .lang-btn:focus-visible,
+        a:focus-visible {
+            outline: 2px solid var(--accent);
+            outline-offset: 3px;
+        }
+
+        /* ---------- 首屏 ---------- */
+        .hero {
+            min-height: 100vh;
+            display: flex;
+            flex-direction: column;
+            justify-content: center;
+            align-items: center;
+            text-align: center;
+            padding: 96px 24px 64px;
+        }
+
+        .main-grid {
+            display: inline-grid;
+            grid-template-columns: repeat(4, auto);
+            grid-template-rows: repeat(4, auto);
+            gap: 0;
+            background-image:
+                linear-gradient(to right, rgba(255, 255, 255, 0.05) 1px, transparent 1px),
+                linear-gradient(to bottom, rgba(255, 255, 255, 0.05) 1px, transparent 1px);
+            background-size: var(--cell) var(--cell);
+        }
+
+        .big-cell {
+            display: grid;
+            grid-template-columns: repeat(4, var(--cell));
+            grid-template-rows: repeat(4, var(--cell));
+            gap: 0;
+        }
+
+        .small-cell {
+            width: var(--cell);
+            height: var(--cell);
+            background: transparent;
+            box-sizing: border-box;
+            position: relative;
+            transition: transform 0.4s cubic-bezier(0.22, 1, 0.36, 1);
+        }
+
+        /* 选中：内嵌圆形，与方块边界留出 1px */
+        .small-cell::after {
+            content: '';
+            position: absolute;
+            inset: 2px; /* 1px 边框 + 1px 留白 */
+            border-radius: 50%;
+            background: var(--dot-color, #ffffff);
+            box-shadow: 0 0 6px var(--dot-color, #ffffff);
+            opacity: var(--fo, 0);
+            transform: scale(0.4);
+            transition: opacity 0.18s ease, transform 0.18s ease;
+        }
+
+        .small-cell.selected::after {
+            opacity: 1;
+            transform: scale(1);
+        }
+
+        /* 右下角笔画：半透明淡出 */
+        .small-cell.selected.ghost::after {
+            opacity: 0.10;
+        }
+
+        .tagline {
+            font-size: clamp(26px, 4vw, 40px);
+            font-weight: 500;
+            letter-spacing: -0.02em;
+            line-height: 1.3;
+            margin: 56px 0 0;
+            max-width: 22em;
+        }
+
+        .subline {
+            font-size: 15px;
+            line-height: 1.9;
+            color: var(--muted);
+            margin: 18px 0 0;
+            max-width: 34em;
+        }
+
+        .cta-row {
+            margin-top: 36px;
+            display: flex;
+            align-items: center;
+            gap: 24px;
+        }
+
+        .cta {
+            display: inline-block;
+            padding: 11px 28px;
+            font-size: 14px;
+            color: var(--bg);
+            background: var(--ink);
+            border-radius: 999px;
+            text-decoration: none;
+            transition: background 0.2s ease, transform 0.2s ease;
+        }
+
+        .cta:hover {
+            background: var(--accent);
+            transform: translateY(-1px);
+        }
+
+        .ghost-link {
+            font-size: 14px;
+            color: var(--muted);
+            text-decoration: none;
+            border-bottom: 1px solid transparent;
+            transition: color 0.2s ease;
+        }
+
+        .ghost-link:hover {
+            color: var(--ink);
+        }
+
+        /* 加载时的一次性入场 */
+        .tagline, .subline, .cta-row {
+            opacity: 0;
+            transform: translateY(10px);
+            transition: opacity 0.7s ease, transform 0.7s ease;
+        }
+
+        .hero.ready .tagline { opacity: 1; transform: none; transition-delay: 0.15s; }
+        .hero.ready .subline { opacity: 1; transform: none; transition-delay: 0.35s; }
+        .hero.ready .cta-row { opacity: 1; transform: none; transition-delay: 0.55s; }
+
+        /* ---------- 特性 ---------- */
+        .features {
+            max-width: 720px;
+            margin: 0 auto;
+            padding: 40px 24px 120px;
+        }
+
+        .feature {
+            display: grid;
+            grid-template-columns: 180px 1fr;
+            gap: 24px;
+            padding: 32px 0;
+            border-top: 1px solid var(--hairline);
+        }
+
+        .feature h2 {
+            font-size: 16px;
+            font-weight: 500;
+            margin: 0;
+            letter-spacing: -0.01em;
+        }
+
+        .feature p {
+            font-size: 14px;
+            line-height: 1.9;
+            color: var(--muted);
+            margin: 0;
+            max-width: 34em;
+        }
+
+        /* ---------- 页脚 ---------- */
+        footer {
+            padding: 32px;
+            text-align: center;
+            font-size: 12px;
+            color: var(--faint);
+            border-top: 1px solid var(--hairline);
+        }
+
+        @media (max-width: 600px) {
+            .feature {
+                grid-template-columns: 1fr;
+                gap: 10px;
+            }
+
+            .topbar {
+                padding: 18px 20px;
+            }
+
+            .hero {
+                padding-left: 16px;
+                padding-right: 16px;
+            }
+
+            .topnav {
+                gap: 14px;
+            }
+
+            .lang-btn {
+                padding: 6px 10px;
+                gap: 6px;
+            }
+        }
+
+        @media (prefers-reduced-motion: reduce) {
+            .small-cell,
+            .small-cell::after,
+            .tagline, .subline, .cta-row {
+                transition: none;
+            }
+
+            .tagline, .subline, .cta-row {
+                opacity: 1;
+                transform: none;
+            }
+        }
+    </style>
+</head>
+<body>
+    <header class="topbar">
+        <span class="wordmark"><canvas id="logoY" aria-label="x"></canvas><span>agent</span></span>
+        <div class="topnav">
+            <a href="docs.html" data-i18n="navDocs">文档</a>
+            <a href="gallery.html" data-i18n="navGallery">标志</a>
+            <a href="pricing.html" data-i18n="navPricing">价格</a>
+            <div class="lang" id="lang">
+                <button class="lang-btn" type="button" aria-haspopup="listbox" aria-expanded="false" aria-label="Language">
+                    <span class="lang-label">中文</span>
+                    <svg class="lang-caret" width="10" height="6" viewBox="0 0 10 6" aria-hidden="true"><path d="M1 1l4 4 4-4" fill="none" stroke="currentColor" stroke-width="1.2" stroke-linecap="round" stroke-linejoin="round"/></svg>
+                </button>
+                <ul class="lang-menu" role="listbox" aria-label="Language">
+                    <li role="option" data-lang="zh" aria-selected="true" tabindex="-1">中文</li>
+                    <li role="option" data-lang="ja" aria-selected="false" tabindex="-1">日本語</li>
+                    <li role="option" data-lang="en" aria-selected="false" tabindex="-1">English</li>
+                </ul>
+            </div>
+        </div>
+    </header>
+
+    <main>
+        <section class="hero" id="hero">
+            <div class="main-grid" id="mainGrid"></div>
+            <h1 class="tagline" data-i18n="tagline"></h1>
+            <p class="subline" data-i18n="subline"></p>
+            <div class="cta-row">
+                <a class="cta" href="#" data-i18n="cta"></a>
+                <a class="ghost-link" href="docs.html" data-i18n="docs"></a>
+            </div>
+        </section>
+
+        <section class="features">
+            <div class="feature">
+                <h2 data-i18n="f1t"></h2>
+                <p data-i18n="f1d"></p>
+            </div>
+            <div class="feature">
+                <h2 data-i18n="f2t"></h2>
+                <p data-i18n="f2d"></p>
+            </div>
+            <div class="feature">
+                <h2 data-i18n="f3t"></h2>
+                <p data-i18n="f3d"></p>
+            </div>
+        </section>
+    </main>
+
+    <footer>
+        <span data-i18n="footer"></span>
+    </footer>
+
+    <script>
+        const mainGrid = document.getElementById('mainGrid');
+        const selected = new Set();
+        const allCells = [];
+        const reducedMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+
+        function cellSize() {
+            return allCells.length ? allCells[0].offsetWidth : 25;
+        }
+
+        // ---------- 动效：常驻细微扰动 + 光标力场 ----------
+        const FORCE_RADIUS = 90;  // 力场半径（px）
+        const MAX_SHIFT = 9;      // 力场最大偏移（px）
+        const DRIFT = 1.3;        // 常驻扰动幅度（px）
+        let mouse = null;
+
+        mainGrid.addEventListener('mousemove', e => {
+            mouse = { x: e.clientX, y: e.clientY };
+        });
+        mainGrid.addEventListener('mouseleave', () => {
+            mouse = null;
+        });
+        // 触摸设备：手指滑动同样触发力场
+        mainGrid.addEventListener('touchmove', e => {
+            const t = e.touches[0];
+            mouse = { x: t.clientX, y: t.clientY };
+        }, { passive: true });
+        mainGrid.addEventListener('touchend', () => {
+            mouse = null;
+        });
+
+        function tick(t) {
+            const time = t / 1000;
+            const rect = mainGrid.getBoundingClientRect();
+            const cs = cellSize();
+            allCells.forEach(cell => {
+                // 每个粒子按自己的相位和频率轻微漂移
+                let ox = Math.sin(time * cell._w1 + cell._p1) * DRIFT;
+                let oy = Math.cos(time * cell._w2 + cell._p2) * DRIFT;
+                let faint = 0;
+                if (mouse) {
+                    const cx = rect.left + (+cell.dataset.col) * cs + cs / 2;
+                    const cy = rect.top + (+cell.dataset.row) * cs + cs / 2;
+                    const dx = cx - mouse.x, dy = cy - mouse.y;
+                    const d = Math.hypot(dx, dy);
+                    if (d < FORCE_RADIUS && d > 0.01) {
+                        const strength = Math.pow(1 - d / FORCE_RADIUS, 2);
+                        ox += (dx / d) * strength * MAX_SHIFT;
+                        oy += (dy / d) * strength * MAX_SHIFT;
+                        faint = 0.25 * (1 - d / FORCE_RADIUS);
+                    }
+                }
+                cell.style.transform = `translate(${ox.toFixed(2)}px, ${oy.toFixed(2)}px)`;
+                if (!cell.classList.contains('selected')) {
+                    if (faint > 0.01) cell.style.setProperty('--fo', faint.toFixed(3));
+                    else cell.style.removeProperty('--fo');
+                }
+            });
+            requestAnimationFrame(tick);
+        }
+        if (!reducedMotion) requestAnimationFrame(tick);
+
+        // 让整页背景的方格线与中央网格对齐
+        function alignBackgroundGrid() {
+            const rect = mainGrid.getBoundingClientRect();
+            document.body.style.backgroundPosition = `${rect.left}px ${rect.top}px`;
+        }
+        window.addEventListener('resize', alignBackgroundGrid);
+
+        // 创建 4×4 的大格子，每个大格子内含 4×4 的小格子
+        for (let bigRow = 0; bigRow < 4; bigRow++) {
+            for (let bigCol = 0; bigCol < 4; bigCol++) {
+                const bigCell = document.createElement('div');
+                bigCell.className = 'big-cell';
+
+                for (let smallRow = 0; smallRow < 4; smallRow++) {
+                    for (let smallCol = 0; smallCol < 4; smallCol++) {
+                        const cell = document.createElement('div');
+                        cell.className = 'small-cell';
+                        const cellId = `${bigRow}-${bigCol}-${smallRow}-${smallCol}`;
+                        cell.dataset.id = cellId;
+                        cell.dataset.row = bigRow * 4 + smallRow;
+                        cell.dataset.col = bigCol * 4 + smallCol;
+
+                        allCells.push(cell);
+                        bigCell.appendChild(cell);
+                    }
+                }
+
+                mainGrid.appendChild(bigCell);
+            }
+        }
+
+        // 为每个粒子生成随机相位和频率，用于常驻扰动
+        allCells.forEach(cell => {
+            cell._p1 = Math.random() * Math.PI * 2;
+            cell._p2 = Math.random() * Math.PI * 2;
+            cell._w1 = 0.4 + Math.random() * 0.6;
+            cell._w2 = 0.4 + Math.random() * 0.6;
+        });
+
+        // 内置预设（无法连接服务器时的回退图案）
+        // 数学斜体 𝑥（STIX Two Math 字形采样，保留衬线与曲线细节）
+        const presetPattern = [
+            // 第 3 行
+            '0-1-3-0', '0-1-3-1', '0-1-3-2', '0-1-3-3', '0-2-3-3', '0-3-3-0',
+            // 第 4 行
+            '1-1-0-2', '1-1-0-3', '1-2-0-2', '1-2-0-3', '1-3-0-0',
+            // 第 5 行
+            '1-1-1-3', '1-2-1-1',
+            // 第 6 行
+            '1-1-2-3', '1-2-2-0', '1-2-2-1',
+            // 第 7 行（交叉处）
+            '1-1-3-3', '1-2-3-0',
+            // 第 8 行（交叉处）
+            '2-1-0-3', '2-2-0-0',
+            // 第 9 行
+            '2-1-1-2', '2-2-1-0', '2-2-1-1',
+            // 第 10 行
+            '2-1-2-2', '2-2-2-0', '2-2-2-1',
+            // 第 11 行
+            '2-0-3-3', '2-1-3-0', '2-1-3-1', '2-2-3-0', '2-2-3-1', '2-2-3-2', '2-2-3-3',
+            // 第 12 行
+            '3-0-0-3', '3-1-0-0', '3-2-0-1', '3-2-0-2',
+        ];
+
+        // 右下角笔画设为半透明
+        const ghostIds = new Set([
+            '2-2-1-0', '2-2-1-1',
+            '2-2-2-0', '2-2-2-1',
+            '2-2-3-0', '2-2-3-1', '2-2-3-2', '2-2-3-3',
+            '3-2-0-1', '3-2-0-2',
+        ]);
+
+        // 用与图标完全相同的坐标，把 wordmark 画成迷你粒子
+        function drawWordmark() {
+            const cvs = document.getElementById('logoY');
+            const size = 15;
+            const dpr = window.devicePixelRatio || 1;
+            cvs.width = size * dpr;
+            cvs.height = size * dpr;
+            cvs.style.width = size + 'px';
+            cvs.style.height = size + 'px';
+            const ctx = cvs.getContext('2d');
+            ctx.scale(dpr, dpr);
+            ctx.fillStyle = '#f2f2f0';
+            const cell = size / 16;
+            const r = cell * 0.42;
+            presetPattern.forEach(id => {
+                const [br, bc, sr, sc] = id.split('-').map(Number);
+                const x = (bc * 4 + sc + 0.5) * cell;
+                const y = (br * 4 + sr + 0.5) * cell;
+                ctx.globalAlpha = ghostIds.has(id) ? 0.10 : 1;
+                ctx.beginPath();
+                ctx.arc(x, y, r, 0, Math.PI * 2);
+                ctx.fill();
+            });
+            ctx.globalAlpha = 1;
+        }
+        drawWordmark();
+
+        // ---------- 颜色主题（默认值即当前主题；服务器 theme.json 在线时覆盖） ----------
+        const theme = { mode: 'gradient', solid: '#ffffff', from: '#ff8a5c', to: '#5c8aff' };
+
+        async function loadTheme() {
+            try {
+                const resp = await fetch('/api/theme');
+                if (resp.ok) {
+                    Object.assign(theme, await resp.json());
+                }
+            } catch (e) {
+                // 直接以 file:// 打开时走这里
+            }
+        }
+
+        function hexToRgb(hex) {
+            const n = parseInt(hex.slice(1), 16);
+            return [n >> 16 & 255, n >> 8 & 255, n & 255];
+        }
+
+        function lerpColor(a, b, t) {
+            const c1 = hexToRgb(a), c2 = hexToRgb(b);
+            const mix = c1.map((v, i) => Math.round(v + (c2[i] - v) * t));
+            return `rgb(${mix[0]}, ${mix[1]}, ${mix[2]})`;
+        }
+
+        // 渐变固定为从中心向外
+        function dotColor(row, col) {
+            if (theme.mode === 'solid') return theme.solid;
+            const t = Math.hypot(row - 7.5, col - 7.5) / Math.hypot(7.5, 7.5);
+            return lerpColor(theme.from, theme.to, t);
+        }
+
+        function applyDotColor(cell) {
+            cell.style.setProperty('--dot-color', dotColor(+cell.dataset.row, +cell.dataset.col));
+        }
+
+        function refreshColors() {
+            document.querySelectorAll('.small-cell.selected').forEach(applyDotColor);
+        }
+
+        // ---------- 坐标的读取 ----------
+        async function loadSelection() {
+            await loadTheme();
+            let ids = presetPattern;
+            try {
+                const resp = await fetch('/api/selection');
+                if (resp.ok) {
+                    ids = await resp.json();
+                }
+            } catch (e) {
+                // 直接以 file:// 打开时走这里
+            }
+            applySelection(ids);
+            document.getElementById('hero').classList.add('ready');
+        }
+
+        function applySelection(ids) {
+            selected.clear();
+            document.querySelectorAll('.small-cell').forEach(cell => {
+                cell.classList.remove('selected');
+            });
+            ids.forEach(cellId => {
+                const cell = document.querySelector(`[data-id="${cellId}"]`);
+                if (cell) {
+                    selected.add(cellId);
+                    cell.classList.add('selected');
+                    cell.classList.toggle('ghost', ghostIds.has(cellId));
+                }
+            });
+            refreshColors();
+        }
+
+        loadSelection();
+        alignBackgroundGrid();
+
+        // ---------- 三语言 ----------
+        const I18N = {
+            zh: {
+                navDocs: '文档',
+                navGallery: '标志',
+                navPricing: '价格',
+                tagline: '说出目标，剩下的交给它。',
+                subline: 'yagent 是一个 AI agent：理解你的目标，自己拆解步骤、调用工具，把事情做完。',
+                cta: '开始使用',
+                docs: '查看文档',
+                f1t: '目标驱动',
+                f1d: '告诉它要完成什么，而不是怎么做。yagent 自己规划步骤，逐项执行。',
+                f2t: '调用真实工具',
+                f2d: '浏览器、终端、文件、API——它直接操作你日常在用的工具，而不是只给建议。',
+                f3t: '随时可以接管',
+                f3d: '每一步都清晰可见。你可以随时暂停、纠正或接手，agent 不会变成黑盒。',
+                footer: '© 2026 yagent',
+            },
+            ja: {
+                navDocs: 'ドキュメント',
+                navGallery: 'ロゴ',
+                navPricing: '料金',
+                tagline: '目標を伝えるだけ。あとは任せて。',
+                subline: 'yagent は AI エージェント。目標を理解し、手順を分解し、ツールを使って最後までやり遂げます。',
+                cta: 'はじめる',
+                docs: 'ドキュメント',
+                f1t: '目標ドリブン',
+                f1d: '「どうやるか」ではなく「何をしたいか」を伝えるだけ。yagent が手順を計画し、順に実行します。',
+                f2t: '実際のツールを操作',
+                f2d: 'ブラウザ、ターミナル、ファイル、API。助言ではなく、普段使いのツールを直接操作して完了させます。',
+                f3t: 'いつでも介入できる',
+                f3d: 'すべてのステップが見える形で進行。一時停止、修正、引き継ぎがいつでもでき、ブラックボックスにはなりません。',
+                footer: '© 2026 yagent',
+            },
+            en: {
+                navDocs: 'Docs',
+                navGallery: 'Gallery',
+                navPricing: 'Pricing',
+                tagline: 'Give it a goal. It does the rest.',
+                subline: 'yagent is an AI agent that understands your goal, plans the steps, and uses real tools to get it done.',
+                cta: 'Get started',
+                docs: 'Read the docs',
+                f1t: 'Goal-driven',
+                f1d: 'Describe what you want done, not how to do it. yagent plans the steps and executes them one by one.',
+                f2t: 'Works with real tools',
+                f2d: 'Browser, terminal, files, APIs — it operates the tools you already use instead of just giving advice.',
+                f3t: 'Stay in control',
+                f3d: 'Every step is visible. Pause, correct, or take over at any time — the agent is never a black box.',
+                footer: '© 2026 yagent',
+            },
+        };
+
+        const LANG_TAGS = { zh: 'zh-CN', ja: 'ja', en: 'en' };
+
+        function detectLang() {
+            const saved = localStorage.getItem('yagent-lang');
+            if (saved && I18N[saved]) return saved;
+            const nav = (navigator.language || 'en').toLowerCase();
+            if (nav.startsWith('zh')) return 'zh';
+            if (nav.startsWith('ja')) return 'ja';
+            return 'en';
+        }
+
+        const langRoot = document.getElementById('lang');
+        const langBtn = langRoot.querySelector('.lang-btn');
+        const langMenu = langRoot.querySelector('.lang-menu');
+
+        function setLang(lang) {
+            const dict = I18N[lang];
+            document.documentElement.lang = LANG_TAGS[lang];
+            document.querySelectorAll('[data-i18n]').forEach(el => {
+                el.textContent = dict[el.dataset.i18n] || '';
+            });
+            langMenu.querySelectorAll('[data-lang]').forEach(item => {
+                const on = item.dataset.lang === lang;
+                item.setAttribute('aria-selected', on ? 'true' : 'false');
+                if (on) langRoot.querySelector('.lang-label').textContent = item.textContent.trim();
+            });
+            localStorage.setItem('yagent-lang', lang);
+        }
+
+        function openLangMenu() {
+            langRoot.classList.add('open');
+            langBtn.setAttribute('aria-expanded', 'true');
+            const current = langMenu.querySelector('[aria-selected="true"]');
+            (current || langMenu.firstElementChild).focus();
+        }
+
+        function closeLangMenu() {
+            langRoot.classList.remove('open');
+            langBtn.setAttribute('aria-expanded', 'false');
+        }
+
+        langBtn.addEventListener('click', () => {
+            if (langRoot.classList.contains('open')) closeLangMenu();
+            else openLangMenu();
+        });
+
+        langMenu.addEventListener('click', e => {
+            const item = e.target.closest('[data-lang]');
+            if (!item) return;
+            setLang(item.dataset.lang);
+            closeLangMenu();
+            langBtn.focus();
+        });
+
+        document.addEventListener('click', e => {
+            if (!langRoot.contains(e.target)) closeLangMenu();
+        });
+
+        document.addEventListener('keydown', e => {
+            if (e.key === 'Escape') {
+                closeLangMenu();
+                return;
+            }
+            if (!langRoot.classList.contains('open')) return;
+            if (e.key !== 'ArrowDown' && e.key !== 'ArrowUp') return;
+            e.preventDefault();
+            const items = [...langMenu.querySelectorAll('[data-lang]')];
+            const at = items.indexOf(document.activeElement);
+            const step = e.key === 'ArrowDown' ? 1 : -1;
+            items[(at + step + items.length) % items.length].focus();
+        });
+
+        setLang(detectLang());
+    </script>
+</body>
+</html>

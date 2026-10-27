@@ -1,0 +1,756 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>文档 · yagent</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500&family=Space+Grotesk:wght@400;500&display=swap" rel="stylesheet">
+    <style>
+        :root {
+            --bg: #0d0d0f;
+            --ink: #f2f2f0;
+            --muted: rgba(242, 242, 240, 0.55);
+            --faint: rgba(242, 242, 240, 0.35);
+            --accent: #8fa3ff;
+            --hairline: rgba(255, 255, 255, 0.08);
+        }
+
+        * { box-sizing: border-box; }
+
+        body {
+            margin: 0;
+            background-color: var(--bg);
+            background-image:
+                linear-gradient(to right, rgba(255, 255, 255, 0.03) 1px, transparent 1px),
+                linear-gradient(to bottom, rgba(255, 255, 255, 0.03) 1px, transparent 1px);
+            background-size: 25px 25px;
+            color: var(--ink);
+            font-family: 'Space Grotesk', 'Hiragino Sans', 'PingFang SC', 'Noto Sans JP', 'Microsoft YaHei', system-ui, sans-serif;
+            -webkit-font-smoothing: antialiased;
+            min-height: 100vh;
+            display: flex;
+            flex-direction: column;
+        }
+
+        .topbar {
+            position: fixed;
+            top: 0;
+            left: 0;
+            right: 0;
+            z-index: 10;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 22px 32px;
+            background: rgba(13, 13, 15, 0.7);
+            backdrop-filter: blur(12px);
+            -webkit-backdrop-filter: blur(12px);
+        }
+
+        .wordmark {
+            display: inline-flex;
+            align-items: center;
+            gap: 1px;
+            font-family: 'JetBrains Mono', ui-monospace, monospace;
+            font-size: 17px;
+            font-weight: 500;
+            letter-spacing: -0.02em;
+            color: var(--ink);
+            text-decoration: none;
+        }
+
+        .wordmark canvas {
+            display: block;
+        }
+
+        .topnav {
+            display: flex;
+            align-items: center;
+            gap: 22px;
+        }
+
+        .topnav > a {
+            font-size: 13px;
+            color: var(--faint);
+            text-decoration: none;
+            transition: color 0.2s ease;
+        }
+
+        .topnav > a:hover {
+            color: var(--ink);
+        }
+
+        /* ---------- 语言选择 ---------- */
+        .lang {
+            position: relative;
+        }
+
+        .lang-btn {
+            display: inline-flex;
+            align-items: center;
+            gap: 8px;
+            background: transparent;
+            color: var(--faint);
+            border: 1px solid var(--hairline);
+            border-radius: 999px;
+            padding: 6px 12px;
+            font-size: 13px;
+            font-family: inherit;
+            line-height: 1.2;
+            cursor: pointer;
+            transition: color 0.2s ease, border-color 0.2s ease;
+        }
+
+        .lang-btn:hover,
+        .lang.open .lang-btn {
+            color: var(--ink);
+            border-color: rgba(255, 255, 255, 0.25);
+        }
+
+        .lang-caret {
+            opacity: 0.7;
+            transition: transform 0.2s ease;
+        }
+
+        .lang.open .lang-caret {
+            transform: rotate(180deg);
+        }
+
+        .lang-menu {
+            position: absolute;
+            top: calc(100% + 8px);
+            right: 0;
+            z-index: 20;
+            min-width: 132px;
+            margin: 0;
+            padding: 6px;
+            list-style: none;
+            background: rgba(20, 20, 24, 0.96);
+            backdrop-filter: blur(16px);
+            -webkit-backdrop-filter: blur(16px);
+            border: 1px solid rgba(255, 255, 255, 0.12);
+            border-radius: 12px;
+            box-shadow: 0 18px 40px rgba(0, 0, 0, 0.55);
+            opacity: 0;
+            visibility: hidden;
+            transform: translateY(-4px);
+            transition: opacity 0.16s ease, transform 0.16s ease, visibility 0s linear 0.16s;
+        }
+
+        .lang.open .lang-menu {
+            opacity: 1;
+            visibility: visible;
+            transform: none;
+            transition: opacity 0.16s ease, transform 0.16s ease, visibility 0s;
+        }
+
+        .lang-menu li {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: 16px;
+            padding: 8px 10px;
+            border-radius: 8px;
+            font-size: 13px;
+            color: var(--muted);
+            white-space: nowrap;
+            cursor: pointer;
+            transition: background 0.15s ease, color 0.15s ease;
+        }
+
+        .lang-menu li:hover,
+        .lang-menu li:focus-visible {
+            background: rgba(255, 255, 255, 0.07);
+            color: var(--ink);
+            outline: none;
+        }
+
+        .lang-menu li[aria-selected="true"] {
+            color: var(--ink);
+        }
+
+        .lang-menu li[aria-selected="true"]::after {
+            content: '✓';
+            font-size: 11px;
+            color: var(--accent);
+        }
+
+        .lang-btn:focus-visible,
+        a:focus-visible {
+            outline: 2px solid var(--accent);
+            outline-offset: 3px;
+        }
+
+        .page {
+            flex: 1;
+            max-width: 960px;
+            margin: 0 auto;
+            padding: 96px 24px 100px;
+            display: grid;
+            grid-template-columns: 150px 1fr;
+            column-gap: 56px;
+            width: 100%;
+        }
+
+        h1 {
+            grid-column: 1 / -1;
+            font-size: 28px;
+            font-weight: 500;
+            letter-spacing: -0.02em;
+            margin: 0 0 32px;
+        }
+
+        .toc {
+            position: sticky;
+            top: 96px;
+            align-self: start;
+            display: flex;
+            flex-direction: column;
+            gap: 12px;
+        }
+
+        .toc a {
+            font-size: 13px;
+            color: var(--muted);
+            text-decoration: none;
+            transition: color 0.2s ease;
+        }
+
+        .toc a:hover {
+            color: var(--ink);
+        }
+
+        .doc-section {
+            border-top: 1px solid var(--hairline);
+            padding: 32px 0;
+            scroll-margin-top: 88px;
+        }
+
+        .doc-section h2 {
+            font-size: 17px;
+            font-weight: 500;
+            letter-spacing: -0.01em;
+            margin: 0 0 14px;
+        }
+
+        .doc-section p {
+            font-size: 14px;
+            line-height: 1.9;
+            color: var(--muted);
+            margin: 0 0 12px;
+            max-width: 40em;
+        }
+
+        .doc-section ul {
+            margin: 0 0 12px;
+            padding: 0;
+            list-style: none;
+        }
+
+        .doc-section li {
+            font-size: 14px;
+            line-height: 1.9;
+            color: var(--muted);
+            padding: 6px 0 6px 18px;
+            position: relative;
+            max-width: 40em;
+        }
+
+        .doc-section li::before {
+            content: '';
+            position: absolute;
+            left: 0;
+            top: 15px;
+            width: 5px;
+            height: 5px;
+            border-radius: 50%;
+            background: var(--faint);
+        }
+
+        .doc-section li strong,
+        .doc-section p strong {
+            color: var(--ink);
+            font-weight: 500;
+        }
+
+        code {
+            font-family: 'JetBrains Mono', ui-monospace, monospace;
+            font-size: 0.86em;
+            background: rgba(255, 255, 255, 0.06);
+            border-radius: 4px;
+            padding: 2px 6px;
+        }
+
+        kbd {
+            font-family: 'JetBrains Mono', ui-monospace, monospace;
+            font-size: 12px;
+            color: var(--ink);
+            border: 1px solid var(--hairline);
+            border-radius: 5px;
+            padding: 2px 7px;
+        }
+
+        .doc-section table {
+            border-collapse: collapse;
+            margin: 4px 0 12px;
+        }
+
+        .doc-section td {
+            font-size: 14px;
+            color: var(--muted);
+            padding: 8px 32px 8px 0;
+            border-top: 1px solid var(--hairline);
+        }
+
+        .doc-section tr:first-child td {
+            border-top: none;
+        }
+
+        footer {
+            padding: 32px;
+            text-align: center;
+            font-size: 12px;
+            color: var(--faint);
+            border-top: 1px solid var(--hairline);
+        }
+
+        @media (max-width: 600px) {
+            .topbar {
+                padding: 18px 20px;
+            }
+
+            .topnav {
+                gap: 14px;
+            }
+
+            .lang-btn {
+                padding: 6px 10px;
+                gap: 6px;
+            }
+
+            .page {
+                grid-template-columns: 1fr;
+            }
+
+            .toc {
+                position: static;
+                flex-direction: row;
+                flex-wrap: wrap;
+                gap: 8px 18px;
+                margin-bottom: 16px;
+            }
+        }
+    </style>
+</head>
+<body>
+    <header class="topbar">
+        <a class="wordmark" href="index.html"><canvas id="logoY" aria-label="x"></canvas><span>agent</span></a>
+        <div class="topnav">
+            <a href="docs.html" data-i18n="navDocs"></a>
+            <a href="pricing.html" data-i18n="navPricing"></a>
+            <div class="lang" id="lang">
+                <button class="lang-btn" type="button" aria-haspopup="listbox" aria-expanded="false" aria-label="Language">
+                    <span class="lang-label">中文</span>
+                    <svg class="lang-caret" width="10" height="6" viewBox="0 0 10 6" aria-hidden="true"><path d="M1 1l4 4 4-4" fill="none" stroke="currentColor" stroke-width="1.2" stroke-linecap="round" stroke-linejoin="round"/></svg>
+                </button>
+                <ul class="lang-menu" role="listbox" aria-label="Language">
+                    <li role="option" data-lang="zh" aria-selected="true" tabindex="-1">中文</li>
+                    <li role="option" data-lang="ja" aria-selected="false" tabindex="-1">日本語</li>
+                    <li role="option" data-lang="en" aria-selected="false" tabindex="-1">English</li>
+                </ul>
+            </div>
+        </div>
+    </header>
+
+    <main class="page">
+        <h1 id="docTitle"></h1>
+        <nav class="toc" id="toc"></nav>
+        <div id="docBody"></div>
+    </main>
+
+    <footer>
+        <span data-i18n="footer"></span>
+    </footer>
+
+    <script>
+        // 与主页图标相同的 16×16 粒子 X
+        // 16×16 的 X 位图（与主页图标一致；2 = 右下角半透明）
+        const LOGO_X = [
+            '0000000000000000',
+            '0000000000000000',
+            '0000000000000000',
+            '0000111100011000',
+            '0000001100111000',
+            '0000000101000000',
+            '0000000111000000',
+            '0000000110000000',
+            '0000000110000000',
+            '0000001022000000',
+            '0000001022000000',
+            '0001110022220000',
+            '0001100002200000',
+            '0000000000000000',
+            '0000000000000000',
+            '0000000000000000',
+        ];
+
+        function drawWordmark() {
+            const cvs = document.getElementById('logoY');
+            const size = 15;
+            const dpr = window.devicePixelRatio || 1;
+            cvs.width = size * dpr;
+            cvs.height = size * dpr;
+            cvs.style.width = size + 'px';
+            cvs.style.height = size + 'px';
+            const ctx = cvs.getContext('2d');
+            ctx.scale(dpr, dpr);
+            ctx.fillStyle = '#f2f2f0';
+            const cell = size / 16;
+            const r = cell * 0.42;
+            LOGO_X.forEach((rowStr, row) => {
+                for (let col = 0; col < 16; col++) {
+                    const ch = rowStr[col];
+                    if (ch !== '1' && ch !== '2') continue;
+                    ctx.globalAlpha = ch === '2' ? 0.3 : 1;
+                    ctx.beginPath();
+                    ctx.arc((col + 0.5) * cell, (row + 0.5) * cell, r, 0, Math.PI * 2);
+                    ctx.fill();
+                }
+            });
+            ctx.globalAlpha = 1;
+        }
+        drawWordmark();
+
+        // ---------- 文档内容（中日英） ----------
+        // 块类型：{p} 段落、{ul} 列表、{table} 两行列表格
+        const DOC = {
+            zh: {
+                navDocs: '文档',
+                navPricing: '价格',
+                title: '文档',
+                footer: '© 2026 yagent',
+                sections: [
+                    {
+                        id: 'start',
+                        title: '快速开始',
+                        blocks: [
+                            { p: 'yagent 提供 Web 版和桌面版（macOS）。在仓库根目录执行 <code>pnpm install && pnpm dev</code> 启动 Web 版；<code>pnpm dev:desktop</code> 启动桌面版。' },
+                            { p: '首次使用，请在「设置 → API 密钥」中填入 Anthropic 或 OpenAI 的密钥，也支持 OpenAI 兼容的自定义端点。<strong>密钥仅存储在本地</strong>，不会上传到任何服务器。' },
+                            { p: '点左侧栏「新建任务」（<kbd>⌘N</kbd>）即可开始第一个会话。' },
+                        ],
+                    },
+                    {
+                        id: 'concepts',
+                        title: '核心概念',
+                        blocks: [
+                            { ul: [
+                                '<strong>会话（Chat）</strong>：一个任务单位。可以绑定一个工作目录，也可以是不操作任何文件的纯聊天。',
+                                '<strong>三种模式</strong>：纯对话（不执行任何操作）、Work · 本地沙箱（本机隔离执行）、Work · 云端远程（云端运行，手机可接管）。在输入框工具栏切换。',
+                                '<strong>对话即节点树</strong>：会话不是一维消息列表，而是可分叉的树。回答不满意时回到任意节点分叉重试，右栏「分支」页可以可视化整棵树并跳转。',
+                                '<strong>Artifacts</strong>：任务完成后产出的可交付物（代码、文档、网页、图片），以卡片挂在回答下方，点击在右栏查看。',
+                            ] },
+                        ],
+                    },
+                    {
+                        id: 'tools',
+                        title: '工具与附件',
+                        blocks: [
+                            { p: '默认工具：终端命令、文件编辑、网络搜索，可在「设置 → 记忆与工具」中单独开关。打开「自动执行」后，写文件和跑命令不再逐个确认。' },
+                            { p: '附件直接粘贴或拖进输入框。不超过 1KB 的文本会内联给模型；图片走多模态识别；PDF、压缩包等大文件只提供路径，由 agent 按需读取。附件保存在应用数据目录，<strong>不会污染你的项目目录</strong>。' },
+                        ],
+                    },
+                    {
+                        id: 'voice',
+                        title: '语音输入',
+                        blocks: [
+                            { p: '点输入框工具栏的麦克风进入语音模式，说完点「完成」，识别文本会回填到输入框，<strong>可以编辑后再发送</strong>，不会直接发出。' },
+                            { p: '桌面版的语音识别后端可选 Groq（推荐，有免费档）、OpenAI Whisper 或本地 ASR 服务，在「设置 → 工具 → 语音识别」中切换。' },
+                        ],
+                    },
+                    {
+                        id: 'shortcuts',
+                        title: '快捷键',
+                        blocks: [
+                            { table: [
+                                ['<kbd>⌘</kbd> / <kbd>Ctrl</kbd> + <kbd>Enter</kbd>', '发送消息'],
+                                ['<kbd>Enter</kbd>', '输入框换行'],
+                                ['<kbd>⌘B</kbd>', '收起 / 展开左侧栏'],
+                                ['<kbd>⌘N</kbd>', '新建任务'],
+                                ['<kbd>Esc</kbd>', '关闭弹窗 / 退出语音'],
+                            ] },
+                        ],
+                    },
+                    {
+                        id: 'share',
+                        title: '分享',
+                        blocks: [
+                            { p: '顶栏的分享按钮会生成<strong>当前分支的只读快照</strong>链接。拿到链接的人只能查看，不能操作；分享之后的后续对话不会影响快照内容。' },
+                        ],
+                    },
+                ],
+            },
+            ja: {
+                navDocs: 'ドキュメント',
+                navPricing: '料金',
+                title: 'ドキュメント',
+                footer: '© 2026 yagent',
+                sections: [
+                    {
+                        id: 'start',
+                        title: 'はじめる',
+                        blocks: [
+                            { p: 'yagent は Web 版とデスクトップ版（macOS）があります。リポジトリのルートで <code>pnpm install && pnpm dev</code> を実行すると Web 版、<code>pnpm dev:desktop</code> でデスクトップ版が起動します。' },
+                            { p: '初めて使うときは「設定 → API キー」で Anthropic または OpenAI のキーを入力してください。OpenAI 互換のカスタムエンドポイントにも対応しています。<strong>キーはローカルにのみ保存され</strong>、どのサーバーにも送信されません。' },
+                            { p: 'サイドバーの「新規タスク」（<kbd>⌘N</kbd>）から最初のセッションを始められます。' },
+                        ],
+                    },
+                    {
+                        id: 'concepts',
+                        title: '基本概念',
+                        blocks: [
+                            { ul: [
+                                '<strong>セッション（Chat）</strong>：1 つのタスク単位。作業ディレクトリを紐付けることも、ファイルを操作しない純粋なチャットにすることもできます。',
+                                '<strong>3 つのモード</strong>：チャットのみ（操作を実行しない）、Work · ローカルサンドボックス（このマシンで隔離実行）、Work · クラウド（クラウドで実行、スマホから引き継ぎ可能）。入力欄のツールバーで切り替えます。',
+                                '<strong>会話はノードツリー</strong>：会話は一次元のメッセージ列ではなく、分岐できる木構造です。回答が気に入らなければ任意のノードに戻って分岐し直せます。右パネルの「分岐」タブで木全体を眺めてジャンプできます。',
+                                '<strong>Artifacts</strong>：タスク完了後の成果物（コード、ドキュメント、Web ページ、画像）がカードとして回答の下に表示され、クリックで右パネルに開きます。',
+                            ] },
+                        ],
+                    },
+                    {
+                        id: 'tools',
+                        title: 'ツールと添付ファイル',
+                        blocks: [
+                            { p: '標準ツールはターミナルコマンド、ファイル編集、Web 検索の 3 つ。「設定 → メモリとツール」で個別にオンオフできます。「自動実行」をオンにすると、ファイル書き込みやコマンド実行の確認を省略できます。' },
+                            { p: '添付ファイルは入力欄に貼るかドラッグするだけ。1KB 以下のテキストはモデルに直接埋め込まれ、画像はマルチモーダルで認識され、PDF やアーカイブなどの大きなファイルはパスだけを渡して必要時に読み込まれます。添付はアプリのデータディレクトリに保存され、<strong>プロジェクトのディレクトリを汚染しません</strong>。' },
+                        ],
+                    },
+                    {
+                        id: 'voice',
+                        title: '音声入力',
+                        blocks: [
+                            { p: '入力欄ツールバーのマイクを押すと音声モードになります。話し終えたら「完了」を押すと、認識テキストが入力欄に戻ります。<strong>編集してから送信でき</strong>、そのまま送信されることはありません。' },
+                            { p: 'デスクトップ版の音声認識バックエンドは Groq（推奨・無料枠あり）、OpenAI Whisper、ローカル ASR サービスから選べます。「設定 → ツール → 音声認識」で切り替えます。' },
+                        ],
+                    },
+                    {
+                        id: 'shortcuts',
+                        title: 'ショートカット',
+                        blocks: [
+                            { table: [
+                                ['<kbd>⌘</kbd> / <kbd>Ctrl</kbd> + <kbd>Enter</kbd>', 'メッセージを送信'],
+                                ['<kbd>Enter</kbd>', '改行'],
+                                ['<kbd>⌘B</kbd>', 'サイドバーの開閉'],
+                                ['<kbd>⌘N</kbd>', '新規タスク'],
+                                ['<kbd>Esc</kbd>', 'ポップアップを閉じる / 音声を終了'],
+                            ] },
+                        ],
+                    },
+                    {
+                        id: 'share',
+                        title: '共有',
+                        blocks: [
+                            { p: 'トップバーの共有ボタンは<strong>現在のブランチの読み取り専用スナップショット</strong>へのリンクを生成します。リンクを受け取った人は閲覧のみ可能で、操作はできません。共有後の会話はスナップショットに影響しません。' },
+                        ],
+                    },
+                ],
+            },
+            en: {
+                navDocs: 'Docs',
+                navPricing: 'Pricing',
+                title: 'Documentation',
+                footer: '© 2026 yagent',
+                sections: [
+                    {
+                        id: 'start',
+                        title: 'Getting started',
+                        blocks: [
+                            { p: 'yagent ships as a web app and a desktop app (macOS). From the repository root, run <code>pnpm install && pnpm dev</code> for the web app, or <code>pnpm dev:desktop</code> for the desktop app.' },
+                            { p: 'On first use, add your Anthropic or OpenAI key under Settings → API keys. OpenAI-compatible custom endpoints work too. <strong>Keys are stored locally only</strong> and never sent to any server.' },
+                            { p: 'Click "New task" (<kbd>⌘N</kbd>) in the sidebar to start your first session.' },
+                        ],
+                    },
+                    {
+                        id: 'concepts',
+                        title: 'Core concepts',
+                        blocks: [
+                            { ul: [
+                                '<strong>Chat</strong>: one unit of work. Bind it to a working directory, or keep it as a pure conversation that touches no files.',
+                                '<strong>Three modes</strong>: Chat only (performs no actions), Work · Local sandbox (isolated execution on your machine), Work · Cloud (runs remotely, can be taken over from your phone). Switch from the composer toolbar.',
+                                '<strong>Conversation as a node tree</strong>: a conversation is not a flat list of messages but a tree you can fork. If an answer disappoints, go back to any node and branch off. The Branches tab in the right panel visualizes the whole tree.',
+                                '<strong>Artifacts</strong>: deliverables produced by a task (code, docs, web pages, images) appear as cards below the answer; click to open them in the right panel.',
+                            ] },
+                        ],
+                    },
+                    {
+                        id: 'tools',
+                        title: 'Tools & attachments',
+                        blocks: [
+                            { p: 'Default tools: terminal commands, file editing, and web search — each can be toggled under Settings → Memory & tools. Turn on Auto-run to skip per-action confirmation for file writes and commands.' },
+                            { p: 'Paste or drop attachments into the composer. Text under 1KB is inlined to the model, images go through multimodal vision, and large files like PDFs or archives are passed by path for the agent to read on demand. Attachments live in the app data directory and <strong>never pollute your project</strong>.' },
+                        ],
+                    },
+                    {
+                        id: 'voice',
+                        title: 'Voice input',
+                        blocks: [
+                            { p: 'Click the microphone in the composer toolbar to enter voice mode. When you finish, the transcript is placed back in the composer so <strong>you can edit before sending</strong> — it is never sent directly.' },
+                            { p: 'On desktop, the speech recognition backend can be Groq (recommended, free tier available), OpenAI Whisper, or a local ASR service. Switch under Settings → Tools → Speech recognition.' },
+                        ],
+                    },
+                    {
+                        id: 'shortcuts',
+                        title: 'Keyboard shortcuts',
+                        blocks: [
+                            { table: [
+                                ['<kbd>⌘</kbd> / <kbd>Ctrl</kbd> + <kbd>Enter</kbd>', 'Send message'],
+                                ['<kbd>Enter</kbd>', 'New line'],
+                                ['<kbd>⌘B</kbd>', 'Toggle the sidebar'],
+                                ['<kbd>⌘N</kbd>', 'New task'],
+                                ['<kbd>Esc</kbd>', 'Close dialog / exit voice'],
+                            ] },
+                        ],
+                    },
+                    {
+                        id: 'share',
+                        title: 'Sharing',
+                        blocks: [
+                            { p: 'The share button in the top bar creates a link to a <strong>read-only snapshot of the current branch</strong>. Anyone with the link can view but not interact; later conversation does not change the snapshot.' },
+                        ],
+                    },
+                ],
+            },
+        };
+
+        const LANG_TAGS = { zh: 'zh-CN', ja: 'ja', en: 'en' };
+
+        function detectLang() {
+            const saved = localStorage.getItem('yagent-lang');
+            if (saved && DOC[saved]) return saved;
+            const nav = (navigator.language || 'en').toLowerCase();
+            if (nav.startsWith('zh')) return 'zh';
+            if (nav.startsWith('ja')) return 'ja';
+            return 'en';
+        }
+
+        function renderDocs(lang) {
+            const dict = DOC[lang];
+            document.documentElement.lang = LANG_TAGS[lang];
+            document.getElementById('docTitle').textContent = dict.title;
+            document.querySelector('[data-i18n="navDocs"]').textContent = dict.navDocs;
+            document.querySelector('[data-i18n="navPricing"]').textContent = dict.navPricing;
+            document.querySelector('[data-i18n="footer"]').textContent = dict.footer;
+
+            const toc = document.getElementById('toc');
+            const body = document.getElementById('docBody');
+            toc.innerHTML = '';
+            body.innerHTML = '';
+
+            dict.sections.forEach(section => {
+                const link = document.createElement('a');
+                link.href = `#${section.id}`;
+                link.textContent = section.title;
+                toc.appendChild(link);
+
+                const el = document.createElement('section');
+                el.className = 'doc-section';
+                el.id = section.id;
+                const h2 = document.createElement('h2');
+                h2.textContent = section.title;
+                el.appendChild(h2);
+
+                section.blocks.forEach(block => {
+                    if (block.p) {
+                        const p = document.createElement('p');
+                        p.innerHTML = block.p;
+                        el.appendChild(p);
+                    } else if (block.ul) {
+                        const ul = document.createElement('ul');
+                        block.ul.forEach(item => {
+                            const li = document.createElement('li');
+                            li.innerHTML = item;
+                            ul.appendChild(li);
+                        });
+                        el.appendChild(ul);
+                    } else if (block.table) {
+                        const table = document.createElement('table');
+                        block.table.forEach(([key, desc]) => {
+                            const tr = document.createElement('tr');
+                            const tdKey = document.createElement('td');
+                            const tdDesc = document.createElement('td');
+                            tdKey.innerHTML = key;
+                            tdDesc.textContent = desc;
+                            tr.appendChild(tdKey);
+                            tr.appendChild(tdDesc);
+                            table.appendChild(tr);
+                        });
+                        el.appendChild(table);
+                    }
+                });
+
+                body.appendChild(el);
+            });
+        }
+
+        const langRoot = document.getElementById('lang');
+        const langBtn = langRoot.querySelector('.lang-btn');
+        const langMenu = langRoot.querySelector('.lang-menu');
+
+        function setLang(lang) {
+            renderDocs(lang);
+            langMenu.querySelectorAll('[data-lang]').forEach(item => {
+                const on = item.dataset.lang === lang;
+                item.setAttribute('aria-selected', on ? 'true' : 'false');
+                if (on) langRoot.querySelector('.lang-label').textContent = item.textContent.trim();
+            });
+            localStorage.setItem('yagent-lang', lang);
+        }
+
+        function openLangMenu() {
+            langRoot.classList.add('open');
+            langBtn.setAttribute('aria-expanded', 'true');
+            const current = langMenu.querySelector('[aria-selected="true"]');
+            (current || langMenu.firstElementChild).focus();
+        }
+
+        function closeLangMenu() {
+            langRoot.classList.remove('open');
+            langBtn.setAttribute('aria-expanded', 'false');
+        }
+
+        langBtn.addEventListener('click', () => {
+            if (langRoot.classList.contains('open')) closeLangMenu();
+            else openLangMenu();
+        });
+
+        langMenu.addEventListener('click', e => {
+            const item = e.target.closest('[data-lang]');
+            if (!item) return;
+            setLang(item.dataset.lang);
+            closeLangMenu();
+            langBtn.focus();
+        });
+
+        document.addEventListener('click', e => {
+            if (!langRoot.contains(e.target)) closeLangMenu();
+        });
+
+        document.addEventListener('keydown', e => {
+            if (e.key === 'Escape') {
+                closeLangMenu();
+                return;
+            }
+            if (!langRoot.classList.contains('open')) return;
+            if (e.key !== 'ArrowDown' && e.key !== 'ArrowUp') return;
+            e.preventDefault();
+            const items = [...langMenu.querySelectorAll('[data-lang]')];
+            const at = items.indexOf(document.activeElement);
+            const step = e.key === 'ArrowDown' ? 1 : -1;
+            items[(at + step + items.length) % items.length].focus();
+        });
+
+        setLang(detectLang());
+    </script>
+</body>
+</html>
