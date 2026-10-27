@@ -154,7 +154,7 @@ export function EmptyChatHero() {
     }
     align()
     const ro = new ResizeObserver(align)
-    const chat = heroRef.current?.closest('.chat')
+    const chat = heroRef.current?.closest('.chat') as HTMLElement | null
     if (chat) ro.observe(chat)
     if (logoRef.current) ro.observe(logoRef.current)
     window.addEventListener('resize', align)

@@ -516,7 +516,16 @@ function App() {
       const saved: { name: string; size: number }[] = []
       const modelNotes: string[] = []
       const images: { mime: string; name: string; path?: string; data: string }[] = []
-      const fileCards: { name: string; size: number; path?: string; mime?: string }[] = []
+      const fileCards: {
+        name: string
+        size: number
+        path?: string
+        mime?: string
+        preview?:
+          | { kind: 'html'; html: string }
+          | { kind: 'md'; text: string }
+          | { kind: 'pdf'; dataUrl: string }
+      }[] = []
       const writeAtt = window.yagentDesktop?.attachments?.write
       for (const a of files) {
         let absPath = ''
