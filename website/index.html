@@ -8,7 +8,7 @@
     <link rel="stylesheet" href="theme.css">
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-    <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@500&family=Space+Grotesk:wght@400;500&display=swap" rel="stylesheet">
+    <link href="https://fonts.googleapis.com/css2?family=Instrument+Serif:ital@0;1&family=JetBrains+Mono:wght@500&family=Noto+Serif+JP:wght@500&family=Noto+Serif+SC:wght@500&family=Space+Grotesk:wght@400;500&display=swap" rel="stylesheet">
     <style>
         :root {
             --cell: clamp(16px, 5.4vw, 25px);
@@ -248,9 +248,9 @@
         .hero.ready .subline { opacity: 1; transform: none; transition-delay: 0.35s; }
         .hero.ready .cta-row { opacity: 1; transform: none; transition-delay: 0.55s; }
 
-        /* ---------- 产品一览（编辑式纵向陈列） ---------- */
+        /* ---------- 产品一览（左右交替） ---------- */
         .showcase {
-            max-width: 880px;
+            max-width: 1040px;
             margin: 0 auto;
             padding: 48px 24px 96px;
         }
@@ -278,12 +278,12 @@
 
         .showcase-item {
             margin: 0;
-            padding: 40px 0;
+            padding: 44px 0;
             border-bottom: 1px solid var(--hairline);
             display: grid;
-            grid-template-columns: 3.5rem 1fr;
-            gap: 8px 20px;
-            align-items: start;
+            grid-template-columns: minmax(11rem, 0.38fr) 1fr;
+            gap: 28px 40px;
+            align-items: center;
         }
 
         .showcase-item:first-child {
@@ -295,15 +295,34 @@
             padding-bottom: 0;
         }
 
+        .showcase-item:nth-child(even) {
+            grid-template-columns: 1fr minmax(11rem, 0.38fr);
+        }
+
+        .showcase-item:nth-child(even) .showcase-text {
+            order: 2;
+        }
+
+        .showcase-item:nth-child(even) img {
+            order: 1;
+        }
+
+        .showcase-text {
+            min-width: 0;
+            display: grid;
+            grid-template-columns: 2.75rem 1fr;
+            gap: 6px 14px;
+            align-items: start;
+        }
+
         .showcase-idx {
-            grid-row: 1 / span 2;
             font-family: 'JetBrains Mono', ui-monospace, monospace;
             font-size: 13px;
             font-weight: 500;
             letter-spacing: 0.02em;
             color: var(--faint);
             line-height: 1.4;
-            padding-top: 3px;
+            padding-top: 4px;
         }
 
         .showcase-copy {
@@ -311,27 +330,25 @@
         }
 
         .showcase-name {
-            margin: 0 0 6px;
-            font-size: 18px;
+            margin: 0 0 12px;
+            font-family: 'Instrument Serif', 'Noto Serif SC', 'Noto Serif JP', 'Songti SC', 'Hiragino Mincho ProN', serif;
+            font-size: clamp(28px, 3.2vw, 40px);
             font-weight: 500;
-            letter-spacing: -0.02em;
-            line-height: 1.3;
+            letter-spacing: -0.03em;
+            line-height: 1.15;
         }
 
         .showcase-desc {
             margin: 0;
-            font-size: 14px;
-            line-height: 1.7;
+            font-size: 15px;
+            line-height: 1.75;
             color: var(--muted);
-            max-width: 36em;
         }
 
         .showcase-item img {
-            grid-column: 1 / -1;
             display: block;
             width: 100%;
             height: auto;
-            margin-top: 22px;
             border-radius: 12px;
             border: 1px solid var(--hairline);
             background: color-mix(in srgb, var(--ink) 3%, var(--bg));
@@ -420,11 +437,11 @@
         }
 
         .marquee-track.left {
-            animation: marquee-left 52s linear infinite;
+            animation: marquee-left 88s linear infinite;
         }
 
         .marquee-track.right {
-            animation: marquee-right 58s linear infinite;
+            animation: marquee-right 96s linear infinite;
         }
 
         .marquee-stack:hover .marquee-track {
@@ -547,18 +564,28 @@
                 padding: 32px 16px 72px;
             }
 
-            .showcase-item {
-                grid-template-columns: 2.5rem 1fr;
-                gap: 6px 14px;
+            .showcase-item,
+            .showcase-item:nth-child(even) {
+                grid-template-columns: 1fr;
+                gap: 16px;
                 padding: 32px 0;
             }
 
+            .showcase-item:nth-child(even) .showcase-text,
+            .showcase-item:nth-child(even) img {
+                order: unset;
+            }
+
+            .showcase-text {
+                grid-template-columns: 2.25rem 1fr;
+                gap: 4px 12px;
+            }
+
             .showcase-name {
-                font-size: 16px;
+                font-size: 26px;
             }
 
             .showcase-item img {
-                margin-top: 16px;
                 border-radius: 10px;
             }
 
@@ -656,34 +683,42 @@
             </div>
             <div class="showcase-list">
                 <article class="showcase-item">
-                    <span class="showcase-idx" aria-hidden="true">01</span>
-                    <div class="showcase-copy">
-                        <h3 class="showcase-name" data-i18n="shot1t"></h3>
-                        <p class="showcase-desc" data-i18n="shot1c"></p>
+                    <div class="showcase-text">
+                        <span class="showcase-idx" aria-hidden="true">01</span>
+                        <div class="showcase-copy">
+                            <h3 class="showcase-name" data-i18n="shot1t"></h3>
+                            <p class="showcase-desc" data-i18n="shot1c"></p>
+                        </div>
                     </div>
                     <img src="assets/showcase/1.png" alt="" data-i18n-alt="shot1a" width="2624" height="1824" loading="lazy" decoding="async">
                 </article>
                 <article class="showcase-item">
-                    <span class="showcase-idx" aria-hidden="true">02</span>
-                    <div class="showcase-copy">
-                        <h3 class="showcase-name" data-i18n="shot2t"></h3>
-                        <p class="showcase-desc" data-i18n="shot2c"></p>
+                    <div class="showcase-text">
+                        <span class="showcase-idx" aria-hidden="true">02</span>
+                        <div class="showcase-copy">
+                            <h3 class="showcase-name" data-i18n="shot2t"></h3>
+                            <p class="showcase-desc" data-i18n="shot2c"></p>
+                        </div>
                     </div>
                     <img src="assets/showcase/2.png" alt="" data-i18n-alt="shot2a" width="2624" height="1824" loading="lazy" decoding="async">
                 </article>
                 <article class="showcase-item">
-                    <span class="showcase-idx" aria-hidden="true">03</span>
-                    <div class="showcase-copy">
-                        <h3 class="showcase-name" data-i18n="shot3t"></h3>
-                        <p class="showcase-desc" data-i18n="shot3c"></p>
+                    <div class="showcase-text">
+                        <span class="showcase-idx" aria-hidden="true">03</span>
+                        <div class="showcase-copy">
+                            <h3 class="showcase-name" data-i18n="shot3t"></h3>
+                            <p class="showcase-desc" data-i18n="shot3c"></p>
+                        </div>
                     </div>
                     <img src="assets/showcase/3.png" alt="" data-i18n-alt="shot3a" width="2624" height="1824" loading="lazy" decoding="async">
                 </article>
                 <article class="showcase-item">
-                    <span class="showcase-idx" aria-hidden="true">04</span>
-                    <div class="showcase-copy">
-                        <h3 class="showcase-name" data-i18n="shot4t"></h3>
-                        <p class="showcase-desc" data-i18n="shot4c"></p>
+                    <div class="showcase-text">
+                        <span class="showcase-idx" aria-hidden="true">04</span>
+                        <div class="showcase-copy">
+                            <h3 class="showcase-name" data-i18n="shot4t"></h3>
+                            <p class="showcase-desc" data-i18n="shot4c"></p>
+                        </div>
                     </div>
                     <img src="assets/showcase/4.png" alt="" data-i18n-alt="shot4a" width="2624" height="1824" loading="lazy" decoding="async">
                 </article>
@@ -1013,6 +1048,24 @@
                 q6: '技能上传之后，它按我的习惯做事。像是多了一个记得我规矩的搭档，而不是每次从零教。',
                 q6n: '外卖备注少冰',
                 q6r: '设计师',
+                q7: 'Token 花到哪，图表一眼能看见。我终于敢让它多跑几轮，而不是一边用一边心虚。',
+                q7n: '早八人机',
+                q7r: '前端工程师',
+                q8: '回归用例一长串，它先问我「先测哪条」。我勾了三个优先级，半小时就有结果，没被全量拖死。',
+                q8n: '只点招牌菜',
+                q8r: '测试工程师',
+                q9: '夜里跑批处理，早上打开能看到每一步命令和产物。出问题不用猜是哪一环断了。',
+                q9n: '电梯里的猫',
+                q9r: 'SRE',
+                q10: '新人入职第一周，我让他们用 yagent 摸仓库。侧栏的「收获」比我写的 onboarding 文档还管用。',
+                q10n: '周五才回消息',
+                q10r: '创业者',
+                q11: '绑上数据仓库脚本目录之后，改哪份 SQL、跑出什么表，全在面板里。交接再也不是口头传说。',
+                q11n: '咖啡续杯券',
+                q11r: '数据分析',
+                q12: '我把写稿的规矩做成技能丢进去。它会按栏目语气改，而不是每次都写成「AI 味」通稿。',
+                q12n: '空调二十六度',
+                q12r: '内容运营',
                 footer: '© 2026 yagent',
             },
             ja: {
@@ -1064,6 +1117,24 @@
                 q6: 'スキルを上げたら、私の流儀で動く。毎回ゼロから教える相手じゃなく、ルールを覚えている相棒になった。',
                 q6n: '配達は氷少なめ',
                 q6r: 'デザイナー',
+                q7: 'トークンがどこに使われたか、グラフで一目。だから何周か回すのも怖くなくなった。',
+                q7n: '朝イチ社畜',
+                q7r: 'フロントエンド',
+                q8: '回帰が長いとき、先に「どれから？」と聞いてくる。優先を三つ選んだら半時間で結果。全量地獄を避けた。',
+                q8n: '名物だけ注文',
+                q8r: 'QAエンジニア',
+                q9: '夜間バッチのあと、朝にコマンドと成果物の流れが見える。どこで切れたか当て勘しなくていい。',
+                q9n: 'エレベータの猫',
+                q9r: 'SRE',
+                q10: '入社一週目にリポを触らせた。「收获」サイドのメモのほうが、私のオンボーディング資料より役に立った。',
+                q10n: '金曜しか返信しない',
+                q10r: '起業家',
+                q11: 'データ倉庫のスクリプトを結ぶと、どの SQL を直し、どの表が出たかがパネルに残る。引き継ぎが口伝じゃなくなった。',
+                q11n: 'コーヒーおかわり券',
+                q11r: 'データ分析',
+                q12: '執筆ルールをスキルにした。欄のトーンで直してくれる。「AI っぽい」原稿に毎回戻らない。',
+                q12n: 'エアコン26度',
+                q12r: 'コンテンツ',
                 footer: '© 2026 yagent',
             },
             en: {
@@ -1115,13 +1186,31 @@
                 q6: 'After uploading my skills, it works the way I do. Less teaching from scratch—more like a partner that remembers the rules.',
                 q6n: 'LessIcePlease',
                 q6r: 'Designer',
+                q7: 'I can see where tokens went in the chart. I’m finally okay letting it run a few more rounds without that quiet guilt.',
+                q7n: 'EarlyShiftBot',
+                q7r: 'Frontend engineer',
+                q8: 'Long regression suites—it asks which cases first. I picked three priorities and had results in half an hour, not a full-suite death march.',
+                q8n: 'SignatureOnly',
+                q8r: 'QA engineer',
+                q9: 'After overnight batch jobs, morning shows every command and artifact. I don’t guess which step broke.',
+                q9n: 'ElevatorCat',
+                q9r: 'SRE',
+                q10: 'Week one, I had new hires poke the repo with yagent. The Insights panel beat the onboarding doc I wrote.',
+                q10n: 'FridayReplies',
+                q10r: 'Founder',
+                q11: 'Bound the warehouse scripts folder—which SQL changed, which tables landed, all in the panel. Handoffs stopped being folklore.',
+                q11n: 'RefillCoupon',
+                q11r: 'Data analyst',
+                q12: 'I uploaded my writing rules as a skill. It edits in the column’s voice instead of defaulting to that generic AI tone.',
+                q12n: 'AC26C',
+                q12r: 'Content ops',
                 footer: '© 2026 yagent',
             },
         };
 
         const VOICE_ROWS = [
-            [1, 2, 3],
-            [4, 5, 6],
+            [1, 2, 3, 4, 5, 6],
+            [7, 8, 9, 10, 11, 12],
         ];
 
         function voiceCard(dict, id) {
