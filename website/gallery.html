@@ -4,27 +4,20 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>标志实验 · yagent</title>
+    <script src="theme-boot.js"></script>
+    <link rel="stylesheet" href="theme.css">
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@500&family=Space+Grotesk:wght@400;500&display=swap" rel="stylesheet">
     <style>
-        :root {
-            --bg: #0d0d0f;
-            --ink: #f2f2f0;
-            --muted: rgba(242, 242, 240, 0.55);
-            --faint: rgba(242, 242, 240, 0.35);
-            --accent: #8fa3ff;
-            --hairline: rgba(255, 255, 255, 0.08);
-        }
-
         * { box-sizing: border-box; }
 
         body {
             margin: 0;
             background-color: var(--bg);
             background-image:
-                linear-gradient(to right, rgba(255, 255, 255, 0.03) 1px, transparent 1px),
-                linear-gradient(to bottom, rgba(255, 255, 255, 0.03) 1px, transparent 1px);
+                linear-gradient(to right, var(--grid-faint) 1px, transparent 1px),
+                linear-gradient(to bottom, var(--grid-faint) 1px, transparent 1px);
             background-size: 25px 25px;
             color: var(--ink);
             font-family: 'Space Grotesk', 'Hiragino Sans', 'PingFang SC', 'Noto Sans JP', 'Microsoft YaHei', system-ui, sans-serif;
@@ -45,7 +38,7 @@
             justify-content: space-between;
             align-items: center;
             padding: 22px 32px;
-            background: rgba(13, 13, 15, 0.7);
+            background: var(--topbar-bg);
             backdrop-filter: blur(12px);
             -webkit-backdrop-filter: blur(12px);
         }
@@ -87,6 +80,7 @@
             color: var(--ink);
         }
 
+
         /* ---------- 语言选择 ---------- */
         .lang {
             position: relative;
@@ -111,7 +105,7 @@
         .lang-btn:hover,
         .lang.open .lang-btn {
             color: var(--ink);
-            border-color: rgba(255, 255, 255, 0.25);
+            border-color: var(--control-hover-border);
         }
 
         .lang-caret {
@@ -123,70 +117,12 @@
             transform: rotate(180deg);
         }
 
-        .lang-menu {
-            position: absolute;
-            top: calc(100% + 8px);
-            right: 0;
-            z-index: 20;
-            min-width: 132px;
-            margin: 0;
-            padding: 6px;
-            list-style: none;
-            background: rgba(20, 20, 24, 0.96);
-            backdrop-filter: blur(16px);
-            -webkit-backdrop-filter: blur(16px);
-            border: 1px solid rgba(255, 255, 255, 0.12);
-            border-radius: 12px;
-            box-shadow: 0 18px 40px rgba(0, 0, 0, 0.55);
-            opacity: 0;
-            visibility: hidden;
-            transform: translateY(-4px);
-            transition: opacity 0.16s ease, transform 0.16s ease, visibility 0s linear 0.16s;
-        }
-
-        .lang.open .lang-menu {
-            opacity: 1;
-            visibility: visible;
-            transform: none;
-            transition: opacity 0.16s ease, transform 0.16s ease, visibility 0s;
-        }
-
-        .lang-menu li {
-            display: flex;
-            align-items: center;
-            justify-content: space-between;
-            gap: 16px;
-            padding: 8px 10px;
-            border-radius: 8px;
-            font-size: 13px;
-            color: var(--muted);
-            white-space: nowrap;
-            cursor: pointer;
-            transition: background 0.15s ease, color 0.15s ease;
-        }
-
-        .lang-menu li:hover,
-        .lang-menu li:focus-visible {
-            background: rgba(255, 255, 255, 0.07);
-            color: var(--ink);
-            outline: none;
-        }
-
-        .lang-menu li[aria-selected="true"] {
-            color: var(--ink);
-        }
-
-        .lang-menu li[aria-selected="true"]::after {
-            content: '✓';
-            font-size: 11px;
-            color: var(--accent);
-        }
-
         .lang-btn:focus-visible,
         a:focus-visible {
             outline: 2px solid var(--accent);
             outline-offset: 3px;
         }
+
 
         /* ---------- 页面 ---------- */
         .page {
@@ -222,12 +158,12 @@
             border: 1px solid var(--hairline);
             border-radius: 10px;
             overflow: hidden;
-            background: #101013;
+            background: var(--surface);
             transition: border-color 0.2s ease, transform 0.3s cubic-bezier(0.22, 1, 0.36, 1);
         }
 
         .card:hover {
-            border-color: rgba(255, 255, 255, 0.22);
+            border-color: var(--surface-hover-border);
             transform: translateY(-2px);
         }
 
@@ -331,12 +267,24 @@
             <a href="docs.html" data-i18n="navDocs"></a>
             <a href="gallery.html" data-i18n="navGallery" aria-current="page"></a>
             <a href="pricing.html" data-i18n="navPricing"></a>
+            <div class="theme" id="theme">
+                <button class="theme-btn" type="button" aria-haspopup="listbox" aria-expanded="false" aria-label="Theme">
+                    <svg class="icon-system" width="14" height="14" viewBox="0 0 14 14" aria-hidden="true"><circle cx="7" cy="7" r="5.25" fill="none" stroke="currentColor" stroke-width="1.2"/><path d="M7 1.75v10.5A5.25 5.25 0 0 0 7 1.75z" fill="currentColor"/></svg>
+                    <svg class="icon-sun" width="14" height="14" viewBox="0 0 14 14" aria-hidden="true"><circle cx="7" cy="7" r="2.4" fill="none" stroke="currentColor" stroke-width="1.2"/><path d="M7 1.4v1.5M7 11.1v1.5M1.4 7h1.5M11.1 7h1.5M3.05 3.05l1.06 1.06M9.89 9.89l1.06 1.06M10.95 3.05l-1.06 1.06M4.11 9.89l-1.06 1.06" fill="none" stroke="currentColor" stroke-width="1.2" stroke-linecap="round"/></svg>
+                    <svg class="icon-moon" width="14" height="14" viewBox="0 0 14 14" aria-hidden="true"><path d="M11.2 8.55A4.75 4.75 0 0 1 5.45 2.8 4.9 4.9 0 1 0 11.2 8.55z" fill="none" stroke="currentColor" stroke-width="1.2" stroke-linejoin="round"/></svg>
+                </button>
+                <ul class="menu-panel" role="listbox" aria-label="Theme">
+                    <li role="option" data-theme-pref="system" aria-selected="true" tabindex="-1" data-i18n="themeSystem">跟随系统</li>
+                    <li role="option" data-theme-pref="light" aria-selected="false" tabindex="-1" data-i18n="themeLight">浅色</li>
+                    <li role="option" data-theme-pref="dark" aria-selected="false" tabindex="-1" data-i18n="themeDark">深色</li>
+                </ul>
+            </div>
             <div class="lang" id="lang">
                 <button class="lang-btn" type="button" aria-haspopup="listbox" aria-expanded="false" aria-label="Language">
                     <span class="lang-label">中文</span>
                     <svg class="lang-caret" width="10" height="6" viewBox="0 0 10 6" aria-hidden="true"><path d="M1 1l4 4 4-4" fill="none" stroke="currentColor" stroke-width="1.2" stroke-linecap="round" stroke-linejoin="round"/></svg>
                 </button>
-                <ul class="lang-menu" role="listbox" aria-label="Language">
+                <ul class="menu-panel" role="listbox" aria-label="Language">
                     <li role="option" data-lang="zh" aria-selected="true" tabindex="-1">中文</li>
                     <li role="option" data-lang="ja" aria-selected="false" tabindex="-1">日本語</li>
                     <li role="option" data-lang="en" aria-selected="false" tabindex="-1">English</li>
@@ -412,6 +360,7 @@
         <span data-i18n="footer"></span>
     </footer>
 
+    <script src="theme.js"></script>
     <script>
         // 16×16 的 X 位图（与主页图标一致；2 = 右下角半透明）
         const LOGO_X = [
@@ -433,7 +382,7 @@
             '0000000000000000',
         ];
 
-        (function drawWordmark() {
+        function drawWordmark() {
             const cvs = document.getElementById('logoY');
             const size = 15;
             const dpr = window.devicePixelRatio || 1;
@@ -442,8 +391,10 @@
             cvs.style.width = size + 'px';
             cvs.style.height = size + 'px';
             const ctx = cvs.getContext('2d');
+            ctx.setTransform(1, 0, 0, 1, 0, 0);
+            ctx.clearRect(0, 0, cvs.width, cvs.height);
             ctx.scale(dpr, dpr);
-            ctx.fillStyle = '#f2f2f0';
+            ctx.fillStyle = getComputedStyle(document.documentElement).getPropertyValue('--ink').trim() || '#f2f2f0';
             const cell = size / 16;
             const r = cell * 0.42;
             LOGO_X.forEach((rowStr, row) => {
@@ -457,7 +408,8 @@
                 }
             });
             ctx.globalAlpha = 1;
-        })();
+        }
+        drawWordmark();
 
         // 每张卡片进入视口时才加载 iframe，避免四个动画同时常驻运行
         const frames = document.querySelectorAll('iframe[data-src]');
@@ -486,6 +438,9 @@
                 navDocs: '文档',
                 navGallery: '标志',
                 navPricing: '价格',
+                themeSystem: '跟随系统',
+                themeLight: '浅色',
+                themeDark: '深色',
                 title: '标志实验',
                 intro: '同一个 X 的四种画法。每个预览都是可以交互的原页面，点开即可细看。',
                 dConv: '把 X 当作一张 28×28 的输入图像，用 5×5 卷积核扫出特征图。',
@@ -499,6 +454,9 @@
                 navDocs: 'ドキュメント',
                 navGallery: 'ロゴ',
                 navPricing: '料金',
+                themeSystem: 'システム',
+                themeLight: 'ライト',
+                themeDark: 'ダーク',
                 title: 'ロゴの実験',
                 intro: '同じ X を描く 4 つの方法。プレビューはそのまま操作できる実ページです。',
                 dConv: 'X を 28×28 の入力画像として扱い、5×5 のカーネルで特徴マップを走査します。',
@@ -512,6 +470,9 @@
                 navDocs: 'Docs',
                 navGallery: 'Gallery',
                 navPricing: 'Pricing',
+                themeSystem: 'System',
+                themeLight: 'Light',
+                themeDark: 'Dark',
                 title: 'Logo experiments',
                 intro: 'Four ways to draw the same X. Every preview is the real, interactive page — open one to look closer.',
                 dConv: 'Treats the X as a 28×28 input image and sweeps a 5×5 kernel across it to build a feature map.',
@@ -536,7 +497,7 @@
 
         const langRoot = document.getElementById('lang');
         const langBtn = langRoot.querySelector('.lang-btn');
-        const langMenu = langRoot.querySelector('.lang-menu');
+        const langMenu = langRoot.querySelector('.menu-panel');
 
         function setLang(lang) {
             const dict = I18N[lang];
@@ -595,6 +556,8 @@
             items[(at + step + items.length) % items.length].focus();
         });
 
+        YagentTheme.onChange(() => drawWordmark());
+        YagentTheme.mount();
         setLang(detectLang());
     </script>
 </body>
