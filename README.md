@@ -119,6 +119,28 @@ pnpm build:desktop
 # Output: apps/desktop/release/
 ```
 
+### GitHub Releases（桌面打包）
+
+推送版本 tag 会触发 [`.github/workflows/release.yml`](.github/workflows/release.yml)，在 macOS / Windows / Linux 上跑 `electron-builder` 并上传到 GitHub Releases：
+
+```bash
+git tag v0.1.0
+git push origin v0.1.0
+```
+
+也可在 Actions 里手动跑 **Release**。当前为未签名构建（`CSC_IDENTITY_AUTO_DISCOVERY=false`）；正式分发再配 Apple/Windows 证书即可。
+
+### 官网 / 文档（GitHub Pages）
+
+[`website/`](website/)（含 `docs.html`）由 [`.github/workflows/pages.yml`](.github/workflows/pages.yml) 部署。
+
+仓库设置一次即可：
+
+1. **Settings → Pages → Build and deployment → Source** 选 **GitHub Actions**
+2. 推送 `main` 上对 `website/` 的改动，或手动跑 **Pages** workflow
+
+预计地址：`https://synclionpaw.github.io/yagent/`（文档：`…/docs.html`）。
+
 ## Contributing
 
 1. Create a feature branch

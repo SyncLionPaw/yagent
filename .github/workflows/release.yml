@@ -1,0 +1,87 @@
+name: Release
+
+on:
+  push:
+    tags: ['v*']
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: 'Optional tag name to create release for (e.g. v0.1.1); leave empty to build without publishing'
+        required: false
+        default: ''
+
+permissions:
+  contents: write
+
+jobs:
+  package:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: macos-latest
+            args: --mac
+          - os: ubuntu-latest
+            args: --linux
+          - os: windows-latest
+            args: --win
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 10.0.0
+
+      - name: Get pnpm store directory
+        id: pnpm-cache
+        shell: bash
+        run: echo "STORE_PATH=$(pnpm store path)" >> "$GITHUB_OUTPUT"
+
+      - name: Setup pnpm cache
+        uses: actions/cache@v4
+        with:
+          path: ${{ steps.pnpm-cache.outputs.STORE_PATH }}
+          key: ${{ runner.os }}-pnpm-store-${{ hashFiles('**/pnpm-lock.yaml') }}
+          restore-keys: |
+            ${{ runner.os }}-pnpm-store-
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Build web + desktop main
+        run: |
+          pnpm build:web
+          pnpm --filter yagent-desktop build
+
+      - name: Package (electron-builder)
+        working-directory: apps/desktop
+        shell: bash
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          # 无签名证书时跳过 mac 自动发现，产出未公证包
+          CSC_IDENTITY_AUTO_DISCOVERY: 'false'
+        run: |
+          PUBLISH=never
+          if [[ "${{ github.ref }}" == refs/tags/v* ]]; then
+            PUBLISH=always
+          elif [[ -n "${{ inputs.tag }}" ]]; then
+            PUBLISH=always
+          fi
+          pnpm exec electron-builder ${{ matrix.args }} --publish "$PUBLISH"
+
+      - name: Upload artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: yagent-${{ matrix.os }}
+          path: |
+            apps/desktop/release/*.*
+            !apps/desktop/release/*.blockmap
+            !apps/desktop/release/builder-debug.yml
+          if-no-files-found: warn

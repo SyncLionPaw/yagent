@@ -39,8 +39,16 @@
       "icon": "build/icon.ico"
     },
     "linux": {
-      "icon": "build/icon.png"
-    }
+      "icon": "build/icon.png",
+      "target": ["AppImage", "deb"]
+    },
+    "publish": [
+      {
+        "provider": "github",
+        "owner": "SyncLionPaw",
+        "repo": "yagent"
+      }
+    ]
   },
   "devDependencies": {
     "@types/node": "^24.13.3",
