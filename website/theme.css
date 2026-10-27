@@ -151,6 +151,15 @@ html[data-theme-pref="system"] .theme-btn .icon-system {
     outline-offset: 3px;
 }
 
+/* canvas wordmark 画成浅色墨水，浅色主题 invert 过渡，避免 JS 瞬时重绘跳色 */
+.wordmark canvas {
+    transition: filter 0.25s ease;
+}
+
+html[data-theme="light"] .wordmark canvas {
+    filter: invert(1);
+}
+
 @media (max-width: 600px) {
     .theme-btn {
         width: 32px;

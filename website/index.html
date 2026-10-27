@@ -133,12 +133,13 @@
             grid-template-columns: repeat(4, auto);
             grid-template-rows: repeat(4, auto);
             gap: 0;
-            /* 实色底挡住背后的页面网格，避免两套线叠出重影 */
+            /* 实色底挡住背后的页面网格，避免两套线叠出重影；过渡与 body 同步 */
             background-color: var(--bg);
             background-image:
                 linear-gradient(to right, var(--grid-soft) 1px, transparent 1px),
                 linear-gradient(to bottom, var(--grid-soft) 1px, transparent 1px);
             background-size: var(--cell) var(--cell);
+            transition: background-color 0.25s ease;
         }
 
         .big-cell {
@@ -537,7 +538,8 @@
             ctx.setTransform(1, 0, 0, 1, 0, 0);
             ctx.clearRect(0, 0, cvs.width, cvs.height);
             ctx.scale(dpr, dpr);
-            ctx.fillStyle = getComputedStyle(document.documentElement).getPropertyValue('--ink').trim() || '#f2f2f0';
+            // 固定浅色墨水；浅色主题用 CSS invert 过渡，与背景换色同步
+            ctx.fillStyle = '#f2f2f0';
             const cell = size / 16;
             const r = cell * 0.42;
             presetPattern.forEach(id => {
@@ -762,7 +764,6 @@
             items[(at + step + items.length) % items.length].focus();
         });
 
-        YagentTheme.onChange(() => drawWordmark());
         YagentTheme.mount();
         setLang(detectLang());
     </script>

@@ -394,7 +394,7 @@
             ctx.setTransform(1, 0, 0, 1, 0, 0);
             ctx.clearRect(0, 0, cvs.width, cvs.height);
             ctx.scale(dpr, dpr);
-            ctx.fillStyle = getComputedStyle(document.documentElement).getPropertyValue('--ink').trim() || '#f2f2f0';
+            ctx.fillStyle = '#f2f2f0';
             const cell = size / 16;
             const r = cell * 0.42;
             LOGO_X.forEach((rowStr, row) => {
@@ -556,7 +556,6 @@
             items[(at + step + items.length) % items.length].focus();
         });
 
-        YagentTheme.onChange(() => drawWordmark());
         YagentTheme.mount();
         setLang(detectLang());
     </script>
