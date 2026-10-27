@@ -1,20 +1,22 @@
 import { useEffect, useState } from 'react'
-import { Files, Globe, Search, X } from 'lucide-react'
-import type { Conversation, Ref } from '@yagent/core'
+import { Files, Globe, Lightbulb, Search, Trash2, X } from 'lucide-react'
+import type { Conversation, Insight, Ref } from '@yagent/core'
 import { formatSize } from '../lib/utils'
 import { FileIcon } from './FileIcon'
 import { PanelBrowser, type BrowserPage } from './PanelBrowser'
 import { ProjectFiles } from './ProjectFiles'
 import { SearchSources } from './SearchSources'
 
-export type PanelTab = 'files' | 'search' | 'browser'
+export type PanelTab = 'insights' | 'files' | 'search' | 'browser'
 
 interface RightPanelProps {
   conversation: Conversation
   tab: PanelTab
   activeSrcId: number | null
+  insights: Insight[]
   onTabChange: (tab: PanelTab) => void
   onSelectSrc: (id: number | null) => void
+  onDeleteInsight: (id: string) => void
 }
 
 const BASE_TABS: {
@@ -22,26 +24,89 @@ const BASE_TABS: {
   label: string
   Icon: typeof Files
 }[] = [
+  { id: 'insights', label: '收获', Icon: Lightbulb },
   { id: 'files', label: '文件', Icon: Files },
   { id: 'search', label: '搜索', Icon: Search },
 ]
+
+function formatInsightTime(ts: number): string {
+  const d = new Date(ts)
+  const m = d.getMonth() + 1
+  const day = d.getDate()
+  const hh = String(d.getHours()).padStart(2, '0')
+  const mm = String(d.getMinutes()).padStart(2, '0')
+  return `${m}/${day} ${hh}:${mm}`
+}
+
+function InsightsPane({
+  insights,
+  onDelete,
+}: {
+  insights: Insight[]
+  onDelete: (id: string) => void
+}) {
+  if (!insights.length) {
+    return (
+      <div className="insights-empty">
+        <Lightbulb className="ic insights-empty-ic" />
+        <div className="insights-empty-title">本会话还没有收获</div>
+        <div className="insights-empty-desc">
+          Agent 发现对你有用、你可能还不知道的东西时，会记在这里。可看可不看。
+        </div>
+      </div>
+    )
+  }
+
+  return (
+    <div className="insights-pane">
+      <div className="insights-hint">仅本会话；可有可无，尽量拆成小点。不强制阅读。</div>
+      {insights.map((ins) => (
+        <article className="insight-card" key={ins.id}>
+          <div className="insight-card-head">
+            <h3 className="insight-title">{ins.title}</h3>
+            <button
+              type="button"
+              className="icon-btn"
+              title="删除"
+              aria-label="删除这条收获"
+              onClick={() => onDelete(ins.id)}
+            >
+              <Trash2 className="ic ic-sm" />
+            </button>
+          </div>
+          <p className="insight-text">{ins.text}</p>
+          {ins.why ? <p className="insight-why">{ins.why}</p> : null}
+          <div className="insight-meta">{formatInsightTime(ins.createdAt)}</div>
+        </article>
+      ))}
+    </div>
+  )
+}
 
 export function RightPanel({
   conversation,
   tab,
   activeSrcId,
+  insights,
   onTabChange,
   onSelectSrc,
+  onDeleteInsight,
 }: RightPanelProps) {
   const [browserPage, setBrowserPage] = useState<BrowserPage | null>(null)
   const browserOpen = !!browserPage
+
+  // 切换主区会话时清空浏览器页，避免仍显示上一会话
+  useEffect(() => {
+    setBrowserPage(null)
+  }, [conversation.id])
 
   // 正文角标 / 外部设 activeSrcId：打开浏览器页
   useEffect(() => {
     if (activeSrcId == null) return
     const hit = conversation.refs.find((r) => r.id === activeSrcId)
     if (hit) setBrowserPage({ url: hit.url, title: hit.title })
-  }, [activeSrcId, conversation.refs])
+    else setBrowserPage(null)
+  }, [activeSrcId, conversation.refs, conversation.id])
 
   // 关掉浏览器后若还停在该 tab，退回搜索
   useEffect(() => {
@@ -72,6 +137,11 @@ export function RightPanel({
             onClick={() => onTabChange(t.id)}
           >
             <t.Icon className="ic ic-sm" />
+            {t.id === 'insights' && insights.length > 0 ? (
+              <span className="ptab-badge">
+                {insights.length > 99 ? '99+' : insights.length}
+              </span>
+            ) : null}
           </button>
         ))}
         {browserOpen && (
@@ -99,6 +169,10 @@ export function RightPanel({
             </button>
           </span>
         )}
+      </div>
+
+      <div className={`p-pane pane-insights${tab === 'insights' ? ' active' : ''}`}>
+        <InsightsPane insights={insights} onDelete={onDeleteInsight} />
       </div>
 
       <div className={`p-pane pane-files${tab === 'files' ? ' active' : ''}`}>

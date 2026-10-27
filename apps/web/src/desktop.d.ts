@@ -15,6 +15,13 @@ declare global {
         read(): Promise<string | null>
         write(content: string): Promise<void>
       }
+      insights?: {
+        write(insight: import('@yagent/core').Insight): Promise<void>
+        read(id: string): Promise<import('@yagent/core').Insight | null>
+        readMany(ids: string[]): Promise<import('@yagent/core').Insight[]>
+        delete(id: string): Promise<void>
+        deleteMany(ids: string[]): Promise<void>
+      }
       conversations?: {
         list(): Promise<{ key: string; text: string }[]>
         append(key: string, lines: string): Promise<void>

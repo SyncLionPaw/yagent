@@ -75,6 +75,9 @@
             color: var(--ink);
         }
 
+        .topnav > a[aria-current="page"] {
+            color: var(--ink);
+        }
 
         /* ---------- 语言选择 ---------- */
         .lang {
@@ -243,7 +246,8 @@
         <a class="wordmark" href="index.html"><canvas id="logoY" aria-label="x"></canvas><span>agent</span></a>
         <div class="topnav">
             <a href="docs.html" data-i18n="navDocs"></a>
-            <a href="pricing.html" data-i18n="navPricing"></a>
+            <a href="gallery.html" data-i18n="navGallery"></a>
+            <a href="pricing.html" data-i18n="navPricing" aria-current="page"></a>
             <div class="theme" id="theme">
                 <button class="theme-btn" type="button" aria-haspopup="listbox" aria-expanded="false" aria-label="Theme">
                     <svg class="icon-system" width="14" height="14" viewBox="0 0 14 14" aria-hidden="true"><circle cx="7" cy="7" r="5.25" fill="none" stroke="currentColor" stroke-width="1.2"/><path d="M7 1.75v10.5A5.25 5.25 0 0 0 7 1.75z" fill="currentColor"/></svg>
@@ -357,6 +361,7 @@
         const I18N = {
             zh: {
                 navDocs: '文档',
+                navGallery: '标志',
                 navPricing: '价格',
                 themeSystem: '跟随系统',
                 themeLight: '浅色',
@@ -376,6 +381,7 @@
             },
             ja: {
                 navDocs: 'ドキュメント',
+                navGallery: 'ロゴ',
                 navPricing: '料金',
                 themeSystem: 'システム',
                 themeLight: 'ライト',
@@ -395,6 +401,7 @@
             },
             en: {
                 navDocs: 'Docs',
+                navGallery: 'Gallery',
                 navPricing: 'Pricing',
                 themeSystem: 'System',
                 themeLight: 'Light',

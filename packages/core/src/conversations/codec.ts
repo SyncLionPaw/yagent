@@ -18,6 +18,7 @@ export function metaOf(conv: Conversation): Record<string, unknown> {
     refs: conv.refs,
     attachments: conv.attachments,
     outputs: conv.outputs,
+    insightIds: conv.insightIds ?? [],
   }
 }
 
@@ -72,6 +73,7 @@ export function decodeConversation(text: string): Conversation | null {
   }
   if (!meta || typeof meta.id !== 'string') return null
   const conv = { ...meta, nodes } as Conversation
+  if (!Array.isArray(conv.insightIds)) conv.insightIds = []
   if (conv.status !== 'done') conv.status = 'done' // 上次可能死于流式中途
   return conv
 }

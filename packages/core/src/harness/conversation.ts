@@ -36,5 +36,6 @@ export function createConversationState(title: string, workdir: string | null): 
     refs: [],
     attachments: [],
     outputs: [],
+    insightIds: [],
   }
 }

@@ -19,11 +19,6 @@
         body {
             margin: 0;
             background-color: var(--bg);
-            /* 方格线铺满整个背景，位置由 JS 与中央网格对齐 */
-            background-image:
-                linear-gradient(to right, var(--grid-faint) 1px, transparent 1px),
-                linear-gradient(to bottom, var(--grid-faint) 1px, transparent 1px);
-            background-size: var(--cell) var(--cell);
             color: var(--ink);
             font-family: 'Space Grotesk', 'Hiragino Sans', 'PingFang SC', 'Noto Sans JP', 'Microsoft YaHei', system-ui, sans-serif;
             -webkit-font-smoothing: antialiased;
@@ -117,7 +112,7 @@
             outline-offset: 3px;
         }
 
-        /* ---------- 首屏 ---------- */
+        /* ---------- 首屏（网格只出现在这里，向下淡出） ---------- */
         .hero {
             min-height: 100vh;
             display: flex;
@@ -126,6 +121,19 @@
             align-items: center;
             text-align: center;
             padding: 96px 24px 64px;
+            position: relative;
+            /* 底层网格；顶层遮罩把下沿淡进纯色，features 不再带格 */
+            background-color: var(--bg);
+            background-image:
+                linear-gradient(to bottom, transparent 58%, var(--bg) 92%),
+                linear-gradient(to right, var(--grid-faint) 1px, transparent 1px),
+                linear-gradient(to bottom, var(--grid-faint) 1px, transparent 1px);
+            background-size:
+                auto,
+                var(--cell) var(--cell),
+                var(--cell) var(--cell);
+            background-repeat: no-repeat, repeat, repeat;
+            transition: background-color 0.25s ease;
         }
 
         .main-grid {
@@ -133,13 +141,8 @@
             grid-template-columns: repeat(4, auto);
             grid-template-rows: repeat(4, auto);
             gap: 0;
-            /* 实色底挡住背后的页面网格，避免两套线叠出重影；过渡与 body 同步 */
-            background-color: var(--bg);
-            background-image:
-                linear-gradient(to right, var(--grid-soft) 1px, transparent 1px),
-                linear-gradient(to bottom, var(--grid-soft) 1px, transparent 1px);
-            background-size: var(--cell) var(--cell);
-            transition: background-color 0.25s ease;
+            /* 透明：落在 hero 网格上，不另起一块 */
+            background: transparent;
         }
 
         .big-cell {
@@ -245,11 +248,152 @@
         .hero.ready .subline { opacity: 1; transform: none; transition-delay: 0.35s; }
         .hero.ready .cta-row { opacity: 1; transform: none; transition-delay: 0.55s; }
 
+        /* ---------- 产品展示（错落两列） ---------- */
+        .showcase {
+            max-width: 920px;
+            margin: 0 auto;
+            padding: 24px 24px 80px;
+        }
+
+        .showcase-head {
+            text-align: center;
+            margin-bottom: 36px;
+        }
+
+        .showcase-title {
+            margin: 0;
+            font-size: 13px;
+            font-weight: 500;
+            letter-spacing: 0.08em;
+            text-transform: uppercase;
+            color: var(--faint);
+        }
+
+        .showcase-list {
+            display: grid;
+            grid-template-columns: 1.08fr 0.92fr;
+            gap: 36px 28px;
+            align-items: start;
+            perspective: 1600px;
+            perspective-origin: 50% 35%;
+        }
+
+        .showcase-item {
+            --amp: 1;
+            --rock-dur: 6.4s;
+            margin: 0;
+            display: flex;
+            flex-direction: column;
+            gap: 12px;
+        }
+
+        .showcase-item img {
+            display: block;
+            width: 100%;
+            height: auto;
+            border-radius: 14px;
+            border: 1px solid var(--hairline);
+            background: color-mix(in srgb, var(--ink) 4%, var(--bg));
+            box-shadow: 0 18px 40px color-mix(in srgb, #000 14%, transparent);
+            transform-origin: center center;
+            transform-style: preserve-3d;
+            backface-visibility: hidden;
+            will-change: transform;
+            animation: card-rock var(--rock-dur) ease-in-out var(--rock-delay, 0s) infinite;
+            transition: box-shadow 0.35s ease;
+        }
+
+        .showcase-item:hover {
+            --amp: 1.35;
+            --rock-dur: 4.2s;
+        }
+
+        .showcase-item:hover img {
+            box-shadow:
+                0 22px 48px color-mix(in srgb, #000 18%, transparent),
+                0 8px 20px color-mix(in srgb, #000 10%, transparent);
+        }
+
+        .showcase-item figcaption {
+            margin: 0;
+            font-size: 13px;
+            line-height: 1.55;
+            color: var(--muted);
+            max-width: 28em;
+        }
+
+        /* 位置固定；中心轴俯视前后晃动 */
+        .showcase-item:nth-child(1) {
+            width: 94%;
+            margin-top: 8px;
+            justify-self: end;
+            --rz: -1.2deg;
+            --rx: 14deg;
+            --ry: -9deg;
+            --rock-delay: 0s;
+        }
+
+        .showcase-item:nth-child(2) {
+            width: 100%;
+            margin-top: 72px;
+            justify-self: start;
+            --rz: 1.4deg;
+            --rx: -13deg;
+            --ry: 10deg;
+            --rock-delay: -1.2s;
+        }
+
+        .showcase-item:nth-child(2) figcaption {
+            text-align: left;
+        }
+
+        .showcase-item:nth-child(3) {
+            width: 88%;
+            margin-top: -8px;
+            margin-left: 6%;
+            --rz: 0.8deg;
+            --rx: 12deg;
+            --ry: 8deg;
+            --rock-delay: -2.4s;
+        }
+
+        .showcase-item:nth-child(4) {
+            width: 96%;
+            margin-top: 48px;
+            justify-self: end;
+            --rz: -1deg;
+            --rx: -14deg;
+            --ry: -9deg;
+            --rock-delay: -1.8s;
+        }
+
+        .showcase-item:nth-child(4) figcaption {
+            align-self: flex-end;
+            text-align: right;
+        }
+
+        @keyframes card-rock {
+            0%, 100% {
+                transform:
+                    translateZ(calc(var(--amp) * -6px))
+                    rotateX(calc(var(--rx) * var(--amp)))
+                    rotateY(calc(var(--ry) * var(--amp)))
+                    rotateZ(var(--rz));
+            }
+            50% {
+                transform:
+                    translateZ(calc(var(--amp) * 12px))
+                    rotateX(calc(var(--rx) * var(--amp) * -1))
+                    rotateY(calc(var(--ry) * var(--amp) * -1))
+                    rotateZ(var(--rz));
+            }
+        }
+
         /* ---------- 特性 ---------- */
         .features {
             max-width: 720px;
             margin: 0 auto;
-            padding: 40px 24px 120px;
+            padding: 40px 24px 80px;
         }
 
         .feature {
@@ -273,6 +417,149 @@
             color: var(--muted);
             margin: 0;
             max-width: 34em;
+        }
+
+        /* ---------- 评价（双行相向跑马灯） ---------- */
+        .voices {
+            padding: 24px 0 120px;
+            overflow: hidden;
+        }
+
+        .voices-head {
+            text-align: center;
+            margin-bottom: 36px;
+            padding: 0 24px;
+        }
+
+        .voices-title {
+            margin: 0;
+            font-size: 13px;
+            font-weight: 500;
+            letter-spacing: 0.08em;
+            text-transform: uppercase;
+            color: var(--faint);
+        }
+
+        .marquee-stack {
+            --marquee-gap: 18px;
+            display: flex;
+            flex-direction: column;
+            gap: 18px;
+        }
+
+        .marquee {
+            position: relative;
+            overflow: hidden;
+            mask-image: linear-gradient(
+                to right,
+                transparent,
+                #000 5%,
+                #000 95%,
+                transparent
+            );
+            -webkit-mask-image: linear-gradient(
+                to right,
+                transparent,
+                #000 5%,
+                #000 95%,
+                transparent
+            );
+        }
+
+        .marquee-track {
+            display: flex;
+            width: max-content;
+        }
+
+        .marquee-track.left {
+            animation: marquee-left 52s linear infinite;
+        }
+
+        .marquee-track.right {
+            animation: marquee-right 58s linear infinite;
+        }
+
+        .marquee-stack:hover .marquee-track {
+            animation-play-state: paused;
+        }
+
+        .marquee-group {
+            display: flex;
+            gap: var(--marquee-gap);
+            padding-right: var(--marquee-gap);
+        }
+
+        .voice {
+            flex: 0 0 min(360px, 78vw);
+            display: flex;
+            flex-direction: column;
+            justify-content: space-between;
+            gap: 18px;
+            min-height: 156px;
+            padding: 22px 24px;
+            border: 1px solid var(--hairline);
+            border-radius: 14px;
+            background: color-mix(in srgb, var(--ink) 3%, var(--bg));
+        }
+
+        .voice blockquote {
+            margin: 0;
+            font-size: 14px;
+            font-weight: 500;
+            letter-spacing: -0.01em;
+            line-height: 1.7;
+        }
+
+        .voice .who {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            font-size: 13px;
+            color: var(--ink);
+        }
+
+        .voice .avatar {
+            flex: 0 0 auto;
+            width: 40px;
+            height: 40px;
+            border-radius: 50%;
+            overflow: hidden;
+            background: var(--avatar-bg, #c4b5a0);
+        }
+
+        .voice .avatar img {
+            display: block;
+            width: 100%;
+            height: 100%;
+            object-fit: cover;
+        }
+
+        .voice .meta {
+            display: flex;
+            flex-direction: column;
+            gap: 2px;
+            min-width: 0;
+        }
+
+        .voice .name {
+            font-weight: 500;
+            line-height: 1.3;
+        }
+
+        .voice .role {
+            color: var(--faint);
+            font-size: 12px;
+            line-height: 1.3;
+        }
+
+        @keyframes marquee-left {
+            from { transform: translateX(0); }
+            to { transform: translateX(-50%); }
+        }
+
+        @keyframes marquee-right {
+            from { transform: translateX(-50%); }
+            to { transform: translateX(0); }
         }
 
         /* ---------- 页脚 ---------- */
@@ -308,6 +595,70 @@
                 gap: 6px;
             }
 
+            .showcase {
+                padding: 8px 16px 64px;
+            }
+
+            .showcase-list {
+                grid-template-columns: 1fr;
+                gap: 28px;
+            }
+
+            .showcase-list {
+                perspective: 1100px;
+            }
+
+            .showcase-item:nth-child(n) {
+                width: 100%;
+                margin: 0;
+                justify-self: stretch;
+            }
+
+            .showcase-item:nth-child(1) {
+                --rx: 14deg;
+                --ry: -9deg;
+                --rz: -0.8deg;
+            }
+
+            .showcase-item:nth-child(2) {
+                --rx: -13deg;
+                --ry: 10deg;
+                --rz: 0.9deg;
+            }
+
+            .showcase-item:nth-child(3) {
+                --rx: 12deg;
+                --ry: 8deg;
+                --rz: 0.5deg;
+            }
+
+            .showcase-item:nth-child(4) {
+                --rx: -14deg;
+                --ry: -8deg;
+                --rz: -0.6deg;
+            }
+
+            .showcase-item:nth-child(even) figcaption {
+                align-self: flex-start;
+                text-align: left;
+            }
+
+            .showcase-item img {
+                border-radius: 12px;
+            }
+
+            .voices {
+                padding: 8px 0 96px;
+            }
+
+            .marquee-stack {
+                gap: 14px;
+            }
+
+            .voice {
+                min-height: 140px;
+                padding: 18px 20px;
+            }
         }
 
         @media (prefers-reduced-motion: reduce) {
@@ -320,6 +671,27 @@
             .tagline, .subline, .cta-row {
                 opacity: 1;
                 transform: none;
+            }
+
+            .marquee-track {
+                animation: none !important;
+                transform: none !important;
+            }
+
+            .marquee {
+                overflow-x: auto;
+                mask-image: none;
+                -webkit-mask-image: none;
+                padding: 0 16px;
+            }
+
+            .marquee-group[aria-hidden="true"] {
+                display: none;
+            }
+
+            .showcase-item img {
+                animation: none !important;
+                transform: rotateZ(var(--rz, 0deg));
             }
         }
     </style>
@@ -368,6 +740,30 @@
             </div>
         </section>
 
+        <section class="showcase" aria-labelledby="showcaseTitle">
+            <div class="showcase-head">
+                <h2 class="showcase-title" id="showcaseTitle" data-i18n="showcaseTitle"></h2>
+            </div>
+            <div class="showcase-list">
+                <figure class="showcase-item">
+                    <img src="assets/showcase/1.png" alt="" data-i18n-alt="shot1a" width="2624" height="1824" loading="lazy" decoding="async">
+                    <figcaption data-i18n="shot1c"></figcaption>
+                </figure>
+                <figure class="showcase-item">
+                    <img src="assets/showcase/2.png" alt="" data-i18n-alt="shot2a" width="2624" height="1824" loading="lazy" decoding="async">
+                    <figcaption data-i18n="shot2c"></figcaption>
+                </figure>
+                <figure class="showcase-item">
+                    <img src="assets/showcase/3.png" alt="" data-i18n-alt="shot3a" width="2624" height="1824" loading="lazy" decoding="async">
+                    <figcaption data-i18n="shot3c"></figcaption>
+                </figure>
+                <figure class="showcase-item">
+                    <img src="assets/showcase/4.png" alt="" data-i18n-alt="shot4a" width="2624" height="1824" loading="lazy" decoding="async">
+                    <figcaption data-i18n="shot4c"></figcaption>
+                </figure>
+            </div>
+        </section>
+
         <section class="features">
             <div class="feature">
                 <h2 data-i18n="f1t"></h2>
@@ -381,6 +777,13 @@
                 <h2 data-i18n="f3t"></h2>
                 <p data-i18n="f3d"></p>
             </div>
+        </section>
+
+        <section class="voices" aria-labelledby="voicesTitle">
+            <div class="voices-head">
+                <h2 class="voices-title" id="voicesTitle" data-i18n="voicesTitle"></h2>
+            </div>
+            <div class="marquee-stack" id="voiceMarquee"></div>
         </section>
     </main>
 
@@ -451,12 +854,15 @@
         }
         if (!reducedMotion) requestAnimationFrame(tick);
 
-        // 让整页背景的方格线与中央网格对齐
+        // 让首屏网格线与 logo 小格对齐（相对 hero 定位）
+        const hero = document.getElementById('hero');
         function alignBackgroundGrid() {
-            const rect = mainGrid.getBoundingClientRect();
-            // 取整，避免亚像素偏移让外围网格与中央网格在接缝处错位
-            document.body.style.backgroundPosition =
-                `${Math.round(rect.left)}px ${Math.round(rect.top)}px`;
+            const gridRect = mainGrid.getBoundingClientRect();
+            const heroRect = hero.getBoundingClientRect();
+            const x = Math.round(gridRect.left - heroRect.left);
+            const y = Math.round(gridRect.top - heroRect.top);
+            // 第 1 层是淡出遮罩（固定 0 0）；第 2/3 层是网格
+            hero.style.backgroundPosition = `0 0, ${x}px ${y}px, ${x}px ${y}px`;
         }
         window.addEventListener('resize', alignBackgroundGrid);
 
@@ -639,16 +1045,44 @@
                 themeSystem: '跟随系统',
                 themeLight: '浅色',
                 themeDark: '深色',
-                tagline: '说出目标，剩下的交给它。',
-                subline: 'yagent 是一个 AI agent：理解你的目标，把事情做完。',
+                tagline: '做完事，还多懂一点。',
+                subline: '别的 agent 做完就走；yagent 帮你抵抗未知。',
                 cta: '开始使用',
                 docs: '查看文档',
                 f1t: '目标驱动',
                 f1d: '告诉它要完成什么，而不是怎么做。yagent 自己规划步骤，逐项执行。',
                 f2t: '调用真实工具',
                 f2d: '浏览器、终端、文件、API——它直接操作你日常在用的工具，而不是只给建议。',
-                f3t: '随时可以接管',
-                f3d: '每一步都清晰可见。你可以随时暂停、纠正或接手，agent 不会变成黑盒。',
+                f3t: '带走一点',
+                f3d: '做完不是终点。过程里对你有用、你可能还不知道的东西，会记进右侧「收获」，可看可不看。',
+                showcaseTitle: '产品一览',
+                shot1c: '右侧「收获」：本会话带走的小知识点，可看可不看。',
+                shot1a: 'yagent 界面：对话与收获侧栏',
+                shot2c: '绑定工作目录后，右栏直接浏览项目文件。',
+                shot2a: 'yagent 界面：项目文件面板',
+                shot3c: '跑命令、改代码、产出物，过程都看得见。',
+                shot3a: 'yagent 界面：任务完成与产物',
+                shot4c: '需要你拍板时，结构化提问，而不是一长段闲聊。',
+                shot4a: 'yagent 界面：向用户提问',
+                voicesTitle: '别人怎么说',
+                q1: '别的工具交完活就散了。yagent 会在右侧留几条我其实不懂、但马上用得上的点。第二天写文档时，我翻的是那些「收获」。',
+                q1n: '火鸡味锅巴',
+                q1r: '独立开发者',
+                q2: '它不问一长串闲聊，而是把选项摊开让我拍板。我少解释了半小时，也少被带偏。',
+                q2n: '不吃香菜',
+                q2r: '产品经理',
+                q3: '绑上项目目录后，命令、改动、产物都在眼前。我终于知道 agent「刚才干了什么」，而不只是信它一句「已完成」。',
+                q3n: '下周一定早睡',
+                q3r: '后端工程师',
+                q4: '我用它查一段冷门史料，任务结束了，金印出土细节还在侧栏。那才是我真正想带走的。',
+                q4n: '地铁上的耳机',
+                q4r: '研究生',
+                q5: '以前总担心模型偷偷改文件。现在每一步都看得见，我敢把真实仓库交给它了。',
+                q5n: '神里绫华的狗（上岸版）',
+                q5r: '技术负责人',
+                q6: '技能上传之后，它按我的习惯做事。像是多了一个记得我规矩的搭档，而不是每次从零教。',
+                q6n: '外卖备注少冰',
+                q6r: '设计师',
                 footer: '© 2026 yagent',
             },
             ja: {
@@ -658,16 +1092,44 @@
                 themeSystem: 'システム',
                 themeLight: 'ライト',
                 themeDark: 'ダーク',
-                tagline: '目標を伝えるだけ。あとは任せて。',
-                subline: 'yagent は AI エージェント。目標を理解し、最後までやり遂げます。',
+                tagline: 'やり遂げるだけじゃない。少し賢くなる。',
+                subline: '他のエージェントは完了で終わる。yagent は未知に抗う味方になる。',
                 cta: 'はじめる',
                 docs: 'ドキュメント',
                 f1t: '目標ドリブン',
                 f1d: '「どうやるか」ではなく「何をしたいか」を伝えるだけ。yagent が手順を計画し、順に実行します。',
                 f2t: '実際のツールを操作',
                 f2d: 'ブラウザ、ターミナル、ファイル、API。助言ではなく、普段使いのツールを直接操作して完了させます。',
-                f3t: 'いつでも介入できる',
-                f3d: 'すべてのステップが見える形で進行。一時停止、修正、引き継ぎがいつでもでき、ブラックボックスにはなりません。',
+                f3t: '持ち帰る学び',
+                f3d: '完了が終点ではない。役に立ちそうで、まだ知らなかったことだけを右パネルの「收获」に残す。見ても見なくてもいい。',
+                showcaseTitle: 'プロダクト',
+                shot1c: '右の「收获」：この会話で持ち帰った小さな学び。見ても見なくてもいい。',
+                shot1a: 'yagent：会話と收获サイドバー',
+                shot2c: '作業ディレクトリを結ぶと、右パネルでプロジェクトファイルを直接見られる。',
+                shot2a: 'yagent：プロジェクトファイル',
+                shot3c: 'コマンド実行・コード変更・成果物まで、過程が見える。',
+                shot3a: 'yagent：完了と成果物',
+                shot4c: '判断が必要なときは、長い雑談ではなく構造化された質問。',
+                shot4a: 'yagent：ユーザーへの質問',
+                voicesTitle: '使っている人の声',
+                q1: '他のツールは納品で終わる。yagent は右側に、知らなかったけどすぐ使える点を残してくれる。翌日ドキュメントを書くとき、見返すのはその「收获」だ。',
+                q1n: 'ターキー味スナック',
+                q1r: 'インディー開発者',
+                q2: '長い雑談じゃなく、選択肢を並べて判断を求めてくる。説明が半時間減り、話も逸れにくくなった。',
+                q2n: 'パクチー抜き',
+                q2r: 'プロダクトマネージャー',
+                q3: '作業ディレクトリを結ぶと、コマンド・差分・成果物が全部見える。agent が「さっき何をしたか」が分かり、完了の一言を信じるだけじゃなくなった。',
+                q3n: '来週こそ早寝',
+                q3r: 'バックエンドエンジニア',
+                q4: '地味な史料を調べた。タスクは終わっても、金印出土の細部がサイドに残っていた。それが本当に持ち帰りたかったものだった。',
+                q4n: '地下鉄のイヤホン',
+                q4r: '大学院生',
+                q5: 'モデルが勝手にファイルをいじる不安があった。今は過程が見えるので、本物のリポジトリを渡せる。',
+                q5n: '神里綾華の犬（上岸版）',
+                q5r: 'テックリード',
+                q6: 'スキルを上げたら、私の流儀で動く。毎回ゼロから教える相手じゃなく、ルールを覚えている相棒になった。',
+                q6n: '配達は氷少なめ',
+                q6r: 'デザイナー',
                 footer: '© 2026 yagent',
             },
             en: {
@@ -677,19 +1139,82 @@
                 themeSystem: 'System',
                 themeLight: 'Light',
                 themeDark: 'Dark',
-                tagline: 'Give it a goal. It does the rest.',
-                subline: 'yagent is an AI agent that understands your goal and gets it done.',
+                tagline: 'Finish the job. Keep a little wisdom.',
+                subline: 'Other agents leave when the task is done. yagent helps you resist the unknown.',
                 cta: 'Get started',
                 docs: 'Read the docs',
                 f1t: 'Goal-driven',
                 f1d: 'Describe what you want done, not how to do it. yagent plans the steps and executes them one by one.',
                 f2t: 'Works with real tools',
                 f2d: 'Browser, terminal, files, APIs — it operates the tools you already use instead of just giving advice.',
-                f3t: 'Stay in control',
-                f3d: 'Every step is visible. Pause, correct, or take over at any time — the agent is never a black box.',
+                f3t: 'Take something with you',
+                f3d: 'Done is not the end. Useful things you may not have known land in Insights on the right—look or ignore, but they stay.',
+                showcaseTitle: 'Product',
+                shot1c: 'Insights on the right: small takeaways from this session—look or ignore.',
+                shot1a: 'yagent UI: chat with Insights sidebar',
+                shot2c: 'Bind a working directory and browse project files in the side panel.',
+                shot2a: 'yagent UI: project files panel',
+                shot3c: 'Commands, code changes, and artifacts—every step stays visible.',
+                shot3a: 'yagent UI: completed task and artifacts',
+                shot4c: 'When a decision is needed, structured questions—not a long chat.',
+                shot4a: 'yagent UI: ask the user',
+                voicesTitle: 'What people say',
+                q1: 'Other tools vanish when the job ships. yagent leaves a few points on the right that I didn’t know but could use right away. Next day, writing docs, I opened Insights.',
+                q1n: 'TurkeyChips',
+                q1r: 'Indie developer',
+                q2: 'It doesn’t drown me in chat—it lays out options and asks me to decide. I spent half an hour less explaining, and drifted less.',
+                q2n: 'NoCilantro',
+                q2r: 'Product manager',
+                q3: 'With the project folder bound, every command, change, and artifact is visible. I finally see what the agent just did—not only a “done.”',
+                q3n: 'SleepEarlyMaybe',
+                q3r: 'Backend engineer',
+                q4: 'I used it on an obscure bit of history. The task ended; the excavation detail stayed in the side panel. That was what I actually wanted to keep.',
+                q4n: 'MetroHeadphones',
+                q4r: 'Graduate student',
+                q5: 'I used to worry the model would quietly rewrite files. Now every step is visible, so I trust it with real repos.',
+                q5n: 'Ayaka\'s Dog (Landed)',
+                q5r: 'Tech lead',
+                q6: 'After uploading my skills, it works the way I do. Less teaching from scratch—more like a partner that remembers the rules.',
+                q6n: 'LessIcePlease',
+                q6r: 'Designer',
                 footer: '© 2026 yagent',
             },
         };
+
+        const VOICE_ROWS = [
+            [1, 2, 3],
+            [4, 5, 6],
+        ];
+
+        function voiceCard(dict, id) {
+            const avatar = `assets/avatars/${id}.png`;
+            return (
+                `<article class="voice">` +
+                `<blockquote>${dict['q' + id]}</blockquote>` +
+                `<div class="who">` +
+                `<span class="avatar"><img src="${avatar}" alt="" width="40" height="40" decoding="async"></span>` +
+                `<div class="meta"><span class="name">${dict['q' + id + 'n']}</span>` +
+                `<span class="role">${dict['q' + id + 'r']}</span></div>` +
+                `</div></article>`
+            );
+        }
+
+        function renderVoiceMarquee(lang) {
+            const root = document.getElementById('voiceMarquee');
+            if (!root) return;
+            const dict = I18N[lang];
+            const dirs = ['left', 'right'];
+            root.innerHTML = VOICE_ROWS.map((ids, i) => {
+                const cards = ids.map(id => voiceCard(dict, id)).join('');
+                return (
+                    `<div class="marquee">` +
+                    `<div class="marquee-track ${dirs[i]}">` +
+                    `<div class="marquee-group">${cards}</div>` +
+                    `<div class="marquee-group" aria-hidden="true">${cards}</div>` +
+                    `</div></div>`
+                );
+            }).join('');
+        }
 
         const LANG_TAGS = { zh: 'zh-CN', ja: 'ja', en: 'en' };
 
@@ -712,11 +1237,15 @@
             document.querySelectorAll('[data-i18n]').forEach(el => {
                 el.textContent = dict[el.dataset.i18n] || '';
             });
+            document.querySelectorAll('[data-i18n-alt]').forEach(el => {
+                el.setAttribute('alt', dict[el.dataset.i18nAlt] || '');
+            });
             langMenu.querySelectorAll('[data-lang]').forEach(item => {
                 const on = item.dataset.lang === lang;
                 item.setAttribute('aria-selected', on ? 'true' : 'false');
                 if (on) langRoot.querySelector('.lang-label').textContent = item.textContent.trim();
             });
+            renderVoiceMarquee(lang);
             localStorage.setItem('yagent-lang', lang);
         }
 

@@ -529,6 +529,59 @@ void app.whenReady().then(async () => {
     await mkdir(dataDir(), { recursive: true })
     await writeFile(usageFilePath(), content, 'utf8')
   })
+
+  // 收获：<dataDir>/insights/<id>.json；会话 meta 只存 insightIds
+  const insightsDir = () => path.join(dataDir(), 'insights')
+  const insightPath = (id: string) => {
+    if (!id || id.includes('/') || id.includes('\\') || id.includes('..')) {
+      throw new Error('Invalid insight id')
+    }
+    return path.join(insightsDir(), `${id}.json`)
+  }
+  ipcMain.handle('insights:write', async (_e: any, insight: any) => {
+    if (!insight || typeof insight.id !== 'string') throw new Error('insight.id required')
+    await mkdir(insightsDir(), { recursive: true })
+    await writeFile(insightPath(insight.id), JSON.stringify(insight, null, 2) + '\n', 'utf8')
+  })
+  ipcMain.handle('insights:read', async (_e: any, id: string) => {
+    try {
+      return JSON.parse(await readFile(insightPath(id), 'utf8'))
+    } catch (err: any) {
+      if (err?.code === 'ENOENT') return null
+      throw err
+    }
+  })
+  ipcMain.handle('insights:readMany', async (_e: any, ids: string[]) => {
+    const list = Array.isArray(ids) ? ids : []
+    const out: any[] = []
+    for (const id of list) {
+      if (typeof id !== 'string' || !id) continue
+      try {
+        out.push(JSON.parse(await readFile(insightPath(id), 'utf8')))
+      } catch {
+        // 缺文件跳过
+      }
+    }
+    return out
+  })
+  ipcMain.handle('insights:delete', async (_e: any, id: string) => {
+    try {
+      await rm(insightPath(id), { force: true })
+    } catch {
+      //
+    }
+  })
+  ipcMain.handle('insights:deleteMany', async (_e: any, ids: string[]) => {
+    for (const id of Array.isArray(ids) ? ids : []) {
+      if (typeof id !== 'string' || !id) continue
+      try {
+        await rm(insightPath(id), { force: true })
+      } catch {
+        //
+      }
+    }
+  })
+
   ipcMain.handle('conversations:list', async () => {
     // 递归扫描 chats/ 与 projects/（settings.json 等非会话文件排除在外）
     const out: { key: string; text: string }[] = []

@@ -104,6 +104,8 @@ export interface Conversation {
   refs: Ref[]
   attachments: SandboxFile[] // 用户附件
   outputs: SandboxFile[] // Agent 产物
+  /** 本会话收获 id 列表（正文在 dataDir/insights/<id>.json） */
+  insightIds?: string[]
 }
 
 export type Mode = 'chat' | 'local' | 'cloud'
@@ -126,6 +128,20 @@ export interface Memory {
   updatedAt: number
 }
 
+/** Agent 留给用户的「收获」：可能不知道但对后续有用的一点 */
+export interface Insight {
+  id: string
+  /** 短标题 */
+  title: string
+  /** 正文 */
+  text: string
+  /** 为何有用 / 纠正了什么误解（可选） */
+  why?: string
+  /** 来源会话 */
+  convId?: string
+  createdAt: number
+}
+
 /** 强调色主题：驱动全局 --accent* */
 export type AccentId =
   | 'violet'
@@ -141,6 +157,11 @@ export type ContentWidth = 'standard' | 'wide' | 'full'
 export interface Settings {
   models: ModelConfig[]
   memories: Memory[]
+  /**
+   * @deprecated 收获已迁到 dataDir/insights/ + Conversation.insightIds；
+   * 启动时若仍有数据会迁出后清空。
+   */
+  insights?: Insight[]
   tools: {
     terminal: boolean
     fileEdit: boolean

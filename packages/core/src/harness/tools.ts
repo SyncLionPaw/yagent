@@ -98,6 +98,34 @@ export const DEFAULT_TOOLS: ToolDef[] = [
       required: ['questions'],
     },
   },
+  {
+    name: 'save_insight',
+    description:
+      'Optionally save a small tip the user likely does not already know but will find useful later. ' +
+      'How many: zero, one, or several per turn—only when there is a real takeaway; never force a tip. ' +
+      'Granularity: each call = one fine-grained idea (one concept / gotcha / "why"). If you have three points, call three times; do not merge into one long note. ' +
+      'Title names that idea; text preferably one short sentence (max two). ' +
+      'Not task status, praise, or restating the answer. Skip TODOs, paths, and anything already obvious. ' +
+      'Entries show in the right panel 「收获」; the user may ignore them.',
+    parameters: {
+      type: 'object',
+      properties: {
+        title: {
+          type: 'string',
+          description: 'Name of this single idea only (≤ 20 characters), e.g. "rebase 改历史"',
+        },
+        text: {
+          type: 'string',
+          description: 'This tip only: preferably one sentence, never more than two',
+        },
+        why: {
+          type: 'string',
+          description: 'Optional one-liner: why this tip matters',
+        },
+      },
+      required: ['title', 'text'],
+    },
+  },
   LOAD_SKILL_TOOL,
 ]
 
@@ -128,6 +156,10 @@ export function summarizeInput(input: Record<string, unknown>): string {
       const s = headers.join(' · ')
       return s.length > 80 ? `${s.slice(0, 79)}…` : s
     }
+  }
+  if (typeof input.title === 'string' && input.title.trim() && typeof input.text === 'string') {
+    const s = input.title.trim()
+    return s.length > 80 ? `${s.slice(0, 79)}…` : s
   }
   const cand =
     input.command ?? input.cmd ?? input.path ?? input.file_path ?? input.filePath ?? input.query ?? input.url

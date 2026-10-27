@@ -3229,6 +3229,26 @@ pre.math-raw {
   background: var(--bg-active);
   color: var(--text-0);
 }
+.ptab {
+  position: relative;
+}
+.ptab-badge {
+  position: absolute;
+  top: 1px;
+  right: 0;
+  min-width: 14px;
+  height: 14px;
+  padding: 0 3px;
+  border-radius: 7px;
+  background: var(--accent);
+  color: #fff;
+  font-size: 9px;
+  font-weight: 600;
+  line-height: 14px;
+  text-align: center;
+  font-variant-numeric: tabular-nums;
+  pointer-events: none;
+}
 .ptab-browser {
   display: inline-flex;
   align-items: center;
@@ -3266,6 +3286,84 @@ pre.math-raw {
   background: var(--bg-active);
   color: var(--text-0);
 }
+/* 右栏：收获 */
+.insights-pane {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  min-height: 0;
+  overflow: auto;
+  padding-bottom: 8px;
+}
+.insights-hint {
+  font-size: 11.5px;
+  color: var(--text-2);
+  line-height: 1.45;
+  margin-bottom: 4px;
+}
+.insights-empty {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  text-align: center;
+  gap: 8px;
+  padding: 36px 16px;
+  color: var(--text-2);
+}
+.insights-empty-ic {
+  width: 22px;
+  height: 22px;
+  opacity: 0.55;
+}
+.insights-empty-title {
+  font-size: 13px;
+  font-weight: 550;
+  color: var(--text-1);
+}
+.insights-empty-desc {
+  font-size: 12px;
+  line-height: 1.55;
+  max-width: 18em;
+}
+.insight-card {
+  padding: 10px 12px;
+  border-radius: 9px;
+  border: 1px solid var(--border);
+  background: var(--bg-surface);
+}
+.insight-card-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 8px;
+}
+.insight-title {
+  margin: 0;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text-0);
+  line-height: 1.35;
+}
+.insight-text {
+  margin: 8px 0 0;
+  font-size: 12.5px;
+  line-height: 1.55;
+  color: var(--text-1);
+  white-space: pre-wrap;
+}
+.insight-why {
+  margin: 6px 0 0;
+  font-size: 11.5px;
+  line-height: 1.45;
+  color: var(--text-2);
+}
+.insight-meta {
+  margin-top: 8px;
+  font-size: 10.5px;
+  color: var(--text-2);
+  font-variant-numeric: tabular-nums;
+}
+
 .p-pane {
   display: none;
 }

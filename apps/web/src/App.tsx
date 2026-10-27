@@ -4,6 +4,7 @@ import type {
   ContentWidth,
   ContextSnapshot,
   Conversation,
+  Insight,
   Mode,
   Settings,
 } from '@yagent/core'
@@ -30,6 +31,14 @@ import {
   type AskUserAnswers,
   type AskUserRequest,
 } from './askUserQuestion'
+import {
+  deleteInsight,
+  deleteInsights,
+  newInsightId,
+  readInsights,
+  registerInsightHandler,
+  writeInsight,
+} from './insights'
 import { Sidebar } from './components/Sidebar'
 import { Topbar, type PopoverId } from './components/Topbar'
 import { ChatView } from './components/ChatView'
@@ -79,7 +88,7 @@ function App() {
   const [activeConvId, setActiveConvId] = useState(() => harness.listConversations()[0]?.id ?? '')
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false)
   const [panelOpen, setPanelOpen] = useState(false)
-  const [panelTab, setPanelTab] = useState<PanelTab>('files')
+  const [panelTab, setPanelTab] = useState<PanelTab>('insights')
   const [activeSrcId, setActiveSrcId] = useState<number | null>(null)
   const [settingsOpen, setSettingsOpen] = useState(false)
   const [settingsPane, setSettingsPane] = useState<SettingsPaneId>('models')
@@ -118,7 +127,7 @@ function App() {
     pickInitialModel(models),
   )
   // harness 内部是可变对象，事件到达时 bump tick 触发重读
-  const [, setHarnessTick] = useState(0)
+  const [harnessTick, setHarnessTick] = useState(0)
   const [contextSnap, setContextSnap] = useState<ContextSnapshot | null>(null)
   /** 推拉中的实时宽度；null = 跟 settings */
   const [sidebarWidthLive, setSidebarWidthLive] = useState<number | null>(null)
@@ -185,9 +194,10 @@ function App() {
     }
   }, [activeConvId])
 
-  // 切换会话时拉一次估算占用（不依赖刚跑过的 usage）
+  // 切换会话时拉一次估算占用（不依赖刚跑过的 usage）；清右栏选中的来源角标
   useEffect(() => {
     setContextSnap(readContextSnapshot(activeConvId))
+    setActiveSrcId(null)
   }, [activeConvId])
 
   // 设置 / 当前模型 → 装配 harness provider（下一条消息生效）
@@ -338,6 +348,58 @@ function App() {
     })
   }, [])
 
+  // save_insight：正文 → dataDir/insights/；会话 meta 记 insightIds
+  useEffect(() => {
+    registerInsightHandler(async (draft) => {
+      const insight: Insight = {
+        id: newInsightId(),
+        title: draft.title,
+        text: draft.text,
+        ...(draft.why ? { why: draft.why } : {}),
+        ...(draft.convId ? { convId: draft.convId } : {}),
+        createdAt: Date.now(),
+      }
+      await writeInsight(insight)
+      if (draft.convId) harness.addInsightId(draft.convId, insight.id)
+      setPanelOpen(true)
+      setPanelTab('insights')
+      return insight
+    })
+    return () => registerInsightHandler(null)
+  }, [])
+
+  // 旧版 settings.insights → 文件 + 会话 id 列表，然后清空配置字段
+  useEffect(() => {
+    if (!loadedRef.current) return
+    const legacy = settings.insights
+    if (!legacy?.length) return
+    void (async () => {
+      for (const ins of legacy) {
+        await writeInsight(ins)
+        if (ins.convId && harness.getConversation(ins.convId)) {
+          harness.addInsightId(ins.convId, ins.id)
+        }
+      }
+      setSettings((s) => ({ ...s, insights: [] }))
+    })()
+  }, [settings.insights])
+
+  // 右栏收获：按当前会话 insightIds 读文件
+  const [convInsights, setConvInsights] = useState<Insight[]>([])
+  const insightIdsKey = (conversation?.insightIds ?? []).join(',')
+  useEffect(() => {
+    const ids = conversation?.insightIds ?? []
+    let alive = true
+    void readInsights(ids).then((list) => {
+      if (!alive) return
+      const map = new Map(list.map((i) => [i.id, i]))
+      setConvInsights(ids.map((id) => map.get(id)).filter((x): x is Insight => !!x))
+    })
+    return () => {
+      alive = false
+    }
+  }, [conversation?.id, insightIdsKey, harnessTick])
+
   // 审批档位同步；升到更宽档位时放行走完已不需要确认的排队项
   useEffect(() => {
     setApprovalMode(approvalMode)
@@ -432,8 +494,10 @@ function App() {
     }
     setPendingFiles([])
     setDraft('')
+    const insightIds = [...(conv.insightIds ?? [])]
     void (async () => {
       await conversationStore.remove(id)
+      await deleteInsights(insightIds).catch(() => undefined)
       await window.yagentDesktop?.attachments
         ?.purge?.(id, workdir, extraPaths)
         .catch(() => undefined)
@@ -908,8 +972,14 @@ function App() {
         conversation={conversation}
         tab={panelTab}
         activeSrcId={activeSrcId}
+        insights={convInsights}
         onTabChange={setPanelTab}
         onSelectSrc={setActiveSrcId}
+        onDeleteInsight={(insightId) => {
+          if (conversation) harness.removeInsightId(conversation.id, insightId)
+          void deleteInsight(insightId)
+          setConvInsights((list) => list.filter((x) => x.id !== insightId))
+        }}
       />
 
       <ConfirmDialog

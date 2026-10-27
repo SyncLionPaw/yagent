@@ -113,21 +113,20 @@ html[data-theme="light"] {
     display: inline-flex;
     align-items: center;
     justify-content: center;
-    width: 34px;
+    width: 30px;
     height: 30px;
     padding: 0;
     background: transparent;
     color: var(--faint);
-    border: 1px solid var(--hairline);
-    border-radius: 999px;
+    border: none;
+    border-radius: 0;
     cursor: pointer;
-    transition: color 0.2s ease, border-color 0.2s ease;
+    transition: color 0.2s ease;
 }
 
 .theme-btn:hover,
 .theme.open .theme-btn {
     color: var(--ink);
-    border-color: var(--control-hover-border);
 }
 
 .theme-btn svg {
@@ -162,7 +161,7 @@ html[data-theme="light"] .wordmark canvas {
 
 @media (max-width: 600px) {
     .theme-btn {
-        width: 32px;
+        width: 28px;
         height: 28px;
     }
 }

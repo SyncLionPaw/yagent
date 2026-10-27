@@ -15,6 +15,13 @@ contextBridge.exposeInMainWorld('yagentDesktop', {
     read: () => ipcRenderer.invoke('usage:read'),
     write: (content: string) => ipcRenderer.invoke('usage:write', content),
   },
+  insights: {
+    write: (insight: unknown) => ipcRenderer.invoke('insights:write', insight),
+    read: (id: string) => ipcRenderer.invoke('insights:read', id),
+    readMany: (ids: string[]) => ipcRenderer.invoke('insights:readMany', ids),
+    delete: (id: string) => ipcRenderer.invoke('insights:delete', id),
+    deleteMany: (ids: string[]) => ipcRenderer.invoke('insights:deleteMany', ids),
+  },
   conversations: {
     list: () => ipcRenderer.invoke('conversations:list'),
     append: (key: string, lines: string) => ipcRenderer.invoke('conversations:append', key, lines),

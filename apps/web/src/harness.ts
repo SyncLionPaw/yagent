@@ -22,6 +22,11 @@ import {
   parseAskUserInput,
   requestAskUserQuestion,
 } from './askUserQuestion'
+import {
+  formatInsightResult,
+  parseInsightInput,
+  requestSaveInsight,
+} from './insights'
 import { listSkills, skillsAvailable } from './skills'
 
 const DEEPSEEK_BASE_URL = 'https://api.deepseek.com'
@@ -125,8 +130,8 @@ export function resolveProvider(model: ModelConfig | undefined): ModelProvider {
 const APPROVAL_TOOLS = new Set(['write_file', 'run_command'])
 
 const createExecutor = (workdir: string): ToolExecutor => {
-  return async (name, input, signal) => {
-    // 问答工具只走渲染层，不依赖桌面 IPC
+  return async (name, input, signal, conv) => {
+    // 问答 / 收获只走渲染层，不依赖桌面 IPC
     if (name === 'ask_user_question') {
       const req = parseAskUserInput(input)
       try {
@@ -140,6 +145,11 @@ const createExecutor = (workdir: string): ToolExecutor => {
         throw err
       }
     }
+    if (name === 'save_insight') {
+      const draft = parseInsightInput(input)
+      const insight = await requestSaveInsight({ ...draft, convId: conv.id }, signal)
+      return formatInsightResult(insight)
+    }
     const ipcTools = window.yagentDesktop?.tools
     if (!ipcTools) throw new Error('Tool execution not available (requires Electron)')
     if (APPROVAL_TOOLS.has(name)) {
@@ -151,11 +161,12 @@ const createExecutor = (workdir: string): ToolExecutor => {
 }
 
 const BASE_SYSTEM =
-  '你是 yagent，一个 AI Agent 客户端里的助手。回答简洁、直接，使用用户的语言。' +
+  '你是 yagent，一个以人为本的 AI Agent：做完事之外，还帮用户多懂一点。回答简洁、直接，使用用户的语言。' +
   '用户附件保存在应用数据目录（…/projects/<slug>/uploads/<convId>/ 或 …/chats/uploads/<convId>/），消息里若给出「绝对路径」请原样传给 read_file，不要猜测 .yagent/uploads/ 这类相对路径。' +
   '引用网页来源时，在相关句子后插入标签（不要只写裸 [1]）：' +
   '<ref url="完整https地址" title="短标题">一两句摘要</ref>；也可简写 <ref_link>完整https地址</ref_link>。' +
-  '同一 URL 可重复标签；客户端会汇总到右栏「搜索」并显示为角标。'
+  '同一 URL 可重复标签；客户端会汇总到右栏「搜索」并显示为角标。' +
+  '有对用户真正有用、且其可能还不知道的点时，可用 save_insight 写入右侧「收获」：本轮可以是 0 条、1 条或若干条，没有硬性数量；有就记、没有就不硬写。每条尽量拆细（一次调用只写一个小点），多点就多次调用，正文优先一句话。不要记任务进度或废话。'
 
 export const harness = new Harness({
   provider: new MissingKeyProvider('尚未配置模型'),
@@ -185,7 +196,7 @@ export async function syncSkillsIntoHarness(): Promise<{ total: number; invocabl
 }
 
 /** 根据会话工作目录 + 工具开关动态配置工具：
- *  fetch_url / read_file / ask_user_question / load_skill 始终可用（桌面端）；
+ *  fetch_url / read_file / ask_user_question / save_insight / load_skill 始终可用；
  *  search_web 跟随设置；write_file / run_command 需绑定目录。 */
 export function updateToolsFor(convId: string, toolFlags?: Settings['tools']): void {
   const conv = harness.getConversation(convId)
@@ -194,7 +205,14 @@ export function updateToolsFor(convId: string, toolFlags?: Settings['tools']): v
   const canSkills = skillsAvailable()
   const tools = DEFAULT_TOOLS.filter((t) => {
     if (t.name === 'load_skill') return canSkills
-    if (t.name === 'fetch_url' || t.name === 'read_file' || t.name === 'ask_user_question') return true
+    if (
+      t.name === 'fetch_url' ||
+      t.name === 'read_file' ||
+      t.name === 'ask_user_question' ||
+      t.name === 'save_insight'
+    ) {
+      return true
+    }
     if (t.name === 'search_web') return toolFlags?.webSearch ?? true
     return !!workdir
   })

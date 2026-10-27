@@ -125,6 +125,27 @@ export class Harness {
     this.emit({ type: 'conv_updated', convId })
   }
 
+  /** 关联一条收获 id（正文在 dataDir/insights/）；新 id 插到列表头部 */
+  addInsightId(convId: string, insightId: string): void {
+    const conv = this.mustGet(convId)
+    const id = insightId.trim()
+    if (!id) return
+    const list = conv.insightIds ?? []
+    if (list.includes(id)) return
+    conv.insightIds = [id, ...list]
+    this.emit({ type: 'conv_updated', convId })
+  }
+
+  /** 从本会话解除收获关联（不删磁盘文件；由调用方决定是否 purge） */
+  removeInsightId(convId: string, insightId: string): void {
+    const conv = this.mustGet(convId)
+    const list = conv.insightIds ?? []
+    const next = list.filter((x) => x !== insightId)
+    if (next.length === list.length) return
+    conv.insightIds = next
+    this.emit({ type: 'conv_updated', convId })
+  }
+
   /** 更新会话的工作目录绑定 */
   setWorkdir(convId: string, workdir: string | null): void {
     const conv = this.mustGet(convId)

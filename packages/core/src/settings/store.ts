@@ -43,6 +43,8 @@ export function mergeSettings(defaults: Settings, saved: Partial<Settings>): Set
     sandbox: { ...defaults.sandbox, ...saved.sandbox },
     appearance,
     user: { ...defaults.user, ...saved.user },
+    // insights 已迁出；保留字段仅供启动迁移读一次
+    insights: saved.insights ?? [],
     knowledgeBases: {
       sources: saved.knowledgeBases?.sources ?? defaults.knowledgeBases?.sources ?? [],
     },
