@@ -8,8 +8,8 @@
   },
   "scripts": {
     "dev": "pnpm dev:web",
-    "dev:web": "pnpm --filter web dev",
-    "dev:desktop": "pnpm --filter yagent-desktop dev",
+    "dev:web": "pnpm --filter @yagent/core build && pnpm --filter web dev",
+    "dev:desktop": "pnpm --filter @yagent/core build && pnpm --filter yagent-desktop dev",
     "build": "pnpm --filter @yagent/core build && pnpm --filter @yagent/ui build && pnpm --filter web build && pnpm --filter yagent-desktop build",
     "build:web": "pnpm --filter @yagent/core build && pnpm --filter @yagent/ui build && pnpm --filter web build",
     "build:desktop": "pnpm build:web && pnpm --filter yagent-desktop dist",

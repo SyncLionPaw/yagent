@@ -43,6 +43,61 @@ export const DEFAULT_TOOLS: ToolDef[] = [
       'Fetch a URL and return its text/Markdown content. Read-only. If you rely on this page in the answer, cite it with <ref url="that URL" title="...">...</ref>.',
     parameters: { type: 'object', properties: { url: { type: 'string' } }, required: ['url'] },
   },
+  {
+    name: 'ask_user_question',
+    description:
+      'Ask the user multiple-choice questions to gather preferences, clarify ambiguity, or choose between approaches. ' +
+      'Use when a decision from the user is needed before continuing. Users can always pick "Other" for free text. ' +
+      'Prefer recommending an option by listing it first and appending "(Recommended)" to its label. ' +
+      'Do not use this for yes/no plan approval filler — only when a real choice is required.',
+    parameters: {
+      type: 'object',
+      properties: {
+        questions: {
+          type: 'array',
+          description: '1–4 questions to ask in one step',
+          items: {
+            type: 'object',
+            properties: {
+              question: {
+                type: 'string',
+                description:
+                  'Full question text, clear and specific, ending with ?. Multi-select: phrase accordingly.',
+              },
+              header: {
+                type: 'string',
+                description: 'Very short chip label (max 12 characters), e.g. "Library", "Auth".',
+              },
+              options: {
+                type: 'array',
+                description: '2–4 distinct choices. Do not include an "Other" option — UI adds it.',
+                items: {
+                  type: 'object',
+                  properties: {
+                    label: {
+                      type: 'string',
+                      description: 'Concise choice label (1–5 words) shown to the user',
+                    },
+                    description: {
+                      type: 'string',
+                      description: 'What this option means or implies',
+                    },
+                  },
+                  required: ['label', 'description'],
+                },
+              },
+              multiSelect: {
+                type: 'boolean',
+                description: 'If true, user may select multiple options (not mutually exclusive)',
+              },
+            },
+            required: ['question', 'header', 'options'],
+          },
+        },
+      },
+      required: ['questions'],
+    },
+  },
   LOAD_SKILL_TOOL,
 ]
 
@@ -62,6 +117,17 @@ export function summarizeInput(input: Record<string, unknown>): string {
     const file = typeof input.file === 'string' && input.file.trim() ? `/${input.file.trim()}` : ''
     const s = `${input.id.trim()}${file}`
     return s.length > 80 ? `${s.slice(0, 79)}…` : s
+  }
+  if (Array.isArray(input.questions)) {
+    const headers = input.questions
+      .map((q) => (q && typeof q === 'object' && typeof (q as { header?: unknown }).header === 'string'
+        ? (q as { header: string }).header.trim()
+        : ''))
+      .filter(Boolean)
+    if (headers.length) {
+      const s = headers.join(' · ')
+      return s.length > 80 ? `${s.slice(0, 79)}…` : s
+    }
   }
   const cand =
     input.command ?? input.cmd ?? input.path ?? input.file_path ?? input.filePath ?? input.query ?? input.url

@@ -17,6 +17,11 @@ import {
 } from '@yagent/core'
 import type { ChatRequest, ModelConfig, ModelProvider, Settings, StreamEvent } from '@yagent/core'
 import { requestApproval } from './approval'
+import {
+  formatAskUserResult,
+  parseAskUserInput,
+  requestAskUserQuestion,
+} from './askUserQuestion'
 import { listSkills, skillsAvailable } from './skills'
 
 const DEEPSEEK_BASE_URL = 'https://api.deepseek.com'
@@ -121,6 +126,20 @@ const APPROVAL_TOOLS = new Set(['write_file', 'run_command'])
 
 const createExecutor = (workdir: string): ToolExecutor => {
   return async (name, input, signal) => {
+    // 问答工具只走渲染层，不依赖桌面 IPC
+    if (name === 'ask_user_question') {
+      const req = parseAskUserInput(input)
+      try {
+        const answers = await requestAskUserQuestion(req, signal)
+        return formatAskUserResult(req, answers)
+      } catch (err) {
+        const msg = err instanceof Error ? err.message : String(err)
+        if (msg === 'aborted' || /取消|跳过|cancel/i.test(msg)) {
+          throw new Error('用户跳过了问答')
+        }
+        throw err
+      }
+    }
     const ipcTools = window.yagentDesktop?.tools
     if (!ipcTools) throw new Error('Tool execution not available (requires Electron)')
     if (APPROVAL_TOOLS.has(name)) {
@@ -166,8 +185,8 @@ export async function syncSkillsIntoHarness(): Promise<{ total: number; invocabl
 }
 
 /** 根据会话工作目录 + 工具开关动态配置工具：
- *  fetch_url / read_file / load_skill 始终可用（桌面端）；search_web 跟随设置；
- *  write_file / run_command 需绑定目录。 */
+ *  fetch_url / read_file / ask_user_question / load_skill 始终可用（桌面端）；
+ *  search_web 跟随设置；write_file / run_command 需绑定目录。 */
 export function updateToolsFor(convId: string, toolFlags?: Settings['tools']): void {
   const conv = harness.getConversation(convId)
   if (!conv) return
@@ -175,7 +194,7 @@ export function updateToolsFor(convId: string, toolFlags?: Settings['tools']): v
   const canSkills = skillsAvailable()
   const tools = DEFAULT_TOOLS.filter((t) => {
     if (t.name === 'load_skill') return canSkills
-    if (t.name === 'fetch_url' || t.name === 'read_file') return true
+    if (t.name === 'fetch_url' || t.name === 'read_file' || t.name === 'ask_user_question') return true
     if (t.name === 'search_web') return toolFlags?.webSearch ?? true
     return !!workdir
   })

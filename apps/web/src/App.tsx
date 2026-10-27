@@ -8,6 +8,7 @@ import type {
   Settings,
 } from '@yagent/core'
 import { DEFAULT_SETTINGS, settingsStore } from './settings'
+import { recordTokenUsage } from './tokenUsage'
 import {
   configureHarness,
   harness,
@@ -24,9 +25,15 @@ import {
   type ApprovalMode,
   type ApprovalRequest,
 } from './approval'
+import {
+  registerAskUserHandler,
+  type AskUserAnswers,
+  type AskUserRequest,
+} from './askUserQuestion'
 import { Sidebar } from './components/Sidebar'
 import { Topbar, type PopoverId } from './components/Topbar'
 import { ChatView } from './components/ChatView'
+import { AskUserQuestionBar } from './components/AskUserQuestionBar'
 import { Composer, type ContextMeter, type PendingAttachment } from './components/Composer'
 import {
   PANEL_W_DEFAULT,
@@ -84,6 +91,15 @@ function App() {
   const [approvals, setApprovals] = useState<
     { id: number; req: ApprovalRequest; resolve: (ok: boolean) => void }[]
   >([])
+  // ask_user_question 队列：优先于审批条展示
+  const [askQueue, setAskQueue] = useState<
+    {
+      id: number
+      req: AskUserRequest
+      resolve: (a: AskUserAnswers) => void
+      reject: (e: Error) => void
+    }[]
+  >([])
   const [draft, setDraft] = useState('')
   /** slash 命令执行后的短暂提示（输入框上方） */
   const [slashNotice, setSlashNotice] = useState('')
@@ -137,13 +153,25 @@ function App() {
   const running = harnessConv?.status === 'running'
   const contextMeter: ContextMeter | null = contextSnap ? toContextMeter(contextSnap) : null
 
+  // 各会话上次 totals，用于把增量写入按日用量统计
+  const usageTotalsRef = useRef(new Map<string, { input: number; output: number }>())
+
   // 订阅 harness 事件 → 重渲染（conversations 重读活引用）
   // rAF 合帧：token 突发时一帧内多个事件只触发一次渲染
   useEffect(() => {
     let raf = 0
     const unsub = harness.on((e) => {
-      if (e.type === 'context_updated' && e.convId === activeConvId) {
-        setContextSnap(e.snapshot)
+      if (e.type === 'context_updated') {
+        if (e.convId === activeConvId) setContextSnap(e.snapshot)
+        const t = e.snapshot.totals
+        const prev = usageTotalsRef.current.get(e.convId)
+        if (prev && (t.input > prev.input || t.output > prev.output)) {
+          void recordTokenUsage({
+            input: Math.max(0, t.input - prev.input),
+            output: Math.max(0, t.output - prev.output),
+          })
+        }
+        usageTotalsRef.current.set(e.convId, { input: t.input, output: t.output })
       }
       if (raf) return
       raf = requestAnimationFrame(() => {
@@ -277,6 +305,37 @@ function App() {
           setApprovals((list) => [...list, { id: ++seq, req, resolve }])
         }),
     )
+  }, [])
+
+  // ask_user_question：推进问答队列；abort / 提交 / 跳过都出队
+  useEffect(() => {
+    let seq = 0
+    registerAskUserHandler((req, signal) => {
+      const id = ++seq
+      return new Promise<AskUserAnswers>((resolve, reject) => {
+        let settled = false
+        const finish = (fn: () => void) => {
+          if (settled) return
+          settled = true
+          setAskQueue((list) => list.filter((x) => x.id !== id))
+          fn()
+        }
+        setAskQueue((list) => [
+          ...list,
+          {
+            id,
+            req,
+            resolve: (a) => finish(() => resolve(a)),
+            reject: (e) => finish(() => reject(e)),
+          },
+        ])
+        signal.addEventListener(
+          'abort',
+          () => finish(() => reject(new Error('aborted'))),
+          { once: true },
+        )
+      })
+    })
   }, [])
 
   // 审批档位同步；升到更宽档位时放行走完已不需要确认的排队项
@@ -776,13 +835,21 @@ function App() {
               mode={mode}
               popover={popover}
               running={running}
+              askingUser={askQueue.length > 0}
               textareaRef={textareaRef}
               attachments={pendingFiles}
               editingMessage={!!editingNodeId}
               context={contextMeter}
               approvalMode={approvalMode}
               approval={
-                approvalMode !== 'all' && approvals.length > 0 ? (
+                askQueue.length > 0 ? (
+                  <AskUserQuestionBar
+                    key={askQueue[0].id}
+                    req={askQueue[0].req}
+                    onSubmit={(answers) => askQueue[0].resolve(answers)}
+                    onCancel={() => askQueue[0].reject(new Error('用户取消了回答'))}
+                  />
+                ) : approvalMode !== 'all' && approvals.length > 0 ? (
                   <ApprovalBar
                     req={approvals[0].req}
                     onAnswer={(ok) => {

@@ -1,11 +1,13 @@
 const { app, BrowserWindow, dialog, ipcMain, nativeImage } = require('electron')
-const { spawn } = require('node:child_process')
+const { spawn, execFile } = require('node:child_process')
 const { existsSync } = require('node:fs')
-const { appendFile, readFile, readdir, realpath, rm, stat, writeFile } = require('node:fs/promises')
+const { appendFile, cp, mkdtemp, readFile, readdir, realpath, rm, stat, writeFile } = require('node:fs/promises')
 const path = require('node:path')
 const { mkdir, rename, writeFile: fsWriteFile } = require('node:fs/promises')
 const os = require('node:os')
 const { pathToFileURL } = require('node:url')
+const { promisify } = require('node:util')
+const execFileAsync = promisify(execFile)
 const {
   pickDeepSeekKeyFromSettings,
   resolveWebContentProvider,
@@ -27,6 +29,66 @@ function defaultSettingsPath(): string {
 
 function skillsRoot(): string {
   return path.join(dataDir(), 'skills')
+}
+
+/** 其他 Agent 常见 skills 目录（Cursor / Claude / Codex / Agents） */
+function knownExternalSkillSources(): { id: string; label: string; root: string }[] {
+  const home = os.homedir()
+  return [
+    { id: 'cursor', label: 'Cursor', root: path.join(home, '.cursor', 'skills-cursor') },
+    { id: 'cursor-user', label: 'Cursor 用户', root: path.join(home, '.cursor', 'skills') },
+    { id: 'claude', label: 'Claude', root: path.join(home, '.claude', 'skills') },
+    { id: 'codex', label: 'Codex', root: path.join(home, '.codex', 'skills') },
+    { id: 'agents', label: 'Agents', root: path.join(home, '.agents', 'skills') },
+  ]
+}
+
+async function listSkillSummariesInRoot(
+  root: string,
+): Promise<{ id: string; name: string; description: string; path: string; disableModelInvocation: boolean }[]> {
+  let entries: any[]
+  try {
+    entries = await readdir(root, { withFileTypes: true })
+  } catch (err: any) {
+    if (err.code === 'ENOENT') return []
+    throw err
+  }
+  const out: {
+    id: string
+    name: string
+    description: string
+    path: string
+    disableModelInvocation: boolean
+  }[] = []
+  for (const entry of entries) {
+    if (entry.name.startsWith('.')) continue
+    const dir = path.join(root, entry.name)
+    let isDir = entry.isDirectory()
+    if (!isDir && entry.isSymbolicLink()) {
+      try {
+        isDir = (await stat(dir)).isDirectory()
+      } catch {
+        continue
+      }
+    }
+    if (!isDir) continue
+    const mdPath = path.join(dir, 'SKILL.md')
+    try {
+      const raw = await readFile(mdPath, 'utf8')
+      const { name, description, disableModelInvocation } = parseSkillMd(raw)
+      out.push({
+        id: entry.name,
+        name: name || entry.name,
+        description: description || '',
+        path: dir,
+        disableModelInvocation,
+      })
+    } catch {
+      // 无 SKILL.md 的目录跳过
+    }
+  }
+  out.sort((a, b) => a.name.localeCompare(b.name, 'zh'))
+  return out
 }
 
 function skillSlug(name: string): string {
@@ -453,6 +515,20 @@ void app.whenReady().then(async () => {
 
   ipcMain.handle('settings:read', readSettings)
   ipcMain.handle('settings:write', (_e: any, content: string) => writeSettings(content))
+
+  const usageFilePath = () => path.join(dataDir(), 'token-usage.json')
+  ipcMain.handle('usage:read', async () => {
+    try {
+      return await readFile(usageFilePath(), 'utf8')
+    } catch (err: any) {
+      if (err?.code === 'ENOENT') return null
+      throw err
+    }
+  })
+  ipcMain.handle('usage:write', async (_e: any, content: string) => {
+    await mkdir(dataDir(), { recursive: true })
+    await writeFile(usageFilePath(), content, 'utf8')
+  })
   ipcMain.handle('conversations:list', async () => {
     // 递归扫描 chats/ 与 projects/（settings.json 等非会话文件排除在外）
     const out: { key: string; text: string }[] = []
@@ -715,39 +791,260 @@ void app.whenReady().then(async () => {
   ipcMain.handle('skills:list', async () => {
     const root = skillsRoot()
     await mkdir(root, { recursive: true })
+    const list = await listSkillSummariesInRoot(root)
+    // 兼容旧字段：path 指向 SKILL.md
+    return list.map((s) => ({ ...s, path: path.join(s.path, 'SKILL.md') }))
+  })
+  ipcMain.handle('skills:scanExternal', async () => {
+    const installed = new Set((await listSkillSummariesInRoot(skillsRoot())).map((s) => s.id))
+    const sources: {
+      id: string
+      label: string
+      root: string
+      exists: boolean
+      skills: {
+        id: string
+        name: string
+        description: string
+        path: string
+        disableModelInvocation: boolean
+        installed: boolean
+      }[]
+    }[] = []
+    for (const src of knownExternalSkillSources()) {
+      let exists = false
+      try {
+        exists = (await stat(src.root)).isDirectory()
+      } catch {
+        exists = false
+      }
+      const skills = exists
+        ? (await listSkillSummariesInRoot(src.root)).map((s) => ({
+            ...s,
+            installed: installed.has(s.id),
+          }))
+        : []
+      sources.push({ ...src, exists, skills })
+    }
+    return { sources }
+  })
+  async function importSkillDirectory(
+    sourcePath: string,
+    preferredId?: string,
+    overwrite = false,
+  ): Promise<{
+    id: string
+    name: string
+    description: string
+    path: string
+    disableModelInvocation: boolean
+    overwritten: boolean
+  }> {
+    if (!sourcePath || !path.isAbsolute(sourcePath)) {
+      throw new Error('sourcePath must be an absolute path')
+    }
+    const srcStat = await stat(sourcePath)
+    if (!srcStat.isDirectory()) throw new Error('sourcePath is not a directory')
+    await readFile(path.join(sourcePath, 'SKILL.md'), 'utf8')
+    const preferred = preferredId?.trim()
+      ? skillSlug(preferredId)
+      : skillSlug(path.basename(sourcePath))
+    let id = preferred
+    const root = skillsRoot()
+    await mkdir(root, { recursive: true })
+    let dest = path.join(root, id)
+    try {
+      await stat(dest)
+      if (!overwrite) {
+        for (let n = 2; ; n++) {
+          id = `${preferred}-${n}`
+          dest = path.join(root, id)
+          try {
+            await stat(dest)
+          } catch (err: any) {
+            if (err.code === 'ENOENT') break
+            throw err
+          }
+        }
+      } else {
+        await rm(dest, { recursive: true, force: true })
+      }
+    } catch (err: any) {
+      if (err.code !== 'ENOENT') throw err
+    }
+    await cp(sourcePath, dest, { recursive: true, dereference: true })
+    const raw = await readFile(path.join(dest, 'SKILL.md'), 'utf8')
+    const parsed = parseSkillMd(raw)
+    return {
+      id,
+      name: parsed.name || id,
+      description: parsed.description || '',
+      path: path.join(dest, 'SKILL.md'),
+      disableModelInvocation: parsed.disableModelInvocation,
+      overwritten: overwrite,
+    }
+  }
+
+  async function unzipArchive(zipPath: string, destDir: string): Promise<void> {
+    await mkdir(destDir, { recursive: true })
+    if (process.platform === 'win32') {
+      const psZip = zipPath.replace(/'/g, "''")
+      const psDest = destDir.replace(/'/g, "''")
+      await execFileAsync('powershell.exe', [
+        '-NoProfile',
+        '-Command',
+        `Expand-Archive -LiteralPath '${psZip}' -DestinationPath '${psDest}' -Force`,
+      ])
+      return
+    }
+    await execFileAsync('unzip', ['-o', '-q', zipPath, '-d', destDir])
+  }
+
+  /** 在解压目录中找出含 SKILL.md 的技能根目录（支持 zip 根即技能，或一层包装夹） */
+  async function findSkillDirsInTree(root: string): Promise<string[]> {
+    const out: string[] = []
+    try {
+      await readFile(path.join(root, 'SKILL.md'), 'utf8')
+      out.push(root)
+      return out
+    } catch {
+      // 继续扫子目录
+    }
     let entries: any[]
     try {
       entries = await readdir(root, { withFileTypes: true })
-    } catch (err: any) {
-      if (err.code === 'ENOENT') return []
-      throw err
+    } catch {
+      return out
     }
-    const out: {
+    for (const entry of entries) {
+      if (entry.name.startsWith('.') || entry.name === '__MACOSX') continue
+      const full = path.join(root, entry.name)
+      let isDir = entry.isDirectory()
+      if (!isDir && entry.isSymbolicLink()) {
+        try {
+          isDir = (await stat(full)).isDirectory()
+        } catch {
+          continue
+        }
+      }
+      if (!isDir) continue
+      try {
+        await readFile(path.join(full, 'SKILL.md'), 'utf8')
+        out.push(full)
+      } catch {
+        // 再下一层（常见：zip/技能名/SKILL.md 已覆盖；更深不扫）
+      }
+    }
+    return out
+  }
+
+  async function importFromZipPath(
+    zipPath: string,
+    overwrite = false,
+  ): Promise<
+    {
       id: string
       name: string
       description: string
       path: string
       disableModelInvocation: boolean
-    }[] = []
-    for (const entry of entries) {
-      if (!entry.isDirectory() || entry.name.startsWith('.')) continue
-      const mdPath = path.join(root, entry.name, 'SKILL.md')
+      overwritten: boolean
+    }[]
+  > {
+    if (!zipPath.toLowerCase().endsWith('.zip')) throw new Error('仅支持 .zip 技能包')
+    const tmp = await mkdtemp(path.join(os.tmpdir(), 'yagent-skill-'))
+    try {
+      await unzipArchive(zipPath, tmp)
+      const dirs = await findSkillDirsInTree(tmp)
+      if (dirs.length === 0) throw new Error('zip 内未找到 SKILL.md')
+      const results = []
+      for (const dir of dirs) {
+        results.push(await importSkillDirectory(dir, path.basename(dir), overwrite))
+      }
+      return results
+    } finally {
+      await rm(tmp, { recursive: true, force: true }).catch(() => undefined)
+    }
+  }
+
+  ipcMain.handle(
+    'skills:importExternal',
+    async (
+      _e: any,
+      input: { sourcePath?: string; id?: string; overwrite?: boolean },
+    ) => {
+      const sourcePath = typeof input?.sourcePath === 'string' ? input.sourcePath.trim() : ''
+      return importSkillDirectory(
+        sourcePath,
+        typeof input?.id === 'string' ? input.id : undefined,
+        input?.overwrite === true,
+      )
+    },
+  )
+  ipcMain.handle(
+    'skills:importZip',
+    async (
+      _e: any,
+      input: { zipPath?: string; zipBase64?: string; fileName?: string; overwrite?: boolean },
+    ) => {
+      const overwrite = input?.overwrite === true
+      let zipPath = typeof input?.zipPath === 'string' ? input.zipPath.trim() : ''
+      let tmpZip: string | null = null
       try {
-        const raw = await readFile(mdPath, 'utf8')
-        const { name, description, disableModelInvocation } = parseSkillMd(raw)
-        out.push({
-          id: entry.name,
-          name: name || entry.name,
-          description: description || '',
-          path: mdPath,
-          disableModelInvocation,
-        })
-      } catch {
-        // 无 SKILL.md 的目录跳过
+        if (!zipPath && typeof input?.zipBase64 === 'string' && input.zipBase64) {
+          tmpZip = path.join(
+            os.tmpdir(),
+            `yagent-skill-${Date.now()}-${skillSlug(input.fileName || 'pack')}.zip`,
+          )
+          await writeFile(tmpZip, Buffer.from(input.zipBase64, 'base64'))
+          zipPath = tmpZip
+        }
+        if (!zipPath || !path.isAbsolute(zipPath)) throw new Error('zipPath required')
+        return await importFromZipPath(zipPath, overwrite)
+      } finally {
+        if (tmpZip) await rm(tmpZip, { force: true }).catch(() => undefined)
+      }
+    },
+  )
+  ipcMain.handle('skills:pickAndImport', async () => {
+    const focusedWindow = BrowserWindow.getFocusedWindow()
+    const properties =
+      process.platform === 'darwin'
+        ? (['openFile', 'openDirectory', 'multiSelections'] as const)
+        : (['openFile', 'multiSelections'] as const)
+    const result = await dialog.showOpenDialog(focusedWindow as any, {
+      title: '上传技能（文件夹或 .zip）',
+      properties: [...properties],
+      filters: [
+        { name: 'Skill 包', extensions: ['zip'] },
+        { name: '全部', extensions: ['*'] },
+      ],
+    })
+    if (result.canceled || !result.filePaths.length) return { imported: [], canceled: true }
+    const imported: {
+      id: string
+      name: string
+      description: string
+      path: string
+      disableModelInvocation: boolean
+      overwritten: boolean
+    }[] = []
+    const errors: string[] = []
+    for (const p of result.filePaths) {
+      try {
+        const st = await stat(p)
+        if (st.isDirectory()) {
+          imported.push(await importSkillDirectory(p))
+        } else if (p.toLowerCase().endsWith('.zip')) {
+          imported.push(...(await importFromZipPath(p)))
+        } else {
+          errors.push(`${path.basename(p)}: 请选择技能文件夹或 .zip`)
+        }
+      } catch (err: any) {
+        errors.push(`${path.basename(p)}: ${err?.message || String(err)}`)
       }
     }
-    out.sort((a, b) => a.name.localeCompare(b.name, 'zh'))
-    return out
+    return { imported, canceled: false, errors }
   })
   ipcMain.handle('skills:read', async (_e: any, id: string) => {
     const dir = skillDirSafe(id)

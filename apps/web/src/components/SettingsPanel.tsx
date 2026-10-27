@@ -1,8 +1,9 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState, type DragEvent } from 'react'
 import {
   ArrowLeft,
   BookOpen,
   Check,
+  ChevronDown,
   Code2,
   FolderOpen,
   Globe,
@@ -10,9 +11,12 @@ import {
   Hash,
   Layers,
   PenTool,
+  Download,
   Pencil,
   Plus,
+  RefreshCw,
   Trash2,
+  Upload,
   Zap,
 } from 'lucide-react'
 import type {
@@ -32,15 +36,30 @@ import {
   testConnection,
 } from '../harness'
 import {
-  createSkill,
   deleteSkill,
+  importDroppedSkillFiles,
+  importExternalSkill,
   listSkills,
+  pickAndImportSkills,
   readSkill,
+  scanExternalSkills,
   skillsAvailable,
   skillsRoot,
   writeSkill,
+  type ExternalSkillSource,
   type SkillSummary,
 } from '../skills'
+import {
+  TOKEN_RANGES,
+  bucketEvents,
+  estimateEventsFromConversations,
+  formatBucketLabel,
+  formatTok,
+  loadTokenUsage,
+  sumEvents,
+  type TokenRangeId,
+  type UsageEvent,
+} from '../tokenUsage'
 
 export type SettingsPaneId =
   | 'user'
@@ -63,7 +82,7 @@ const PANE_META: Record<SettingsPaneId, [string, string]> = {
   user: ['用户', '本机昵称、头像字标，以及近一年对话打卡'],
   models: ['模型配置', '每个模型条目自带密钥与端点（BYOK），仅存储在本地'],
   appearance: ['外观', '主题强调色会应用到按钮、高亮与边缘光等全局样式'],
-  skills: ['技能', '按 Cursor 风格管理 SKILL.md，默认存放在 .yagent/skills/'],
+  skills: ['技能', '管理 SKILL.md；可扫描 Cursor / Claude 等目录并迁移'],
   knowledge: ['知识库', '连接本地目录或云端文档源，供 Agent 检索引用'],
   tools: ['工具', '配置 Agent 的默认工具与沙箱'],
   connectors: ['连接器', '连接外部服务，让 Agent 读写你的工具和数据'],
@@ -315,6 +334,308 @@ function ActivityHeatmap({ conversations }: { conversations: Conversation[] }) {
   )
 }
 
+/** 平滑折线（Catmull-Rom → 三次贝塞尔） */
+function smoothLine(points: { x: number; y: number }[]): string {
+  if (points.length === 0) return ''
+  if (points.length === 1) return `M ${points[0]!.x} ${points[0]!.y}`
+  let d = `M ${points[0]!.x} ${points[0]!.y}`
+  for (let i = 0; i < points.length - 1; i++) {
+    const p0 = points[i - 1] ?? points[i]!
+    const p1 = points[i]!
+    const p2 = points[i + 1]!
+    const p3 = points[i + 2] ?? p2
+    const cp1x = p1.x + (p2.x - p0.x) / 6
+    const cp1y = p1.y + (p2.y - p0.y) / 6
+    const cp2x = p2.x - (p3.x - p1.x) / 6
+    const cp2y = p2.y - (p3.y - p1.y) / 6
+    d += ` C ${cp1x} ${cp1y}, ${cp2x} ${cp2y}, ${p2.x} ${p2.y}`
+  }
+  return d
+}
+
+function areaPath(points: { x: number; y: number }[], baselineY: number): string {
+  if (!points.length) return ''
+  const line = smoothLine(points)
+  const first = points[0]!
+  const last = points[points.length - 1]!
+  return `${line} L ${last.x} ${baselineY} L ${first.x} ${baselineY} Z`
+}
+
+function TokenRangeMenu({
+  value,
+  onChange,
+}: {
+  value: TokenRangeId
+  onChange: (id: TokenRangeId) => void
+}) {
+  const [open, setOpen] = useState(false)
+  const rootRef = useRef<HTMLDivElement>(null)
+  const current = TOKEN_RANGES.find((r) => r.id === value) ?? TOKEN_RANGES[0]!
+
+  useEffect(() => {
+    if (!open) return
+    const onDoc = (e: MouseEvent) => {
+      if (!rootRef.current?.contains(e.target as Node)) setOpen(false)
+    }
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') setOpen(false)
+    }
+    document.addEventListener('mousedown', onDoc)
+    document.addEventListener('keydown', onKey)
+    return () => {
+      document.removeEventListener('mousedown', onDoc)
+      document.removeEventListener('keydown', onKey)
+    }
+  }, [open])
+
+  return (
+    <div className={`token-range${open ? ' is-open' : ''}`} ref={rootRef}>
+      <button
+        type="button"
+        className="token-range-trigger"
+        aria-haspopup="listbox"
+        aria-expanded={open}
+        onClick={() => setOpen((v) => !v)}
+      >
+        <span>{current.label}</span>
+        <ChevronDown className="ic ic-sm token-range-chevron" />
+      </button>
+      {open && (
+        <ul className="token-range-menu" role="listbox" aria-label="时间范围">
+          {TOKEN_RANGES.map((r) => (
+            <li key={r.id} role="option" aria-selected={r.id === value}>
+              <button
+                type="button"
+                className={`token-range-option${r.id === value ? ' is-active' : ''}`}
+                onClick={() => {
+                  onChange(r.id)
+                  setOpen(false)
+                }}
+              >
+                {r.label}
+                {r.id === value ? <Check className="ic ic-sm" /> : null}
+              </button>
+            </li>
+          ))}
+        </ul>
+      )}
+    </div>
+  )
+}
+
+function TokenUsageCharts({ conversations }: { conversations: Conversation[] }) {
+  const [apiEvents, setApiEvents] = useState<UsageEvent[] | null>(null)
+  const [rangeId, setRangeId] = useState<TokenRangeId>('7d')
+  const [hover, setHover] = useState<number | null>(null)
+
+  useEffect(() => {
+    let alive = true
+    void loadTokenUsage().then((store) => {
+      if (alive) setApiEvents(store.events)
+    })
+    return () => {
+      alive = false
+    }
+  }, [conversations])
+
+  const { events, source } = useMemo(() => {
+    const api = apiEvents ?? []
+    if (sumEvents(api).input + sumEvents(api).output > 0) {
+      return { events: api, source: 'api' as const }
+    }
+    return { events: estimateEventsFromConversations(conversations), source: 'estimate' as const }
+  }, [apiEvents, conversations])
+
+  const range = TOKEN_RANGES.find((r) => r.id === rangeId) ?? TOKEN_RANGES[3]!
+  const series = useMemo(() => bucketEvents(events, range), [events, range])
+  const totals = useMemo(() => sumEvents(series), [series])
+  const allTime = useMemo(() => sumEvents(events), [events])
+
+  const W = 640
+  const H = 200
+  const pad = { t: 16, r: 8, b: 8, l: 8 }
+  const plotW = W - pad.l - pad.r
+  const plotH = H - pad.t - pad.b
+  const maxY = Math.max(1, ...series.map((d) => Math.max(d.input, d.output)))
+  const n = Math.max(1, series.length - 1)
+  const ptsIn = series.map((d, i) => ({
+    x: pad.l + (i / n) * plotW,
+    y: pad.t + plotH - (d.input / maxY) * plotH,
+  }))
+  const ptsOut = series.map((d, i) => ({
+    x: pad.l + (i / n) * plotW,
+    y: pad.t + plotH - (d.output / maxY) * plotH,
+  }))
+  const baseline = pad.t + plotH
+  const xLabels = useMemo(() => {
+    const want = rangeId === '1h' ? 5 : rangeId === '12h' ? 6 : 7
+    const step = Math.max(1, Math.floor((series.length - 1) / Math.max(1, want - 1)))
+    const idxs = new Set<number>()
+    for (let i = 0; i < series.length; i += step) idxs.add(i)
+    idxs.add(series.length - 1)
+    return [...idxs].sort((a, b) => a - b)
+  }, [series, rangeId])
+
+  const ringTotal = Math.max(1, allTime.input + allTime.output)
+  const inputPct = allTime.input / ringTotal
+  const r = 54
+  const circ = 2 * Math.PI * r
+  const inputLen = inputPct * circ
+  const outputLen = (allTime.output / ringTotal) * circ
+  const hovered = hover != null ? series[hover] : null
+
+  return (
+    <div className="token-usage-stack">
+      <div className="token-card">
+        <div className="token-card-head">
+          <div className="token-card-titles">
+            <div className="token-card-title">Token 用量</div>
+            <div className="token-card-sub">
+              {range.label}合计 {formatTok(totals.input + totals.output)} ·{' '}
+              {source === 'api' ? 'API 计量' : '按对话内容估算'}
+            </div>
+          </div>
+          <TokenRangeMenu
+            value={rangeId}
+            onChange={(id) => {
+              setRangeId(id)
+              setHover(null)
+            }}
+          />
+        </div>
+
+        <div
+          className="token-area-wrap"
+          role="img"
+          aria-label={`${range.label}输入与输出 token 面积图`}
+        >
+          <svg
+            className="token-area-svg"
+            viewBox={`0 0 ${W} ${H}`}
+            preserveAspectRatio="none"
+            onMouseLeave={() => setHover(null)}
+            onMouseMove={(e) => {
+              const rect = e.currentTarget.getBoundingClientRect()
+              const x = ((e.clientX - rect.left) / rect.width) * W
+              const i = Math.round(((x - pad.l) / plotW) * n)
+              setHover(Math.max(0, Math.min(series.length - 1, i)))
+            }}
+          >
+            <defs>
+              <linearGradient id="tokGradIn" x1="0" y1="0" x2="0" y2="1">
+                <stop offset="0%" stopColor="var(--accent)" stopOpacity="0.35" />
+                <stop offset="100%" stopColor="var(--accent)" stopOpacity="0.02" />
+              </linearGradient>
+              <linearGradient id="tokGradOut" x1="0" y1="0" x2="0" y2="1">
+                <stop offset="0%" stopColor="var(--accent)" stopOpacity="0.7" />
+                <stop offset="100%" stopColor="var(--accent)" stopOpacity="0.05" />
+              </linearGradient>
+            </defs>
+            <path className="token-area-fill is-in" d={areaPath(ptsIn, baseline)} fill="url(#tokGradIn)" />
+            <path className="token-area-fill is-out" d={areaPath(ptsOut, baseline)} fill="url(#tokGradOut)" />
+            <path className="token-area-line is-in" d={smoothLine(ptsIn)} />
+            <path className="token-area-line is-out" d={smoothLine(ptsOut)} />
+            {hover != null && ptsIn[hover] && ptsOut[hover] && (
+              <g className="token-area-hover">
+                <line
+                  x1={ptsIn[hover].x}
+                  x2={ptsIn[hover].x}
+                  y1={pad.t}
+                  y2={baseline}
+                />
+                <circle cx={ptsIn[hover].x} cy={ptsIn[hover].y} r="3.5" className="is-in" />
+                <circle cx={ptsOut[hover].x} cy={ptsOut[hover].y} r="3.5" className="is-out" />
+              </g>
+            )}
+          </svg>
+          <div className="token-area-xlabels" aria-hidden="true">
+            {xLabels.map((i) => {
+              const d = series[i]
+              if (!d) return null
+              const left = ((pad.l + (i / n) * plotW) / W) * 100
+              return (
+                <span key={d.key} style={{ left: `${left}%` }}>
+                  {formatBucketLabel(d.t, rangeId)}
+                </span>
+              )
+            })}
+          </div>
+          {hovered && (
+            <div className="token-area-tip">
+              <strong>{formatBucketLabel(hovered.t, rangeId)}</strong>
+              <span>输入 {formatTok(hovered.input)}</span>
+              <span>输出 {formatTok(hovered.output)}</span>
+            </div>
+          )}
+        </div>
+
+        <div className="token-card-legend">
+          <span className="token-legend-item">
+            <i className="token-swatch is-in" />
+            输入
+          </span>
+          <span className="token-legend-item">
+            <i className="token-swatch is-out" />
+            输出
+          </span>
+        </div>
+      </div>
+
+      <div className="token-card">
+        <div className="token-card-head">
+          <div className="token-card-titles">
+            <div className="token-card-title">输入 / 输出构成</div>
+            <div className="token-card-sub">
+              累计 {formatTok(allTime.input + allTime.output)} tokens
+            </div>
+          </div>
+        </div>
+        <div className="token-pie-wrap" role="img" aria-label="输入与输出 token 占比">
+          <svg className="token-pie" viewBox="0 0 160 160" aria-hidden="true">
+            <circle className="token-pie-track" cx="80" cy="80" r={r} />
+            <circle
+              className="token-pie-seg is-in"
+              cx="80"
+              cy="80"
+              r={r}
+              strokeDasharray={`${inputLen} ${circ - inputLen}`}
+              strokeDashoffset={circ * 0.25}
+            />
+            <circle
+              className="token-pie-seg is-out"
+              cx="80"
+              cy="80"
+              r={r}
+              strokeDasharray={`${outputLen} ${circ - outputLen}`}
+              strokeDashoffset={circ * 0.25 - inputLen}
+            />
+            <text className="token-pie-value" x="80" y="76" textAnchor="middle">
+              {formatTok(allTime.input + allTime.output)}
+            </text>
+            <text className="token-pie-sub" x="80" y="94" textAnchor="middle">
+              合计
+            </text>
+          </svg>
+          <div className="token-pie-legend">
+            <div className="token-legend-item">
+              <i className="token-swatch is-in" />
+              <span>输入</span>
+              <strong>{formatTok(allTime.input)}</strong>
+              <em>{Math.round(inputPct * 100)}%</em>
+            </div>
+            <div className="token-legend-item">
+              <i className="token-swatch is-out" />
+              <span>输出</span>
+              <strong>{formatTok(allTime.output)}</strong>
+              <em>{Math.round((allTime.output / ringTotal) * 100)}%</em>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  )
+}
+
 function UserPane({
   settings,
   conversations,
@@ -353,6 +674,8 @@ function UserPane({
       <p className="user-profile-hint">头像字标取昵称首字；暂无账号登录，仅本机使用。</p>
       <div className="sub-label">活跃度</div>
       <ActivityHeatmap conversations={conversations} />
+      <div className="sub-label">Token 使用</div>
+      <TokenUsageCharts conversations={conversations} />
     </>
   )
 }
@@ -765,12 +1088,23 @@ function SkillsPane({ active }: { active: boolean }) {
   const [root, setRoot] = useState<string | null>(null)
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
-  const [name, setName] = useState('')
-  const [desc, setDesc] = useState('')
   const [editingId, setEditingId] = useState<string | null>(null)
   const [draft, setDraft] = useState('')
   const [saving, setSaving] = useState(false)
+  const [external, setExternal] = useState<ExternalSkillSource[] | null>(null)
+  const [scanning, setScanning] = useState(false)
+  const [importingKey, setImportingKey] = useState<string | null>(null)
+  const [scanHint, setScanHint] = useState<string | null>(null)
+  const [uploading, setUploading] = useState(false)
+  const [dragOver, setDragOver] = useState(false)
+  const [openSources, setOpenSources] = useState<Record<string, boolean>>({})
   const available = skillsAvailable()
+
+  const toggleSource = (id: string) => {
+    setOpenSources((prev) => ({ ...prev, [id]: !(prev[id] ?? true) }))
+  }
+
+  const isSourceOpen = (id: string) => openSources[id] ?? true
 
   const reload = async () => {
     if (!available) return
@@ -787,26 +1121,130 @@ function SkillsPane({ active }: { active: boolean }) {
     }
   }
 
-  useEffect(() => {
-    if (active) void reload()
-  }, [active, available])
-
-  const onCreate = async () => {
-    if (!name.trim()) return
-    setSaving(true)
+  const onScan = async () => {
+    if (!available) return
+    setScanning(true)
     setError(null)
+    setScanHint(null)
     try {
-      await createSkill({ name: name.trim(), description: desc.trim() || undefined })
-      setName('')
-      setDesc('')
-      await reload()
-      void syncSkillsIntoHarness()
+      const sources = await scanExternalSkills()
+      setExternal(sources)
+      const found = sources.reduce((n, s) => n + s.skills.length, 0)
+      const ready = sources.reduce((n, s) => n + s.skills.filter((x) => !x.installed).length, 0)
+      setScanHint(
+        found === 0
+          ? '未在常见 Agent 目录发现技能'
+          : `发现 ${found} 个技能，其中 ${ready} 个可迁移`,
+      )
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err))
     } finally {
-      setSaving(false)
+      setScanning(false)
     }
   }
+
+  const onImportOne = async (sourcePath: string, id: string, overwrite: boolean) => {
+    const key = `${sourcePath}::${overwrite ? 'ow' : 'new'}`
+    setImportingKey(key)
+    setError(null)
+    try {
+      await importExternalSkill({ sourcePath, id, overwrite })
+      await reload()
+      const sources = await scanExternalSkills()
+      setExternal(sources)
+      void syncSkillsIntoHarness()
+      setScanHint(overwrite ? `已覆盖更新「${id}」` : `已导入「${id}」`)
+    } catch (err) {
+      setError(err instanceof Error ? err.message : String(err))
+    } finally {
+      setImportingKey(null)
+    }
+  }
+
+  const onImportSource = async (src: ExternalSkillSource) => {
+    const pending = src.skills.filter((s) => !s.installed)
+    if (pending.length === 0) return
+    setImportingKey(`src:${src.id}`)
+    setError(null)
+    let ok = 0
+    let fail = 0
+    try {
+      for (const s of pending) {
+        try {
+          await importExternalSkill({ sourcePath: s.path, id: s.id })
+          ok++
+        } catch {
+          fail++
+        }
+      }
+      await reload()
+      const sources = await scanExternalSkills()
+      setExternal(sources)
+      void syncSkillsIntoHarness()
+      setScanHint(
+        fail === 0
+          ? `已从 ${src.label} 导入 ${ok} 个技能`
+          : `从 ${src.label} 导入 ${ok} 个，失败 ${fail} 个`,
+      )
+    } catch (err) {
+      setError(err instanceof Error ? err.message : String(err))
+    } finally {
+      setImportingKey(null)
+    }
+  }
+
+  const finishUpload = async (imported: SkillSummary[], errors: string[]) => {
+    await reload()
+    if (imported.length) void syncSkillsIntoHarness()
+    if (errors.length) setError(errors.join('\n'))
+    if (imported.length) {
+      setScanHint(
+        imported.length === 1
+          ? `已上传「${imported[0]!.name || imported[0]!.id}」`
+          : `已上传 ${imported.length} 个技能`,
+      )
+    } else if (!errors.length) {
+      setScanHint('未导入任何技能')
+    }
+  }
+
+  const onPickUpload = async () => {
+    if (uploading) return
+    setUploading(true)
+    setError(null)
+    try {
+      const { imported, canceled, errors } = await pickAndImportSkills()
+      if (canceled) return
+      await finishUpload(imported, errors || [])
+    } catch (err) {
+      setError(err instanceof Error ? err.message : String(err))
+    } finally {
+      setUploading(false)
+    }
+  }
+
+  const onDropUpload = async (e: DragEvent) => {
+    e.preventDefault()
+    e.stopPropagation()
+    setDragOver(false)
+    if (uploading) return
+    const files = Array.from(e.dataTransfer.files || [])
+    if (!files.length) return
+    setUploading(true)
+    setError(null)
+    try {
+      const { imported, errors } = await importDroppedSkillFiles(files)
+      await finishUpload(imported, errors)
+    } catch (err) {
+      setError(err instanceof Error ? err.message : String(err))
+    } finally {
+      setUploading(false)
+    }
+  }
+
+  useEffect(() => {
+    if (active) void reload()
+  }, [active, available])
 
   const startEdit = async (id: string) => {
     setError(null)
@@ -866,6 +1304,100 @@ function SkillsPane({ active }: { active: boolean }) {
     <>
       <div className="sub-label">存储位置</div>
       <div className="skill-root">{root ?? '…'}</div>
+
+      <div className="skill-scan-block">
+        <div className="skill-scan-head">
+          <div className="sub-label">扫描与同步</div>
+          <button type="button" className="btn btn-sm" disabled={scanning} onClick={() => void onScan()}>
+            <RefreshCw className={`ic ic-sm${scanning ? ' spin' : ''}`} />
+            {scanning ? '扫描中…' : '扫描其他 Agent'}
+          </button>
+        </div>
+        <p className="user-profile-hint">
+          扫描 Cursor / Claude / Codex / Agents 等目录下的技能，迁移到本机 yagent skills。
+        </p>
+        {scanHint && <div className="skill-scan-hint">{scanHint}</div>}
+        {external &&
+          external.map((src) => {
+            const open = isSourceOpen(src.id)
+            return (
+              <div className={`skill-source${open ? ' is-open' : ''}`} key={src.id}>
+                <div className="skill-source-head">
+                  <button
+                    type="button"
+                    className="skill-source-toggle"
+                    aria-expanded={open}
+                    onClick={() => toggleSource(src.id)}
+                  >
+                    <ChevronDown className={`ic ic-sm skill-source-chevron${open ? '' : ' is-collapsed'}`} />
+                    <span className="skill-source-title">
+                      {src.label}
+                      <span className="skill-badge">{src.exists ? `${src.skills.length}` : '未找到'}</span>
+                    </span>
+                  </button>
+                  {src.exists && src.skills.some((s) => !s.installed) ? (
+                    <button
+                      type="button"
+                      className="btn btn-sm"
+                      disabled={importingKey === `src:${src.id}`}
+                      onClick={() => void onImportSource(src)}
+                    >
+                      全部迁移
+                    </button>
+                  ) : null}
+                </div>
+                {open && (
+                  <>
+                    <div className="skill-source-path">{src.root}</div>
+                    {!src.exists && <div className="skill-empty">目录不存在</div>}
+                    {src.exists && src.skills.length === 0 && (
+                      <div className="skill-empty">该目录下没有 SKILL.md</div>
+                    )}
+                    {src.skills.map((s) => (
+                      <div className="skill-card skill-card-ext" key={`${src.id}:${s.id}`}>
+                        <div className="skill-card-main">
+                          <div className="skill-card-title">
+                            {s.name}
+                            {s.installed ? (
+                              <span className="skill-badge skill-badge-ok">已安装</span>
+                            ) : null}
+                          </div>
+                          <div className="skill-card-desc">{s.description || s.id}</div>
+                        </div>
+                        <div className="skill-card-actions">
+                          {s.installed ? (
+                            <button
+                              type="button"
+                              className="icon-btn"
+                              title="覆盖更新"
+                              disabled={!!importingKey}
+                              onClick={() => {
+                                if (!confirm(`用 ${src.label} 的「${s.id}」覆盖本地副本？`)) return
+                                void onImportOne(s.path, s.id, true)
+                              }}
+                            >
+                              <RefreshCw className="ic ic-sm" />
+                            </button>
+                          ) : (
+                            <button
+                              type="button"
+                              className="icon-btn"
+                              title="迁移到 yagent"
+                              disabled={!!importingKey}
+                              onClick={() => void onImportOne(s.path, s.id, false)}
+                            >
+                              <Download className="ic ic-sm" />
+                            </button>
+                          )}
+                        </div>
+                      </div>
+                    ))}
+                  </>
+                )}
+              </div>
+            )
+          })}
+      </div>
 
       <div className="sub-label">已安装</div>
       {loading && <div className="skill-empty">加载中…</div>}
@@ -933,33 +1465,35 @@ function SkillsPane({ active }: { active: boolean }) {
         </>
       )}
 
-      <div className="sub-label">新建技能</div>
-      <div className="field">
-        <div className="field-label">名称</div>
-        <input
-          type="text"
-          placeholder="例如：code-review"
-          value={name}
-          onChange={(e) => setName(e.target.value)}
-        />
-      </div>
-      <div className="field">
-        <div className="field-label">描述</div>
-        <input
-          type="text"
-          placeholder="何时触发、做什么"
-          value={desc}
-          onChange={(e) => setDesc(e.target.value)}
-        />
-      </div>
+      <div className="sub-label">上传技能</div>
       <button
         type="button"
-        className="btn btn-primary"
-        disabled={saving || !name.trim()}
-        onClick={() => void onCreate()}
+        className={`skill-upload-zone${dragOver ? ' is-dragover' : ''}${uploading ? ' is-busy' : ''}`}
+        disabled={uploading}
+        onClick={() => void onPickUpload()}
+        onDragEnter={(e) => {
+          e.preventDefault()
+          e.stopPropagation()
+          setDragOver(true)
+        }}
+        onDragOver={(e) => {
+          e.preventDefault()
+          e.stopPropagation()
+          setDragOver(true)
+        }}
+        onDragLeave={(e) => {
+          e.preventDefault()
+          e.stopPropagation()
+          if (e.currentTarget.contains(e.relatedTarget as Node)) return
+          setDragOver(false)
+        }}
+        onDrop={(e) => void onDropUpload(e)}
       >
-        <Plus className="ic ic-sm" />
-        创建技能
+        <Upload className={`ic${uploading ? ' spin' : ''}`} />
+        <div className="skill-upload-title">
+          {uploading ? '正在导入…' : '点击选择，或拖入 .zip / 技能文件夹'}
+        </div>
+        <div className="skill-upload-hint">需包含 SKILL.md；zip 可含一个或多个技能目录</div>
       </button>
 
       {error && <div className="field-warn">{error}</div>}

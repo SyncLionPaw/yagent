@@ -352,6 +352,7 @@ interface SandboxProvider {
 
 技能（设置 → 技能）：`<dataDir>/skills/<id>/SKILL.md`（Cursor / Claude 风格 frontmatter：`name` / `description` / 可选 `disable-model-invocation`）。
 渐进披露：启动与发消息前把可自动调用技能的 **L1**（id+name+description）写入 system；匹配任务时模型调 `load_skill(id)` 拉取 **L2** 正文，可选 `file` 读同目录 **L3** 附属文件。`disable-model-invocation: true` 的技能不进 L1 目录。
+设置页支持**扫描其他 Agent 目录**（`~/.cursor/skills-cursor`、`~/.cursor/skills`、`~/.claude/skills`、`~/.codex/skills`、`~/.agents/skills`）并**迁移/覆盖**到本机 skills；「同步到模型」刷新 L1。
 Slash 命令（输入框 `/`）：本地执行、不进模型。
 - `/reload_skill`：重新扫描技能目录并刷新 L1
 - `/compact`：压缩当前会话上下文（占位，尚未实现；执行后提示气泡）

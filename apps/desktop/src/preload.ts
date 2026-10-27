@@ -1,4 +1,4 @@
-import { contextBridge, ipcRenderer } from 'electron'
+import { contextBridge, ipcRenderer, webUtils } from 'electron'
 
 contextBridge.exposeInMainWorld('yagentDesktop', {
   platform: process.platform,
@@ -10,6 +10,10 @@ contextBridge.exposeInMainWorld('yagentDesktop', {
   settings: {
     read: () => ipcRenderer.invoke('settings:read'),
     write: (content: string) => ipcRenderer.invoke('settings:write', content),
+  },
+  usage: {
+    read: () => ipcRenderer.invoke('usage:read'),
+    write: (content: string) => ipcRenderer.invoke('usage:write', content),
   },
   conversations: {
     list: () => ipcRenderer.invoke('conversations:list'),
@@ -44,10 +48,28 @@ contextBridge.exposeInMainWorld('yagentDesktop', {
   skills: {
     root: () => ipcRenderer.invoke('skills:root'),
     list: () => ipcRenderer.invoke('skills:list'),
+    scanExternal: () => ipcRenderer.invoke('skills:scanExternal'),
+    importExternal: (input: { sourcePath: string; id?: string; overwrite?: boolean }) =>
+      ipcRenderer.invoke('skills:importExternal', input),
+    importZip: (input: {
+      zipPath?: string
+      zipBase64?: string
+      fileName?: string
+      overwrite?: boolean
+    }) => ipcRenderer.invoke('skills:importZip', input),
+    pickAndImport: () => ipcRenderer.invoke('skills:pickAndImport'),
     read: (id: string) => ipcRenderer.invoke('skills:read', id),
     create: (input: { name: string; description?: string; id?: string }) =>
       ipcRenderer.invoke('skills:create', input),
     write: (id: string, content: string) => ipcRenderer.invoke('skills:write', id, content),
     delete: (id: string) => ipcRenderer.invoke('skills:delete', id),
+  },
+  /** Electron：从拖放的 File 取本地绝对路径 */
+  pathForFile: (file: File) => {
+    try {
+      return webUtils.getPathForFile(file)
+    } catch {
+      return ''
+    }
   },
 })

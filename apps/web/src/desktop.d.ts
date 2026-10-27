@@ -11,6 +11,10 @@ declare global {
         read(): Promise<string | null>
         write(content: string): Promise<void>
       }
+      usage?: {
+        read(): Promise<string | null>
+        write(content: string): Promise<void>
+      }
       conversations?: {
         list(): Promise<{ key: string; text: string }[]>
         append(key: string, lines: string): Promise<void>
@@ -71,6 +75,61 @@ declare global {
             disableModelInvocation?: boolean
           }[]
         >
+        scanExternal(): Promise<{
+          sources: {
+            id: string
+            label: string
+            root: string
+            exists: boolean
+            skills: {
+              id: string
+              name: string
+              description: string
+              path: string
+              disableModelInvocation?: boolean
+              installed: boolean
+            }[]
+          }[]
+        }>
+        importExternal(input: {
+          sourcePath: string
+          id?: string
+          overwrite?: boolean
+        }): Promise<{
+          id: string
+          name: string
+          description: string
+          path: string
+          disableModelInvocation?: boolean
+          overwritten?: boolean
+        }>
+        importZip(input: {
+          zipPath?: string
+          zipBase64?: string
+          fileName?: string
+          overwrite?: boolean
+        }): Promise<
+          {
+            id: string
+            name: string
+            description: string
+            path: string
+            disableModelInvocation?: boolean
+            overwritten?: boolean
+          }[]
+        >
+        pickAndImport(): Promise<{
+          imported: {
+            id: string
+            name: string
+            description: string
+            path: string
+            disableModelInvocation?: boolean
+            overwritten?: boolean
+          }[]
+          canceled: boolean
+          errors?: string[]
+        }>
         read(id: string): Promise<{
           id: string
           name: string
@@ -103,6 +162,7 @@ declare global {
         }>
         delete(id: string): Promise<void>
       }
+      pathForFile?(file: File): string
     }
   }
 }

@@ -68,6 +68,8 @@ interface ComposerProps {
   approvalMode: ApprovalMode
   /** 正在编辑某条已发送消息时展示横条 */
   editingMessage?: boolean
+  /** ask_user_question 挂起：禁用停止，避免误点打断问答 */
+  askingUser?: boolean
   /** 输入框左侧上下文占用环 */
   context?: ContextMeter | null
   onDraftChange: (v: string) => void
@@ -82,10 +84,10 @@ interface ComposerProps {
   onCancelEdit?: () => void
 }
 
-const MODES: { id: Mode; label: string; title: string; desc: string; icon: typeof Laptop }[] = [
-  { id: 'chat', label: '纯对话', title: '纯对话', desc: '只聊天问答，不执行任何操作', icon: MessageCircle },
-  { id: 'local', label: '本地沙箱', title: 'Work · 本地沙箱', desc: '在本机隔离沙箱中执行任务', icon: Laptop },
-  { id: 'cloud', label: '云端远程', title: 'Work · 云端远程', desc: '在云端运行，可用手机随时接管', icon: Cloud },
+const MODES: { id: Mode; label: string; desc: string; icon: typeof Laptop }[] = [
+  { id: 'chat', label: '纯对话', desc: '只聊天，不执行操作', icon: MessageCircle },
+  { id: 'local', label: '本地沙箱', desc: '本机隔离沙箱中执行', icon: Laptop },
+  { id: 'cloud', label: '云端远程', desc: '云端运行，手机可接管', icon: Cloud },
 ]
 
 /** 从 DataTransfer 收集文件（粘贴 / 拖放）；纯文本返回空 */
@@ -125,6 +127,7 @@ export function Composer({
   approval,
   approvalMode,
   editingMessage,
+  askingUser,
   context,
   onDraftChange,
   onAttachmentsChange,
@@ -398,8 +401,8 @@ export function Composer({
                     <span className="m-icon">
                       <Icon className="ic" />
                     </span>
-                    <span>
-                      <span className="m-title">{m.title}</span>
+                    <span className="m-body">
+                      <span className="m-title">{m.label}</span>
                       <span className="m-desc">{m.desc}</span>
                     </span>
                     <span className="m-check">
@@ -418,7 +421,13 @@ export function Composer({
             */}
             <ContextRing meter={context ?? null} />
             {running ? (
-              <button className="send stop" title="停止生成" onClick={onStop}>
+              <button
+                className={`send stop${askingUser ? ' is-locked' : ''}`}
+                title={askingUser ? '请先回答上方问题（或点跳过）' : '停止生成'}
+                aria-label={askingUser ? '问答中，停止已禁用' : '停止生成'}
+                disabled={!!askingUser}
+                onClick={onStop}
+              >
                 <span className="ring" />
               </button>
             ) : (
