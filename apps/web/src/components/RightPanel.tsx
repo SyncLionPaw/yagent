@@ -1,6 +1,6 @@
-import { useEffect, useState } from 'react'
-import { Files, Globe, Lightbulb, Search, Trash2, X } from 'lucide-react'
-import type { Conversation, Insight, Ref } from '@yagent/core'
+import { useEffect, useMemo, useState } from 'react'
+import { Bookmark, EyeOff, Files, Globe, Lightbulb, Search, Trash2, X } from 'lucide-react'
+import type { Conversation, Insight, InsightMark, Ref } from '@yagent/core'
 import { formatSize } from '../lib/utils'
 import { FileIcon } from './FileIcon'
 import { PanelBrowser, type BrowserPage } from './PanelBrowser'
@@ -9,13 +9,18 @@ import { SearchSources } from './SearchSources'
 
 export type PanelTab = 'insights' | 'files' | 'search' | 'browser'
 
+type InsightFilter = 'inbox' | 'keep' | 'pass'
+
 interface RightPanelProps {
   conversation: Conversation
   tab: PanelTab
   activeSrcId: number | null
   insights: Insight[]
+  /** 收藏库（insights/sight/），可跨会话 */
+  sightInsights: Insight[]
   onTabChange: (tab: PanelTab) => void
   onSelectSrc: (id: number | null) => void
+  onMarkInsight: (id: string, mark: InsightMark | null) => void
   onDeleteInsight: (id: string) => void
 }
 
@@ -40,45 +45,108 @@ function formatInsightTime(ts: number): string {
 
 function InsightsPane({
   insights,
+  sightInsights,
+  onMark,
   onDelete,
 }: {
   insights: Insight[]
+  sightInsights: Insight[]
+  onMark: (id: string, mark: InsightMark | null) => void
   onDelete: (id: string) => void
 }) {
-  if (!insights.length) {
-    return (
-      <div className="insights-empty">
-        <Lightbulb className="ic insights-empty-ic" />
-        <div className="insights-empty-title">本会话还没有收获</div>
-        <div className="insights-empty-desc">
-          Agent 发现对你有用、你可能还不知道的东西时，会记在这里。可看可不看。
-        </div>
-      </div>
-    )
-  }
+  const [filter, setFilter] = useState<InsightFilter>('inbox')
+
+  const inbox = useMemo(() => insights.filter((i) => !i.mark), [insights])
+  const passed = useMemo(() => insights.filter((i) => i.mark === 'pass'), [insights])
+  const list = filter === 'inbox' ? inbox : filter === 'pass' ? passed : sightInsights
+
+  const emptyTitle =
+    filter === 'inbox'
+      ? insights.length
+        ? '没有待筛选的收获'
+        : '本会话还没有收获'
+      : filter === 'keep'
+        ? '还没有收藏'
+        : '没有标为不感兴趣的'
+
+  const emptyDesc =
+    filter === 'inbox'
+      ? 'Agent 记下的小 tip 会出现在这里，供你筛选：不感兴趣或收藏。'
+      : filter === 'keep'
+        ? '点收藏后会收拢到 insights/sight/，可跨会话回看。'
+        : '标为不感兴趣的 tip 会留在这里，可随时改主意。'
 
   return (
     <div className="insights-pane">
-      <div className="insights-hint">仅本会话；可有可无，尽量拆成小点。不强制阅读。</div>
-      {insights.map((ins) => (
-        <article className="insight-card" key={ins.id}>
-          <div className="insight-card-head">
-            <h3 className="insight-title">{ins.title}</h3>
-            <button
-              type="button"
-              className="icon-btn"
-              title="删除"
-              aria-label="删除这条收获"
-              onClick={() => onDelete(ins.id)}
-            >
-              <Trash2 className="ic ic-sm" />
-            </button>
-          </div>
-          <p className="insight-text">{ins.text}</p>
-          {ins.why ? <p className="insight-why">{ins.why}</p> : null}
-          <div className="insight-meta">{formatInsightTime(ins.createdAt)}</div>
-        </article>
-      ))}
+      <div className="insights-hint">给用户筛选的 tip；收藏会进 sight 子目录。</div>
+      <div className="insights-filters" role="tablist" aria-label="收获筛选">
+        {(
+          [
+            ['inbox', `待看${inbox.length ? ` ${inbox.length}` : ''}`],
+            ['keep', `收藏${sightInsights.length ? ` ${sightInsights.length}` : ''}`],
+            ['pass', `略过${passed.length ? ` ${passed.length}` : ''}`],
+          ] as const
+        ).map(([id, label]) => (
+          <button
+            key={id}
+            type="button"
+            role="tab"
+            aria-selected={filter === id}
+            className={`insights-filter${filter === id ? ' on' : ''}`}
+            onClick={() => setFilter(id)}
+          >
+            {label}
+          </button>
+        ))}
+      </div>
+
+      {!list.length ? (
+        <div className="insights-empty">
+          <Lightbulb className="ic insights-empty-ic" />
+          <div className="insights-empty-title">{emptyTitle}</div>
+          <div className="insights-empty-desc">{emptyDesc}</div>
+        </div>
+      ) : (
+        list.map((ins) => (
+          <article className={`insight-card${ins.mark ? ` mark-${ins.mark}` : ''}`} key={ins.id}>
+            <div className="insight-card-head">
+              <h3 className="insight-title">{ins.title}</h3>
+              <div className="insight-actions">
+                <button
+                  type="button"
+                  className={`icon-btn${ins.mark === 'pass' ? ' on' : ''}`}
+                  title={ins.mark === 'pass' ? '取消略过' : '不感兴趣'}
+                  aria-label={ins.mark === 'pass' ? '取消略过' : '不感兴趣'}
+                  onClick={() => onMark(ins.id, ins.mark === 'pass' ? null : 'pass')}
+                >
+                  <EyeOff className="ic ic-sm" />
+                </button>
+                <button
+                  type="button"
+                  className={`icon-btn${ins.mark === 'keep' ? ' on' : ''}`}
+                  title={ins.mark === 'keep' ? '取消收藏' : '收藏'}
+                  aria-label={ins.mark === 'keep' ? '取消收藏' : '收藏'}
+                  onClick={() => onMark(ins.id, ins.mark === 'keep' ? null : 'keep')}
+                >
+                  <Bookmark className="ic ic-sm" />
+                </button>
+                <button
+                  type="button"
+                  className="icon-btn"
+                  title="删除"
+                  aria-label="删除这条收获"
+                  onClick={() => onDelete(ins.id)}
+                >
+                  <Trash2 className="ic ic-sm" />
+                </button>
+              </div>
+            </div>
+            <p className="insight-text">{ins.text}</p>
+            {ins.why ? <p className="insight-why">{ins.why}</p> : null}
+            <div className="insight-meta">{formatInsightTime(ins.createdAt)}</div>
+          </article>
+        ))
+      )}
     </div>
   )
 }
@@ -88,8 +156,10 @@ export function RightPanel({
   tab,
   activeSrcId,
   insights,
+  sightInsights,
   onTabChange,
   onSelectSrc,
+  onMarkInsight,
   onDeleteInsight,
 }: RightPanelProps) {
   const [browserPage, setBrowserPage] = useState<BrowserPage | null>(null)
@@ -137,9 +207,12 @@ export function RightPanel({
             onClick={() => onTabChange(t.id)}
           >
             <t.Icon className="ic ic-sm" />
-            {t.id === 'insights' && insights.length > 0 ? (
+            {t.id === 'insights' && insights.some((i) => !i.mark) ? (
               <span className="ptab-badge">
-                {insights.length > 99 ? '99+' : insights.length}
+                {(() => {
+                  const n = insights.filter((i) => !i.mark).length
+                  return n > 99 ? '99+' : n
+                })()}
               </span>
             ) : null}
           </button>
@@ -172,7 +245,12 @@ export function RightPanel({
       </div>
 
       <div className={`p-pane pane-insights${tab === 'insights' ? ' active' : ''}`}>
-        <InsightsPane insights={insights} onDelete={onDeleteInsight} />
+        <InsightsPane
+          insights={insights}
+          sightInsights={sightInsights}
+          onMark={onMarkInsight}
+          onDelete={onDeleteInsight}
+        />
       </div>
 
       <div className={`p-pane pane-files${tab === 'files' ? ' active' : ''}`}>

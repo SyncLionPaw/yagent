@@ -128,7 +128,10 @@ export interface Memory {
   updatedAt: number
 }
 
-/** Agent 留给用户的「收获」：可能不知道但对后续有用的一点 */
+/** 用户对收获 tip 的筛选标记 */
+export type InsightMark = 'pass' | 'keep'
+
+/** Agent 留给用户的「收获」：可能不知道但对后续有用的一点；用户可筛选打标 */
 export interface Insight {
   id: string
   /** 短标题 */
@@ -140,6 +143,15 @@ export interface Insight {
   /** 来源会话 */
   convId?: string
   createdAt: number
+  /**
+   * 用户筛选：
+   * - 无：待看
+   * - `pass`：不感兴趣
+   * - `keep`：收藏（正文会同步到 dataDir/insights/sight/）
+   */
+  mark?: InsightMark
+  /** 收藏便签墙上的位置（相对便签板左上，px） */
+  board?: { x: number; y: number }
 }
 
 /** 强调色主题：驱动全局 --accent* */

@@ -41,7 +41,9 @@ export class MockProvider implements ModelProvider {
     } else {
       const toolName = this.opts.toolName ?? req.tools?.[0]?.name ?? 'bash'
       const input =
-        toolName === 'bash' || toolName === 'Bash' ? { command: 'ls' } : ({} as Record<string, unknown>)
+        toolName === 'bash' || toolName === 'Bash' || toolName === 'run_command'
+          ? { command: 'ls', desc: 'List files' }
+          : ({} as Record<string, unknown>)
       script.push(
         ...chars(THINKING, 'thinking_delta'),
         ...chars(PRE_TEXT, 'text_delta'),

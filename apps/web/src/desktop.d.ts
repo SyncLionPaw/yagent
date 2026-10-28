@@ -19,8 +19,9 @@ declare global {
         write(insight: import('@yagent/core').Insight): Promise<void>
         read(id: string): Promise<import('@yagent/core').Insight | null>
         readMany(ids: string[]): Promise<import('@yagent/core').Insight[]>
-        delete(id: string): Promise<void>
-        deleteMany(ids: string[]): Promise<void>
+        listSight(): Promise<import('@yagent/core').Insight[]>
+        delete(id: string, opts?: { preserveSight?: boolean }): Promise<void>
+        deleteMany(ids: string[], opts?: { preserveSight?: boolean }): Promise<void>
       }
       conversations?: {
         list(): Promise<{ key: string; text: string }[]>

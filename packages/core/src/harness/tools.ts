@@ -30,7 +30,21 @@ export const DEFAULT_TOOLS: ToolDef[] = [
     },
   },
   { name: 'write_file', description: 'Write a UTF-8 file in the bound working directory. Requires user approval.', parameters: { type: 'object', properties: { path: { type: 'string' }, content: { type: 'string' } }, required: ['path', 'content'] } },
-  { name: 'run_command', description: 'Run a shell command from the bound working directory. Requires user approval.', parameters: { type: 'object', properties: { command: { type: 'string' } }, required: ['command'] } },
+  {
+    name: 'run_command',
+    description: 'Run a shell command from the bound working directory. Requires user approval.',
+    parameters: {
+      type: 'object',
+      properties: {
+        command: { type: 'string', description: 'Shell command to run' },
+        desc: {
+          type: 'string',
+          description: 'Short phrase naming the intent of this command (shown to the user for approval)',
+        },
+      },
+      required: ['command', 'desc'],
+    },
+  },
   {
     name: 'search_web',
     description:
@@ -106,7 +120,7 @@ export const DEFAULT_TOOLS: ToolDef[] = [
       'Granularity: each call = one fine-grained idea (one concept / gotcha / "why"). If you have three points, call three times; do not merge into one long note. ' +
       'Title names that idea; text preferably one short sentence (max two). ' +
       'Not task status, praise, or restating the answer. Skip TODOs, paths, and anything already obvious. ' +
-      'Entries show in the right panel 「收获」; the user may ignore them.',
+      'Entries show in the right panel 「收获」 for the user to triage (pass / keep); they may ignore them.',
     parameters: {
       type: 'object',
       properties: {
@@ -159,6 +173,10 @@ export function summarizeInput(input: Record<string, unknown>): string {
   }
   if (typeof input.title === 'string' && input.title.trim() && typeof input.text === 'string') {
     const s = input.title.trim()
+    return s.length > 80 ? `${s.slice(0, 79)}…` : s
+  }
+  if (typeof input.desc === 'string' && input.desc.trim()) {
+    const s = input.desc.trim().replace(/\s+/g, ' ')
     return s.length > 80 ? `${s.slice(0, 79)}…` : s
   }
   const cand =

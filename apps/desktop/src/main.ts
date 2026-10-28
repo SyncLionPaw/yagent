@@ -530,18 +530,39 @@ void app.whenReady().then(async () => {
     await writeFile(usageFilePath(), content, 'utf8')
   })
 
-  // 收获：<dataDir>/insights/<id>.json；会话 meta 只存 insightIds
+  // 收获：<dataDir>/insights/<id>.json；收藏副本 → insights/sight/<id>.json
   const insightsDir = () => path.join(dataDir(), 'insights')
-  const insightPath = (id: string) => {
+  const sightDir = () => path.join(insightsDir(), 'sight')
+  const assertInsightId = (id: string) => {
     if (!id || id.includes('/') || id.includes('\\') || id.includes('..')) {
       throw new Error('Invalid insight id')
     }
+  }
+  const insightPath = (id: string) => {
+    assertInsightId(id)
     return path.join(insightsDir(), `${id}.json`)
+  }
+  const sightPath = (id: string) => {
+    assertInsightId(id)
+    return path.join(sightDir(), `${id}.json`)
+  }
+  const syncSightCopy = async (insight: { id: string; mark?: string }) => {
+    if (insight.mark === 'keep') {
+      await mkdir(sightDir(), { recursive: true })
+      await writeFile(sightPath(insight.id), JSON.stringify(insight, null, 2) + '\n', 'utf8')
+    } else {
+      try {
+        await rm(sightPath(insight.id), { force: true })
+      } catch {
+        //
+      }
+    }
   }
   ipcMain.handle('insights:write', async (_e: any, insight: any) => {
     if (!insight || typeof insight.id !== 'string') throw new Error('insight.id required')
     await mkdir(insightsDir(), { recursive: true })
     await writeFile(insightPath(insight.id), JSON.stringify(insight, null, 2) + '\n', 'utf8')
+    await syncSightCopy(insight)
   })
   ipcMain.handle('insights:read', async (_e: any, id: string) => {
     try {
@@ -564,20 +585,53 @@ void app.whenReady().then(async () => {
     }
     return out
   })
-  ipcMain.handle('insights:delete', async (_e: any, id: string) => {
+  ipcMain.handle('insights:listSight', async () => {
+    try {
+      const names = await readdir(sightDir())
+      const out: any[] = []
+      for (const name of names) {
+        if (!name.endsWith('.json')) continue
+        try {
+          out.push(JSON.parse(await readFile(path.join(sightDir(), name), 'utf8')))
+        } catch {
+          //
+        }
+      }
+      out.sort((a, b) => (Number(b?.createdAt) || 0) - (Number(a?.createdAt) || 0))
+      return out
+    } catch (err: any) {
+      if (err?.code === 'ENOENT') return []
+      throw err
+    }
+  })
+  ipcMain.handle('insights:delete', async (_e: any, id: string, opts?: { preserveSight?: boolean }) => {
     try {
       await rm(insightPath(id), { force: true })
     } catch {
       //
     }
+    if (!opts?.preserveSight) {
+      try {
+        await rm(sightPath(id), { force: true })
+      } catch {
+        //
+      }
+    }
   })
-  ipcMain.handle('insights:deleteMany', async (_e: any, ids: string[]) => {
+  ipcMain.handle('insights:deleteMany', async (_e: any, ids: string[], opts?: { preserveSight?: boolean }) => {
     for (const id of Array.isArray(ids) ? ids : []) {
       if (typeof id !== 'string' || !id) continue
       try {
         await rm(insightPath(id), { force: true })
       } catch {
         //
+      }
+      if (!opts?.preserveSight) {
+        try {
+          await rm(sightPath(id), { force: true })
+        } catch {
+          //
+        }
       }
     }
   })

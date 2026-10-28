@@ -610,10 +610,20 @@ body.is-resizing .splitter::before {
   margin-left: 0;
 }
 
-/* ================= 中间主区（悬浮舞台卡片） ================= */
-.stage {
+/* ================= 中间主区（舞台 + 下方收藏便签） ================= */
+.stage-column {
   flex: 1;
   min-width: 0;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  position: relative;
+  gap: 0;
+}
+.stage {
+  flex: 1 1 auto;
+  min-width: 0;
+  min-height: 0;
   display: flex;
   flex-direction: column;
   background: var(--bg-surface);
@@ -624,6 +634,23 @@ body.is-resizing .splitter::before {
   container-type: inline-size;
   position: relative;
   perspective: 1800px; /* 翻面动画的视距 */
+  z-index: 2;
+  transition:
+    flex 0.45s cubic-bezier(0.32, 0.08, 0.24, 1),
+    min-height 0.45s cubic-bezier(0.32, 0.08, 0.24, 1),
+    opacity 0.3s ease,
+    transform 0.45s cubic-bezier(0.32, 0.08, 0.24, 1),
+    border-radius 0.35s ease;
+}
+.stage-column.sight-open .stage {
+  flex: 0 0 0;
+  min-height: 0;
+  opacity: 0;
+  pointer-events: none;
+  transform: translateY(-12px);
+  border: none;
+  box-shadow: none;
+  overflow: hidden;
 }
 
 /* ---- 舞台翻面：正面是对话，背面是设置页 ---- */
@@ -2288,7 +2315,7 @@ pre.math-raw {
 }
 
 .composer {
-  padding: 8px var(--content-gutter) 18px;
+  padding: 8px var(--content-gutter) 22px;
   container-type: inline-size;
   container-name: composer;
   background: transparent; /* 勿铺白底，否则附件浮层区域会整条遮挡对话 */
@@ -2298,6 +2325,195 @@ pre.math-raw {
   max-width: var(--content-max);
   margin: 0 auto;
   background: transparent;
+}
+
+/* 底中抽屉握条：短横杠 + 胶囊，比半圆更像「可拉开」 */
+.sight-pull {
+  position: absolute;
+  left: 50%;
+  bottom: 0;
+  transform: translate(-50%, 50%);
+  width: 52px;
+  height: 20px;
+  padding: 0;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  background: var(--bg-surface);
+  box-shadow: 0 2px 8px color-mix(in srgb, #000 7%, transparent);
+  display: grid;
+  place-items: center;
+  cursor: pointer;
+  z-index: 5;
+  -webkit-app-region: no-drag;
+  transition:
+    background 0.15s ease,
+    border-color 0.15s ease,
+    box-shadow 0.15s ease;
+}
+.sight-pull:hover {
+  background: var(--bg-elevated, var(--bg-surface));
+  border-color: color-mix(in srgb, var(--text-2) 35%, var(--border));
+  box-shadow: 0 3px 10px color-mix(in srgb, #000 10%, transparent);
+}
+.sight-pull-bar {
+  display: block;
+  width: 22px;
+  height: 3px;
+  border-radius: 999px;
+  background: var(--text-2);
+  opacity: 0.55;
+  transition: opacity 0.15s ease, width 0.2s ease;
+}
+.sight-pull:hover .sight-pull-bar,
+.sight-pull.open .sight-pull-bar {
+  opacity: 0.85;
+}
+.sight-pull.open .sight-pull-bar {
+  width: 18px;
+}
+
+/* 主区上收后露出的收藏便签区 */
+.sight-board {
+  flex: 0 0 0;
+  min-height: 0;
+  overflow: hidden;
+  opacity: 0;
+  pointer-events: none;
+  transition:
+    flex 0.45s cubic-bezier(0.32, 0.08, 0.24, 1),
+    opacity 0.3s ease;
+}
+.sight-board.open {
+  flex: 1 1 auto;
+  opacity: 1;
+  pointer-events: auto;
+}
+.sight-board-inner {
+  height: 100%;
+  min-height: 0;
+  border-radius: 12px;
+  border: 1px solid var(--border);
+  background:
+    radial-gradient(ellipse at 20% 10%, color-mix(in srgb, var(--accent) 8%, transparent), transparent 50%),
+    linear-gradient(
+      160deg,
+      color-mix(in srgb, var(--ink, var(--text-0)) 3.5%, var(--bg)) 0%,
+      var(--bg) 100%
+    );
+  overflow: auto;
+  padding: 16px 18px 28px;
+  box-shadow: var(--shadow-stage);
+}
+.sight-empty {
+  height: 100%;
+  min-height: 120px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  color: var(--text-2);
+  text-align: center;
+}
+.sight-empty-ic {
+  width: 18px;
+  height: 18px;
+  opacity: 0.55;
+  margin-bottom: 4px;
+}
+.sight-empty p {
+  margin: 0;
+  font-size: 13px;
+  font-weight: 550;
+  color: var(--text-1);
+}
+.sight-empty span {
+  font-size: 12px;
+  line-height: 1.45;
+}
+.sight-notes {
+  position: relative;
+  width: 100%;
+  min-height: calc(100% - 4px);
+  min-height: 280px;
+}
+.sight-note {
+  position: absolute;
+  width: 180px;
+  min-height: 112px;
+  padding: 14px 14px 16px;
+  border-radius: 2px;
+  box-shadow:
+    0 1px 0 color-mix(in srgb, #000 6%, transparent),
+    0 8px 18px color-mix(in srgb, #000 8%, transparent);
+  transform-origin: center center;
+  cursor: grab;
+  touch-action: none;
+  user-select: none;
+  transition: box-shadow 0.2s ease;
+}
+.sight-note:hover {
+  box-shadow:
+    0 1px 0 color-mix(in srgb, #000 6%, transparent),
+    0 12px 24px color-mix(in srgb, #000 12%, transparent);
+}
+.sight-note.dragging {
+  cursor: grabbing;
+  box-shadow:
+    0 2px 0 color-mix(in srgb, #000 8%, transparent),
+    0 16px 32px color-mix(in srgb, #000 16%, transparent);
+  transition: none;
+}
+.sight-note-title {
+  margin: 0 0 8px;
+  font-family: 'Songti SC', 'PingFang SC', Georgia, 'Times New Roman', serif;
+  font-size: 15px;
+  font-weight: 500;
+  letter-spacing: -0.02em;
+  line-height: 1.25;
+  color: #2a2620;
+}
+.sight-note-text {
+  margin: 0;
+  font-size: 12px;
+  line-height: 1.55;
+  color: #3d3830;
+  white-space: pre-wrap;
+}
+.sight-note-why {
+  margin: 8px 0 0;
+  font-size: 11px;
+  line-height: 1.4;
+  color: #6a6358;
+}
+.sight-note.tone-1 { background: #f6e7a1; }
+.sight-note.tone-2 { background: #d7ead4; }
+.sight-note.tone-3 { background: #f3d5c5; }
+.sight-note.tone-4 { background: #d5e3f0; }
+.sight-note.tone-5 { background: #e8d8ef; }
+.sight-note.tilt-1 { transform: rotate(-2.2deg); }
+.sight-note.tilt-2 { transform: rotate(1.6deg); }
+.sight-note.tilt-3 { transform: rotate(-1.1deg); }
+.sight-note.tilt-4 { transform: rotate(2.4deg); }
+.sight-note.tilt-5 { transform: rotate(-1.8deg); }
+.sight-note.tilt-6 { transform: rotate(0.9deg); }
+.sight-note.tilt-7 { transform: rotate(-0.6deg); }
+[data-theme='dark'] .sight-note-title { color: #1f1c18; }
+[data-theme='dark'] .sight-note-text { color: #2e2a24; }
+[data-theme='dark'] .sight-note.tone-1 { background: #e6d48a; }
+[data-theme='dark'] .sight-note.tone-2 { background: #b9d4b4; }
+[data-theme='dark'] .sight-note.tone-3 { background: #e0bfae; }
+[data-theme='dark'] .sight-note.tone-4 { background: #b7c9db; }
+[data-theme='dark'] .sight-note.tone-5 { background: #d0bdd9; }
+
+@media (prefers-reduced-motion: reduce) {
+  .stage,
+  .sight-board,
+  .sight-pull,
+  .sight-pull-bar,
+  .sight-note {
+    transition: none;
+  }
 }
 .composer-main .composer-box {
   max-width: none;
@@ -3300,6 +3516,48 @@ pre.math-raw {
   color: var(--text-2);
   line-height: 1.45;
   margin-bottom: 4px;
+}
+.insights-filters {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  margin-bottom: 4px;
+}
+.insights-filter {
+  appearance: none;
+  border: 1px solid var(--border);
+  background: transparent;
+  color: var(--text-2);
+  font-size: 11px;
+  font-weight: 500;
+  line-height: 1.2;
+  padding: 4px 8px;
+  border-radius: 999px;
+  cursor: pointer;
+}
+.insights-filter:hover {
+  color: var(--text-1);
+  border-color: var(--border-strong, var(--border));
+}
+.insights-filter.on {
+  color: var(--text-0);
+  background: var(--bg-active);
+  border-color: transparent;
+}
+.insight-actions {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  flex-shrink: 0;
+}
+.insight-actions .icon-btn.on {
+  color: var(--accent, var(--text-0));
+}
+.insight-card.mark-keep {
+  border-color: color-mix(in srgb, var(--accent, #6b8cae) 35%, var(--border));
+}
+.insight-card.mark-pass {
+  opacity: 0.72;
 }
 .insights-empty {
   display: flex;

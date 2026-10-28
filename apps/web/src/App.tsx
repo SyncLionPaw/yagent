@@ -5,6 +5,7 @@ import type {
   ContextSnapshot,
   Conversation,
   Insight,
+  InsightMark,
   Mode,
   Settings,
 } from '@yagent/core'
@@ -33,7 +34,8 @@ import {
 } from './askUserQuestion'
 import {
   deleteInsight,
-  deleteInsights,
+  listSightInsights,
+  markInsight,
   newInsightId,
   readInsights,
   registerInsightHandler,
@@ -44,6 +46,7 @@ import { Topbar, type PopoverId } from './components/Topbar'
 import { ChatView } from './components/ChatView'
 import { AskUserQuestionBar } from './components/AskUserQuestionBar'
 import { Composer, type ContextMeter, type PendingAttachment } from './components/Composer'
+import { SightBoard } from './components/SightBoard'
 import {
   PANEL_W_DEFAULT,
   PANEL_W_MAX,
@@ -89,6 +92,7 @@ function App() {
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false)
   const [panelOpen, setPanelOpen] = useState(false)
   const [panelTab, setPanelTab] = useState<PanelTab>('insights')
+  const [sightOpen, setSightOpen] = useState(false)
   const [activeSrcId, setActiveSrcId] = useState<number | null>(null)
   const [settingsOpen, setSettingsOpen] = useState(false)
   const [settingsPane, setSettingsPane] = useState<SettingsPaneId>('models')
@@ -384,9 +388,13 @@ function App() {
     })()
   }, [settings.insights])
 
-  // 右栏收获：按当前会话 insightIds 读文件
+  // 右栏收获：按当前会话 insightIds 读文件；收藏库读 insights/sight/
   const [convInsights, setConvInsights] = useState<Insight[]>([])
+  const [sightInsights, setSightInsights] = useState<Insight[]>([])
   const insightIdsKey = (conversation?.insightIds ?? []).join(',')
+  const refreshSight = useCallback(() => {
+    void listSightInsights().then(setSightInsights)
+  }, [])
   useEffect(() => {
     const ids = conversation?.insightIds ?? []
     let alive = true
@@ -399,6 +407,9 @@ function App() {
       alive = false
     }
   }, [conversation?.id, insightIdsKey, harnessTick])
+  useEffect(() => {
+    refreshSight()
+  }, [refreshSight, harnessTick, insightIdsKey])
 
   // 审批档位同步；升到更宽档位时放行走完已不需要确认的排队项
   useEffect(() => {
@@ -497,17 +508,31 @@ function App() {
     const insightIds = [...(conv.insightIds ?? [])]
     void (async () => {
       await conversationStore.remove(id)
-      await deleteInsights(insightIds).catch(() => undefined)
+      const tips = await readInsights(insightIds).catch(() => [] as Insight[])
+      await Promise.all(
+        tips.map((ins) =>
+          deleteInsight(ins.id, { preserveSight: ins.mark === 'keep' }).catch(() => undefined),
+        ),
+      )
+      // 会话里有 id、文件已丢的也清一下主文件
+      const kept = new Set(tips.map((t) => t.id))
+      await Promise.all(
+        insightIds
+          .filter((iid) => !kept.has(iid))
+          .map((iid) => deleteInsight(iid).catch(() => undefined)),
+      )
+      refreshSight()
       await window.yagentDesktop?.attachments
         ?.purge?.(id, workdir, extraPaths)
         .catch(() => undefined)
     })()
-  }, [deleteConfirm])
+  }, [deleteConfirm, refreshSight])
 
-  // 切换会话时清空未发送附件 / 编辑态，避免串台
+  // 切换会话时清空未发送附件 / 编辑态，并收回收藏便签墙
   useEffect(() => {
     setPendingFiles([])
     setEditingNodeId(null)
+    setSightOpen(false)
   }, [activeConvId])
 
   const cancelEditMessage = useCallback(() => {
@@ -863,101 +888,131 @@ function App() {
         onCommit={commitSidebarWidth}
       />
 
-      <main className="stage">
-        <div className={`flip-inner${settingsOpen ? ' flipped' : ''}`}>
-          <div className="flip-front">
-            <Topbar
-              conversation={conversation}
-              models={models}
-              currentModelId={currentModelId}
-              contentWidth={settings.appearance?.contentWidth ?? 'standard'}
-              popover={popover}
-              onPopover={setPopover}
-              onToggleSidebar={() => setSidebarCollapsed((v) => !v)}
-              onTogglePanel={() => setPanelOpen((v) => !v)}
-              onRename={handleRename}
-              onSelectModel={setCurrentModelId}
-              onContentWidth={(w: ContentWidth) =>
-                setSettings((s) => ({
-                  ...s,
-                  appearance: { ...s.appearance, contentWidth: w },
-                }))
-              }
-              onBindWorkdir={handleBindWorkdir}
-              onToggleArchive={handleToggleArchive}
-              onDelete={handleDeleteConversation}
-            />
-            <ChatView
-              conversation={conversation}
-              editingNodeId={editingNodeId}
-              onRefClick={handleRefClick}
-              onToggleFiles={handleToggleFiles}
-              onStartEditUserMessage={startEditUserMessage}
-            />
-            <Composer
-              draft={draft}
-              mode={mode}
-              popover={popover}
-              running={running}
-              askingUser={askQueue.length > 0}
-              textareaRef={textareaRef}
-              attachments={pendingFiles}
-              editingMessage={!!editingNodeId}
-              context={contextMeter}
-              approvalMode={approvalMode}
-              approval={
-                askQueue.length > 0 ? (
-                  <AskUserQuestionBar
-                    key={askQueue[0].id}
-                    req={askQueue[0].req}
-                    onSubmit={(answers) => askQueue[0].resolve(answers)}
-                    onCancel={() => askQueue[0].reject(new Error('用户取消了回答'))}
-                  />
-                ) : approvalMode !== 'all' && approvals.length > 0 ? (
-                  <ApprovalBar
-                    req={approvals[0].req}
-                    onAnswer={(ok) => {
-                      approvals[0].resolve(ok)
-                      setApprovals((l) => l.slice(1))
-                    }}
-                  />
-                ) : slashNotice ? (
-                  <ComposerNoticeBar
-                    message={slashNotice}
-                    onDismiss={() => setSlashNotice('')}
-                  />
-                ) : null
-              }
-              onDraftChange={setDraft}
-              onAttachmentsChange={setPendingFiles}
-              onSend={handleSend}
-              onStop={handleStop}
-              onModeChange={setMode}
-              onPopover={setPopover}
-              // onOpenVoice={() => setVoiceOpen(true)} // 语音输入暂关
-              onApprovalModeChange={handleApprovalModeChange}
-              onCancelEdit={cancelEditMessage}
-            />
-            {/* 语音输入暂关
-            <VoiceOverlay
-              open={voiceOpen}
-              whisper={resolveWhisperAuth(settings)}
-              onCancel={() => setVoiceOpen(false)}
-              onConfirm={handleVoiceConfirm}
-            />
-            */}
+      <div className={`stage-column${sightOpen ? ' sight-open' : ''}`}>
+        <main className="stage">
+          <div className={`flip-inner${settingsOpen ? ' flipped' : ''}`}>
+            <div className="flip-front">
+              <Topbar
+                conversation={conversation}
+                models={models}
+                currentModelId={currentModelId}
+                contentWidth={settings.appearance?.contentWidth ?? 'standard'}
+                popover={popover}
+                onPopover={setPopover}
+                onToggleSidebar={() => setSidebarCollapsed((v) => !v)}
+                onTogglePanel={() => setPanelOpen((v) => !v)}
+                onRename={handleRename}
+                onSelectModel={setCurrentModelId}
+                onContentWidth={(w: ContentWidth) =>
+                  setSettings((s) => ({
+                    ...s,
+                    appearance: { ...s.appearance, contentWidth: w },
+                  }))
+                }
+                onBindWorkdir={handleBindWorkdir}
+                onToggleArchive={handleToggleArchive}
+                onDelete={handleDeleteConversation}
+              />
+              <ChatView
+                conversation={conversation}
+                editingNodeId={editingNodeId}
+                onRefClick={handleRefClick}
+                onToggleFiles={handleToggleFiles}
+                onStartEditUserMessage={startEditUserMessage}
+              />
+              <Composer
+                draft={draft}
+                mode={mode}
+                popover={popover}
+                running={running}
+                askingUser={askQueue.length > 0}
+                textareaRef={textareaRef}
+                attachments={pendingFiles}
+                editingMessage={!!editingNodeId}
+                context={contextMeter}
+                approvalMode={approvalMode}
+                approval={
+                  askQueue.length > 0 ? (
+                    <AskUserQuestionBar
+                      key={askQueue[0].id}
+                      req={askQueue[0].req}
+                      onSubmit={(answers) => askQueue[0].resolve(answers)}
+                      onCancel={() => askQueue[0].reject(new Error('用户取消了回答'))}
+                    />
+                  ) : approvalMode !== 'all' && approvals.length > 0 ? (
+                    <ApprovalBar
+                      req={approvals[0].req}
+                      onAnswer={(ok) => {
+                        approvals[0].resolve(ok)
+                        setApprovals((l) => l.slice(1))
+                      }}
+                    />
+                  ) : slashNotice ? (
+                    <ComposerNoticeBar
+                      message={slashNotice}
+                      onDismiss={() => setSlashNotice('')}
+                    />
+                  ) : null
+                }
+                onDraftChange={setDraft}
+                onAttachmentsChange={setPendingFiles}
+                onSend={handleSend}
+                onStop={handleStop}
+                onModeChange={setMode}
+                onPopover={setPopover}
+                // onOpenVoice={() => setVoiceOpen(true)} // 语音输入暂关
+                onApprovalModeChange={handleApprovalModeChange}
+                onCancelEdit={cancelEditMessage}
+              />
+              {/* 语音输入暂关
+              <VoiceOverlay
+                open={voiceOpen}
+                whisper={resolveWhisperAuth(settings)}
+                onCancel={() => setVoiceOpen(false)}
+                onConfirm={handleVoiceConfirm}
+              />
+              */}
+            </div>
+            <div className="flip-back">
+              <SettingsPanel
+                pane={settingsPane}
+                settings={settings}
+                conversations={conversations}
+                onChange={handleDeleteModelGuard}
+                onClose={() => setSettingsOpen(false)}
+              />
+            </div>
           </div>
-          <div className="flip-back">
-            <SettingsPanel
-              pane={settingsPane}
-              settings={settings}
-              conversations={conversations}
-              onChange={handleDeleteModelGuard}
-              onClose={() => setSettingsOpen(false)}
-            />
-          </div>
-        </div>
-      </main>
+        </main>
+        <button
+          type="button"
+          className={`sight-pull${sightOpen ? ' open' : ''}`}
+          title={sightOpen ? '收回主区' : '打开收藏便签'}
+          aria-label={sightOpen ? '收回主区' : '打开收藏便签'}
+          aria-expanded={sightOpen}
+          onClick={() => {
+            setSightOpen((v) => !v)
+            refreshSight()
+          }}
+        >
+          <span className="sight-pull-bar" aria-hidden />
+        </button>
+        <SightBoard
+          open={sightOpen}
+          insights={sightInsights}
+          onMove={(id, x, y) => {
+            const hit =
+              sightInsights.find((n) => n.id === id) ??
+              convInsights.find((n) => n.id === id)
+            if (!hit) return
+            const next = { ...hit, board: { x, y }, mark: 'keep' as const }
+            void writeInsight(next).then(() => {
+              setSightInsights((list) => list.map((n) => (n.id === id ? next : n)))
+              setConvInsights((list) => list.map((n) => (n.id === id ? { ...n, board: { x, y } } : n)))
+            })
+          }}
+        />
+      </div>
 
       <Splitter
         edge="right"
@@ -973,12 +1028,31 @@ function App() {
         tab={panelTab}
         activeSrcId={activeSrcId}
         insights={convInsights}
+        sightInsights={sightInsights}
         onTabChange={setPanelTab}
         onSelectSrc={setActiveSrcId}
+        onMarkInsight={(insightId, mark: InsightMark | null) => {
+          const hit =
+            convInsights.find((x) => x.id === insightId) ??
+            sightInsights.find((x) => x.id === insightId)
+          if (!hit) return
+          void markInsight(hit, mark).then((next) => {
+            setConvInsights((list) => {
+              const i = list.findIndex((x) => x.id === next.id)
+              if (i < 0) return list
+              const copy = list.slice()
+              copy[i] = next
+              return copy
+            })
+            refreshSight()
+          })
+        }}
         onDeleteInsight={(insightId) => {
           if (conversation) harness.removeInsightId(conversation.id, insightId)
-          void deleteInsight(insightId)
-          setConvInsights((list) => list.filter((x) => x.id !== insightId))
+          void deleteInsight(insightId).then(() => {
+            setConvInsights((list) => list.filter((x) => x.id !== insightId))
+            refreshSight()
+          })
         }}
       />
 
@@ -1193,7 +1267,9 @@ function ApprovalBar({
   req: ApprovalRequest
   onAnswer: (ok: boolean) => void
 }) {
-  const detail = String(req.input.command ?? req.input.path ?? '')
+  const desc = typeof req.input.desc === 'string' ? req.input.desc.trim() : ''
+  const target = String(req.input.command ?? req.input.path ?? '')
+  const detail = desc && target ? `${desc} — ${target}` : desc || target
   return (
     <div className="approval-bar">
       <ShieldAlert className="ic ab-icon" />
