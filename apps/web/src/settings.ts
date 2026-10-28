@@ -29,6 +29,7 @@ export const DEFAULT_SETTINGS: Settings = {
     },
   ],
   memories: [],
+  inspiration: { keywords: [] },
   tools: {
     terminal: true,
     fileEdit: true,

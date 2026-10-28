@@ -45,6 +45,9 @@ export function mergeSettings(defaults: Settings, saved: Partial<Settings>): Set
     user: { ...defaults.user, ...saved.user },
     // insights 已迁出；保留字段仅供启动迁移读一次
     insights: saved.insights ?? [],
+    inspiration: {
+      keywords: saved.inspiration?.keywords ?? defaults.inspiration?.keywords ?? [],
+    },
     knowledgeBases: {
       sources: saved.knowledgeBases?.sources ?? defaults.knowledgeBases?.sources ?? [],
     },

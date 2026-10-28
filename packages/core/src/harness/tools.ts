@@ -14,6 +14,59 @@ export type ToolExecutor = (
   conv: Conversation,
 ) => Promise<string>
 
+const SAVE_INSIGHT_BASE_DESC =
+  'Optionally save a small tip the user likely does not already know but will find useful later. ' +
+  'How many: zero, one, or several per turn—only when there is a real takeaway; never force a tip. ' +
+  'Granularity: each call = one fine-grained idea. If you have three points, call three times; do not merge into one long note. ' +
+  'Title names that idea; text preferably one short sentence (max two). ' +
+  'category must be one of the user inspiration keywords (see enum / list). ' +
+  'Not task status, praise, or restating the answer. Skip TODOs, paths, and anything already obvious. ' +
+  'Entries show in the right panel 「收获」 for the user to triage (pass / keep); they may ignore them.'
+
+/** 按用户「灵感」关键词组装 save_insight；category = 关键词本身 */
+export function saveInsightToolDef(keywords: string[] = []): ToolDef {
+  const cleaned = keywords.map((k) => k.trim()).filter(Boolean)
+  const categoryProp: Record<string, unknown> = cleaned.length
+    ? {
+        type: 'string',
+        enum: cleaned,
+        description: `Must be exactly one inspiration keyword: ${cleaned.map((k) => `"${k}"`).join(', ')}`,
+      }
+    : {
+        type: 'string',
+        description:
+          'Short category label. User has not set inspiration keywords yet—use a brief theme name, or "未分类".',
+      }
+  const extra = cleaned.length
+    ? ` Only save tips that fit these inspiration keywords; category must be one of them: ${cleaned
+        .map((k) => `"${k}"`)
+        .join(', ')}.`
+    : ' User has not set inspiration keywords; still only save real takeaways and set a short category.'
+  return {
+    name: 'save_insight',
+    description: SAVE_INSIGHT_BASE_DESC + extra,
+    parameters: {
+      type: 'object',
+      properties: {
+        title: {
+          type: 'string',
+          description: 'Name of this single idea only (≤ 20 characters), e.g. "rebase 改历史"',
+        },
+        text: {
+          type: 'string',
+          description: 'This tip only: preferably one sentence, never more than two',
+        },
+        category: categoryProp,
+        why: {
+          type: 'string',
+          description: 'Optional one-liner: why this tip matters',
+        },
+      },
+      required: ['title', 'text', 'category'],
+    },
+  }
+}
+
 export const DEFAULT_TOOLS: ToolDef[] = [
   {
     name: 'read_file',
@@ -112,34 +165,7 @@ export const DEFAULT_TOOLS: ToolDef[] = [
       required: ['questions'],
     },
   },
-  {
-    name: 'save_insight',
-    description:
-      'Optionally save a small tip the user likely does not already know but will find useful later. ' +
-      'How many: zero, one, or several per turn—only when there is a real takeaway; never force a tip. ' +
-      'Granularity: each call = one fine-grained idea (one concept / gotcha / "why"). If you have three points, call three times; do not merge into one long note. ' +
-      'Title names that idea; text preferably one short sentence (max two). ' +
-      'Not task status, praise, or restating the answer. Skip TODOs, paths, and anything already obvious. ' +
-      'Entries show in the right panel 「收获」 for the user to triage (pass / keep); they may ignore them.',
-    parameters: {
-      type: 'object',
-      properties: {
-        title: {
-          type: 'string',
-          description: 'Name of this single idea only (≤ 20 characters), e.g. "rebase 改历史"',
-        },
-        text: {
-          type: 'string',
-          description: 'This tip only: preferably one sentence, never more than two',
-        },
-        why: {
-          type: 'string',
-          description: 'Optional one-liner: why this tip matters',
-        },
-      },
-      required: ['title', 'text'],
-    },
-  },
+  saveInsightToolDef(),
   LOAD_SKILL_TOOL,
 ]
 

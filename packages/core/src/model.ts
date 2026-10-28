@@ -131,6 +131,12 @@ export interface Memory {
 /** 用户对收获 tip 的筛选标记 */
 export type InsightMark = 'pass' | 'keep'
 
+/**
+ * 收获类别 = 用户在「灵感」里配置的关键词。
+ * 无匹配时可用「未分类」。
+ */
+export type InsightCategory = string
+
 /** Agent 留给用户的「收获」：可能不知道但对后续有用的一点；用户可筛选打标 */
 export interface Insight {
   id: string
@@ -138,6 +144,8 @@ export interface Insight {
   title: string
   /** 正文 */
   text: string
+  /** 类别：对应用户灵感关键词 */
+  category: InsightCategory
   /** 为何有用 / 纠正了什么误解（可选） */
   why?: string
   /** 来源会话 */
@@ -174,6 +182,13 @@ export interface Settings {
    * 启动时若仍有数据会迁出后清空。
    */
   insights?: Insight[]
+  /**
+   * 灵感：用户关心的主题关键词，会注入 save_insight 工具提示，
+   * 引导 Agent 优先提取这些方向的收获。
+   */
+  inspiration?: {
+    keywords: string[]
+  }
   tools: {
     terminal: boolean
     fileEdit: boolean

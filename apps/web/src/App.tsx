@@ -15,6 +15,7 @@ import {
   configureHarness,
   harness,
   pickInitialModel,
+  setInsightKeywords,
   syncSkillsIntoHarness,
   updateToolsFor,
 } from './harness'
@@ -359,6 +360,7 @@ function App() {
         id: newInsightId(),
         title: draft.title,
         text: draft.text,
+        category: draft.category,
         ...(draft.why ? { why: draft.why } : {}),
         ...(draft.convId ? { convId: draft.convId } : {}),
         createdAt: Date.now(),
@@ -379,7 +381,7 @@ function App() {
     if (!legacy?.length) return
     void (async () => {
       for (const ins of legacy) {
-        await writeInsight(ins)
+        await writeInsight({ ...ins, category: ins.category?.trim() || '未分类' })
         if (ins.convId && harness.getConversation(ins.convId)) {
           harness.addInsightId(ins.convId, ins.id)
         }
@@ -451,10 +453,12 @@ function App() {
 
   // 会话切换时，如果是真实会话则更新工具配置
   useEffect(() => {
+    setInsightKeywords(settings.inspiration?.keywords)
     if (harness.getConversation(activeConvId)) {
       updateToolsFor(activeConvId, settings.tools)
     }
-  }, [activeConvId, settings.tools])
+    void syncSkillsIntoHarness()
+  }, [activeConvId, settings.tools, settings.inspiration])
 
   // 未发送过消息的空会话：同 workdir（含纯对话的 null）直接复用，避免堆空白项
   const openOrCreate = useCallback(
@@ -1054,6 +1058,7 @@ function App() {
             refreshSight()
           })
         }}
+        onTogglePanel={() => setPanelOpen((v) => !v)}
       />
 
       <ConfirmDialog

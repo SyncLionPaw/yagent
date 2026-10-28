@@ -157,7 +157,10 @@ export function SightBoard({ open, insights, onMove }: SightBoardProps) {
                   onPointerUp={endDrag}
                   onPointerCancel={endDrag}
                 >
-                  <h3 className="sight-note-title">{ins.title}</h3>
+                  <div className="sight-note-head">
+                    <h3 className="sight-note-title">{ins.title}</h3>
+                    <span className="sight-note-cat">{ins.category}</span>
+                  </div>
                   <p className="sight-note-text">{ins.text}</p>
                   {ins.why ? <p className="sight-note-why">{ins.why}</p> : null}
                 </article>

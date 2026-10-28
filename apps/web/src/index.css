@@ -2464,8 +2464,27 @@ pre.math-raw {
     0 16px 32px color-mix(in srgb, #000 16%, transparent);
   transition: none;
 }
+.sight-note-head {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 6px 8px;
+  margin-bottom: 8px;
+}
+.sight-note-cat {
+  display: inline-flex;
+  padding: 1px 6px;
+  border-radius: 999px;
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  line-height: 1.35;
+  color: #5c564c;
+  background: color-mix(in srgb, #2a2620 8%, transparent);
+  border: 1px solid color-mix(in srgb, #2a2620 10%, transparent);
+}
 .sight-note-title {
-  margin: 0 0 8px;
+  margin: 0;
   font-family: 'Songti SC', 'PingFang SC', Georgia, 'Times New Roman', serif;
   font-size: 15px;
   font-weight: 500;
@@ -3425,6 +3444,9 @@ pre.math-raw {
   margin-bottom: 12px;
   flex-shrink: 0;
 }
+.panel-tabs .panel-collapse {
+  margin-left: auto;
+}
 .ptab {
   border: none;
   background: none;
@@ -3556,9 +3578,6 @@ pre.math-raw {
 .insight-card.mark-keep {
   border-color: color-mix(in srgb, var(--accent, #6b8cae) 35%, var(--border));
 }
-.insight-card.mark-pass {
-  opacity: 0.72;
-}
 .insights-empty {
   display: flex;
   flex-direction: column;
@@ -3595,12 +3614,23 @@ pre.math-raw {
   justify-content: space-between;
   gap: 8px;
 }
+.insight-title-row {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 6px 8px;
+  min-width: 0;
+  flex: 1;
+}
 .insight-title {
   margin: 0;
   font-size: 13px;
   font-weight: 600;
   color: var(--text-0);
   line-height: 1.35;
+}
+.insight-title-row .insight-tag {
+  flex: 0 0 auto;
 }
 .insight-text {
   margin: 8px 0 0;
@@ -3617,9 +3647,30 @@ pre.math-raw {
 }
 .insight-meta {
   margin-top: 8px;
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 8px;
   font-size: 10.5px;
   color: var(--text-2);
   font-variant-numeric: tabular-nums;
+}
+.insight-tag {
+  display: inline-flex;
+  align-items: center;
+  max-width: 9em;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  padding: 1px 7px;
+  border-radius: 999px;
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  line-height: 1.4;
+  color: var(--text-1);
+  background: color-mix(in srgb, var(--accent) 12%, transparent);
+  border: 1px solid color-mix(in srgb, var(--accent) 20%, transparent);
 }
 
 .p-pane {
@@ -4221,7 +4272,8 @@ button.src {
 .s-pane.active {
   display: block;
 }
-.s-pane-appearance.active {
+.s-pane-appearance.active,
+.s-pane-inspiration.active {
   display: flex;
   flex-direction: column;
   flex: 1;
@@ -4263,6 +4315,670 @@ button.src {
   border-color: var(--accent);
 }
 .field input::placeholder {
+  color: var(--text-2);
+}
+
+.insp-pane {
+  flex: 1;
+  min-height: 0;
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+.insp-carousel {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  align-items: stretch;
+  gap: 2px;
+  position: relative;
+}
+.insp-nav {
+  flex: 0 0 auto;
+  align-self: center;
+  display: inline-grid;
+  place-items: center;
+  width: 34px;
+  height: 34px;
+  padding: 0;
+  border: 1px solid var(--border-strong);
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--bg-surface) 88%, transparent);
+  color: var(--text-1);
+  box-shadow: var(--shadow-pop);
+  cursor: pointer;
+  z-index: 3;
+  transition: background 0.15s ease, color 0.15s ease, border-color 0.15s ease;
+}
+.insp-nav:hover {
+  background: var(--bg-hover);
+  color: var(--text-0);
+  border-color: var(--accent);
+}
+.insp-viewport {
+  --insp-peek: 44px;
+  --insp-gap: 16px;
+  --insp-folder-min: 168px;
+  --insp-folder-ideal: 188px;
+  --insp-fade-y: 40px;
+  flex: 1;
+  min-width: 0;
+  min-height: 0;
+  position: relative;
+  overflow: hidden;
+  padding: 12px 0;
+  container-type: inline-size;
+  container-name: insp-view;
+  touch-action: pan-y;
+  cursor: grab;
+  /* 上下柔化溶入背景，避免硬裁切 */
+  -webkit-mask-image: linear-gradient(
+    to bottom,
+    transparent 0,
+    #000 calc(var(--insp-fade-y) * 0.85),
+    #000 calc(100% - var(--insp-fade-y) * 0.7),
+    transparent 100%
+  );
+  mask-image: linear-gradient(
+    to bottom,
+    transparent 0,
+    #000 calc(var(--insp-fade-y) * 0.85),
+    #000 calc(100% - var(--insp-fade-y) * 0.7),
+    transparent 100%
+  );
+}
+.insp-carousel.peek .insp-viewport {
+  -webkit-mask-image:
+    linear-gradient(
+      to right,
+      transparent 0,
+      #000 calc(var(--insp-peek) + 8px),
+      #000 calc(100% - var(--insp-peek) - 8px),
+      transparent 100%
+    ),
+    linear-gradient(
+      to bottom,
+      transparent 0,
+      #000 calc(var(--insp-fade-y) * 0.85),
+      #000 calc(100% - var(--insp-fade-y) * 0.7),
+      transparent 100%
+    );
+  -webkit-mask-composite: source-in;
+  mask-image:
+    linear-gradient(
+      to right,
+      transparent 0,
+      #000 calc(var(--insp-peek) + 8px),
+      #000 calc(100% - var(--insp-peek) - 8px),
+      transparent 100%
+    ),
+    linear-gradient(
+      to bottom,
+      transparent 0,
+      #000 calc(var(--insp-fade-y) * 0.85),
+      #000 calc(100% - var(--insp-fade-y) * 0.7),
+      transparent 100%
+    );
+  mask-composite: intersect;
+}
+.insp-carousel.peek .insp-viewport:active {
+  cursor: grabbing;
+}
+/* 左右磨砂溶入，不再用整块硬遮罩 */
+.insp-carousel.peek .insp-viewport::before,
+.insp-carousel.peek .insp-viewport::after {
+  content: '';
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  width: calc(var(--insp-peek) + 48px);
+  z-index: 2;
+  pointer-events: none;
+  backdrop-filter: blur(12px) saturate(1.08);
+  -webkit-backdrop-filter: blur(12px) saturate(1.08);
+  background: linear-gradient(
+    var(--frost-dir, 90deg),
+    color-mix(in srgb, var(--bg-surface) 40%, transparent) 0%,
+    color-mix(in srgb, var(--bg-surface) 14%, transparent) 50%,
+    transparent 100%
+  );
+  -webkit-mask-image: linear-gradient(var(--frost-dir, 90deg), #000 0%, rgb(0 0 0 / 0.55) 40%, transparent 100%);
+  mask-image: linear-gradient(var(--frost-dir, 90deg), #000 0%, rgb(0 0 0 / 0.55) 40%, transparent 100%);
+}
+.insp-carousel.peek .insp-viewport::before {
+  left: 0;
+  --frost-dir: 90deg;
+}
+.insp-carousel.peek .insp-viewport::after {
+  right: 0;
+  --frost-dir: 270deg;
+}
+.insp-carousel:not(.peek) .insp-viewport {
+  display: flex;
+  cursor: default;
+}
+.insp-track {
+  /* 窄屏时绝不把 4 列硬压扁：保底宽度，宁可少露几列 */
+  --insp-slot: max(
+    var(--insp-folder-min),
+    min(
+      var(--insp-folder-ideal),
+      calc((100cqw - 2 * var(--insp-peek) - 3 * var(--insp-gap)) / 4)
+    )
+  );
+  --insp-step: calc(var(--insp-slot) + var(--insp-gap));
+  --start: 0;
+  display: flex;
+  align-items: center;
+  gap: var(--insp-gap);
+  height: 100%;
+  width: max-content;
+  padding: 18px 0 22px;
+  box-sizing: border-box;
+  transform: translateX(calc(var(--insp-peek) - var(--start) * var(--insp-step)));
+  transition: transform 0.38s cubic-bezier(0.22, 0.61, 0.36, 1);
+  will-change: transform;
+}
+.insp-track.snap {
+  transition: none;
+}
+.insp-track.static {
+  width: 100%;
+  min-width: 0;
+  justify-content: center;
+  transform: none;
+  transition: none;
+  gap: 18px;
+}
+.insp-carousel.peek .insp-folder {
+  flex: 0 0 var(--insp-slot);
+  width: var(--insp-slot);
+  min-width: var(--insp-folder-min);
+  max-width: none;
+}
+/* 变量定义在容器自身上：用 style 查询兜不住，改用后代继承 + 覆盖 track */
+@container insp-view (max-width: 560px) {
+  .insp-track {
+    --insp-peek: 28px;
+    --insp-gap: 12px;
+  }
+}
+@container insp-view (max-width: 420px) {
+  .insp-track {
+    --insp-peek: 20px;
+    --insp-gap: 10px;
+    --insp-folder-min: 156px;
+  }
+}
+.insp-wall-empty {
+  margin: auto;
+  padding: 48px 16px;
+  text-align: center;
+  font-size: 13px;
+  color: var(--text-2);
+}
+/* 彩色文件夹槽位 */
+.insp-folder {
+  --folder: #e8c96a;
+  --folder-deep: #d4b24a;
+  --folder-ink: #3d3420;
+  flex: 0 0 auto;
+  width: var(--insp-folder-ideal, 188px);
+  min-width: var(--insp-folder-min, 168px);
+  height: 100%;
+  max-height: 100%;
+  min-height: 0;
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  /* 轻阴影溶进背景，减少「贴在框里」的感觉 */
+  filter:
+    drop-shadow(0 18px 34px color-mix(in srgb, var(--folder-deep) 16%, transparent))
+    drop-shadow(0 4px 10px color-mix(in srgb, var(--bg-surface) 35%, transparent));
+}
+.insp-folder.tone-1 { --folder: #e8c96a; --folder-deep: #c9a63a; --folder-ink: #3d3420; }
+.insp-folder.tone-2 { --folder: #7ec8b3; --folder-deep: #4fa890; --folder-ink: #1e3d35; }
+.insp-folder.tone-3 { --folder: #f0a07a; --folder-deep: #d87a4e; --folder-ink: #3f2418; }
+.insp-folder.tone-4 { --folder: #7eb6e0; --folder-deep: #4f8fbf; --folder-ink: #1a3044; }
+.insp-folder.tone-5 { --folder: #d4a8d8; --folder-deep: #b07eb8; --folder-ink: #3a2440; }
+.insp-folder.tone-6 { --folder: #9fbf72; --folder-deep: #7a9a4e; --folder-ink: #243018; }
+.insp-folder-tab {
+  align-self: flex-start;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  max-width: 78%;
+  min-height: 28px;
+  margin: 0 0 -1px 10px;
+  padding: 6px 8px 8px 12px;
+  border-radius: 10px 14px 0 0;
+  background: linear-gradient(180deg, color-mix(in srgb, #fff 22%, var(--folder)), var(--folder));
+  color: var(--folder-ink);
+  position: relative;
+  z-index: 2;
+}
+.insp-folder-tab::after {
+  content: '';
+  position: absolute;
+  right: -12px;
+  bottom: 0;
+  width: 12px;
+  height: 14px;
+  background: radial-gradient(circle at top right, transparent 70%, var(--folder) 71%);
+}
+.insp-folder-title {
+  margin: 0;
+  flex: 1;
+  min-width: 0;
+  font-size: 12.5px;
+  font-weight: 700;
+  letter-spacing: -0.01em;
+  line-height: 1.2;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  word-break: normal;
+}
+.insp-folder-x {
+  flex: 0 0 auto;
+  display: inline-grid;
+  place-items: center;
+  width: 18px;
+  height: 18px;
+  padding: 0;
+  border: none;
+  border-radius: 5px;
+  background: transparent;
+  color: inherit;
+  opacity: 0.55;
+  cursor: pointer;
+}
+.insp-folder-x:hover {
+  opacity: 1;
+  background: color-mix(in srgb, var(--folder-ink) 12%, transparent);
+}
+.insp-folder-body {
+  --stack-peek: 46px;
+  --stack-card-h: 118px;
+  /* 每张露出的高度要盖住整段标题和两侧圆孔 */
+  --stack-lip: 46px;
+  --pocket-floor: 8px;
+  --pocket-h: calc(var(--pocket-floor) + var(--stack-card-h) - var(--stack-lip));
+  position: relative;
+  z-index: 1;
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  padding: 12px 10px 0;
+  border-radius: 4px 14px 14px 14px;
+  /* 背板：同色亚克力，比兜更透 */
+  background:
+    linear-gradient(
+      125deg,
+      color-mix(in srgb, #fff 22%, transparent) 0%,
+      transparent 28%
+    ),
+    linear-gradient(
+      180deg,
+      color-mix(in srgb, #fff 20%, var(--folder)) 0%,
+      color-mix(in srgb, var(--folder) 88%, transparent) 46%,
+      var(--folder-deep) 100%
+    );
+  box-shadow: inset 0 1px 0 color-mix(in srgb, #fff 35%, transparent);
+  color: var(--folder-ink);
+  overflow: hidden;
+}
+.insp-stack {
+  position: relative;
+  z-index: 1;
+  flex: 1;
+  min-height: 0;
+  overflow: hidden;
+  margin: 0 2px;
+}
+.insp-stack.empty {
+  display: grid;
+  place-items: center;
+  align-content: center;
+  margin-bottom: var(--pocket-h);
+  border-radius: 8px;
+  border: 1.5px dashed color-mix(in srgb, var(--folder-ink) 22%, transparent);
+  background: color-mix(in srgb, #fff 28%, transparent);
+  overflow: hidden;
+}
+.insp-stack-empty {
+  font-size: 12px;
+  opacity: 0.65;
+}
+/* 从兜底往上叠：下半截被口袋挡住 */
+.insp-stack-card {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: calc(var(--pocket-floor) + var(--i, 0) * var(--stack-peek));
+  height: var(--stack-card-h);
+  min-width: 0;
+  padding: 6px 12px 10px;
+  border-radius: 8px 8px 6px 6px;
+  border: 1px solid color-mix(in srgb, #000 8%, transparent);
+  background: #fffdf8;
+  color: #2a2620;
+  box-shadow:
+    0 1px 0 color-mix(in srgb, #000 5%, transparent),
+    0 6px 14px color-mix(in srgb, #000 12%, transparent);
+  transition: transform 0.22s ease, box-shadow 0.22s ease;
+  cursor: pointer;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+  /* 左右半圆从边缘挖穿，边线一起断开 */
+  --notch-r: 5px;
+  --notch-y: 29px;
+  -webkit-mask-image:
+    radial-gradient(circle at 0 var(--notch-y), transparent var(--notch-r), #000 calc(var(--notch-r) + 0.5px)),
+    radial-gradient(circle at 100% var(--notch-y), transparent var(--notch-r), #000 calc(var(--notch-r) + 0.5px));
+  -webkit-mask-composite: source-in;
+  -webkit-mask-repeat: no-repeat;
+  -webkit-mask-size: 100% 100%;
+  mask-image:
+    radial-gradient(circle at 0 var(--notch-y), transparent var(--notch-r), #000 calc(var(--notch-r) + 0.5px)),
+    radial-gradient(circle at 100% var(--notch-y), transparent var(--notch-r), #000 calc(var(--notch-r) + 0.5px));
+  mask-repeat: no-repeat;
+  mask-size: 100% 100%;
+  mask-composite: intersect;
+}
+.insp-stack-card:hover {
+  transform: translateY(-3px);
+  box-shadow:
+    0 1px 0 color-mix(in srgb, #000 5%, transparent),
+    0 10px 18px color-mix(in srgb, #000 16%, transparent);
+}
+.insp-stack-title {
+  margin: 0;
+  flex-shrink: 0;
+  height: 16px;
+  font-size: 12px;
+  font-weight: 650;
+  line-height: 16px;
+  color: #2a2620;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.insp-stack-perf {
+  position: relative;
+  flex-shrink: 0;
+  height: 12px;
+  margin: 0 -12px;
+  background-image: repeating-linear-gradient(
+    90deg,
+    color-mix(in srgb, #2a2620 32%, transparent) 0 3px,
+    transparent 3px 6px
+  );
+  background-size: calc(100% - 18px) 1px;
+  background-position: center;
+  background-repeat: no-repeat;
+}
+.insp-stack-text {
+  margin: 4px 0 0;
+  flex: 1;
+  min-height: 0;
+  overflow-wrap: anywhere;
+  word-break: normal;
+  font-size: 11.5px;
+  line-height: 1.45;
+  color: #4a453c;
+  overflow: hidden;
+  display: -webkit-box;
+  -webkit-line-clamp: 4;
+  -webkit-box-orient: vertical;
+}
+.insp-stack-card:not(:first-child) .insp-stack-text {
+  display: none;
+}
+/* 兜：磨砂亚克力片，能透出后面的卡片 */
+.insp-folder-pocket {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  height: var(--pocket-h);
+  z-index: 20;
+  pointer-events: none;
+  border-radius: 2px 2px 14px 14px;
+  background:
+    linear-gradient(
+      118deg,
+      transparent 0%,
+      color-mix(in srgb, #fff 55%, transparent) 16%,
+      transparent 34%,
+      transparent 100%
+    ),
+    linear-gradient(
+      180deg,
+      color-mix(in srgb, #fff 24%, transparent) 0%,
+      color-mix(in srgb, var(--folder) 28%, transparent) 40%,
+      color-mix(in srgb, var(--folder-deep) 40%, transparent) 100%
+    );
+  backdrop-filter: blur(5px) saturate(1.45) brightness(1.06);
+  -webkit-backdrop-filter: blur(5px) saturate(1.45) brightness(1.06);
+  border-top: 1px solid color-mix(in srgb, #fff 78%, transparent);
+  box-shadow:
+    inset 0 1px 0 color-mix(in srgb, #fff 90%, transparent),
+    inset 0 14px 16px -12px color-mix(in srgb, #fff 55%, transparent),
+    inset 0 -1px 0 color-mix(in srgb, #fff 30%, transparent);
+}
+.insp-folder-pocket::before {
+  content: '';
+  position: absolute;
+  left: 0;
+  right: 0;
+  top: 0;
+  height: 5px;
+  background: linear-gradient(
+    180deg,
+    color-mix(in srgb, #fff 72%, transparent) 0%,
+    color-mix(in srgb, #fff 8%, transparent) 100%
+  );
+}
+.insp-folder-pocket::after {
+  content: none;
+}
+.insp-badge {
+  position: fixed;
+  inset: 0;
+  z-index: 90;
+  display: flex;
+  flex-direction: column;
+  background: rgba(8, 10, 16, 0.82);
+  -webkit-app-region: no-drag;
+}
+.insp-badge-stage {
+  flex: 1;
+  min-height: 0;
+  display: grid;
+  place-items: center;
+  perspective: 1100px;
+}
+.insp-badge-spin {
+  --paper-d: 8px;
+  position: relative;
+  width: min(300px, 78vw);
+  min-height: 380px;
+  transform-style: preserve-3d;
+  cursor: grab;
+  user-select: none;
+  touch-action: none;
+}
+.insp-badge-spin:active {
+  cursor: grabbing;
+}
+.insp-badge-card,
+.insp-badge-ply {
+  --notch-r: 8px;
+  --notch-y: 72px;
+  border-radius: 16px;
+  -webkit-mask-image:
+    radial-gradient(circle at 0 var(--notch-y), transparent var(--notch-r), #000 calc(var(--notch-r) + 0.5px)),
+    radial-gradient(circle at 100% var(--notch-y), transparent var(--notch-r), #000 calc(var(--notch-r) + 0.5px));
+  -webkit-mask-composite: source-in;
+  -webkit-mask-repeat: no-repeat;
+  -webkit-mask-size: 100% 100%;
+  mask-image:
+    radial-gradient(circle at 0 var(--notch-y), transparent var(--notch-r), #000 calc(var(--notch-r) + 0.5px)),
+    radial-gradient(circle at 100% var(--notch-y), transparent var(--notch-r), #000 calc(var(--notch-r) + 0.5px));
+  mask-repeat: no-repeat;
+  mask-size: 100% 100%;
+  mask-composite: intersect;
+}
+.insp-badge-ply {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  background: #e3d0a2;
+  transform: translateZ(calc(var(--paper-d) / -2));
+}
+.insp-badge-edge {
+  position: absolute;
+  pointer-events: none;
+  background: #dcc89a;
+}
+.insp-badge-edge.t,
+.insp-badge-edge.b {
+  left: 16px;
+  right: 16px;
+  height: var(--paper-d);
+}
+.insp-badge-edge.l,
+.insp-badge-edge.r {
+  top: 16px;
+  bottom: 16px;
+  width: var(--paper-d);
+}
+.insp-badge-edge.t {
+  top: 0;
+  transform-origin: center top;
+  transform: translateZ(calc(var(--paper-d) / 2)) rotateX(-90deg);
+}
+.insp-badge-edge.b {
+  bottom: 0;
+  transform-origin: center bottom;
+  transform: translateZ(calc(var(--paper-d) / 2)) rotateX(90deg);
+}
+.insp-badge-edge.l {
+  left: 0;
+  transform-origin: left center;
+  transform: translateZ(calc(var(--paper-d) / 2)) rotateY(90deg);
+}
+.insp-badge-edge.r {
+  right: 0;
+  transform-origin: right center;
+  transform: translateZ(calc(var(--paper-d) / 2)) rotateY(-90deg);
+}
+.insp-badge-card {
+  position: relative;
+  isolation: isolate;
+  min-height: 380px;
+  padding: 20px 22px 26px;
+  color: #3d3424;
+  transform: translateZ(calc(var(--paper-d) / 2));
+  display: flex;
+  flex-direction: column;
+  background:
+    radial-gradient(ellipse at 18% 10%, #fbf7ec 0%, transparent 52%),
+    radial-gradient(ellipse at 86% 94%, #e6d4a6 0%, transparent 58%),
+    #f3ead4;
+}
+.insp-badge-card::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  z-index: 0;
+  pointer-events: none;
+  border-radius: inherit;
+  opacity: 0.42;
+  mix-blend-mode: multiply;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='280' height='280'%3E%3Cfilter id='p' x='0' y='0' width='100%25' height='100%25'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.42' numOctaves='5' stitchTiles='stitch' result='n'/%3E%3CfeDiffuseLighting in='n' lighting-color='%23fff6e4' surfaceScale='1.6' result='lit'%3E%3CfeDistantLight azimuth='40' elevation='52'/%3E%3C/feDiffuseLighting%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23p)'/%3E%3C/svg%3E");
+  background-size: 280px 280px;
+}
+.insp-badge-title {
+  position: relative;
+  z-index: 1;
+  margin: 0;
+  height: 44px;
+  font-size: 18px;
+  font-weight: 680;
+  line-height: 22px;
+  color: #3d3424;
+  overflow: hidden;
+}
+.insp-badge-perf {
+  position: relative;
+  z-index: 1;
+  flex-shrink: 0;
+  height: 16px;
+  margin: 0 -22px;
+  background-image: repeating-linear-gradient(
+    90deg,
+    color-mix(in srgb, #2a2620 32%, transparent) 0 4px,
+    transparent 4px 8px
+  );
+  background-size: calc(100% - 28px) 1px;
+  background-position: center;
+  background-repeat: no-repeat;
+}
+.insp-badge-text {
+  position: relative;
+  z-index: 1;
+  margin: 14px 0 0;
+  font-size: 14px;
+  line-height: 1.6;
+  color: #4a4030;
+  white-space: pre-wrap;
+  overflow: auto;
+}
+.insp-folder-meta {
+  position: absolute;
+  right: 12px;
+  bottom: 10px;
+  font-size: 11px;
+  font-weight: 600;
+  opacity: 0.75;
+  font-variant-numeric: tabular-nums;
+  color: var(--folder-ink);
+  pointer-events: none;
+}
+.insp-box {
+  flex-shrink: 0;
+  margin-top: auto;
+  background: var(--bg-surface);
+  border: 1px solid var(--border-strong);
+  border-radius: 12px;
+  box-shadow: var(--shadow-pop);
+  padding: 12px 14px 10px;
+  transition: border-color 0.15s ease;
+}
+.insp-box:focus-within {
+  border-color: var(--accent);
+}
+.insp-box textarea {
+  display: block;
+  width: 100%;
+  min-height: 44px;
+  margin: 0;
+  padding: 0;
+  border: none;
+  outline: none;
+  resize: none;
+  background: transparent;
+  color: var(--text-0);
+  font: inherit;
+  font-size: 14px;
+  line-height: 1.5;
+}
+.insp-box textarea::placeholder {
   color: var(--text-2);
 }
 

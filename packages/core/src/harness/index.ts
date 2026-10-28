@@ -11,7 +11,7 @@ export type {
   PrepareResult,
   TokenUsage,
 } from './context.js'
-export { DEFAULT_TOOLS } from './tools.js'
+export { DEFAULT_TOOLS, saveInsightToolDef } from './tools.js'
 export type { ToolExecutor, ToolCallInfo } from './tools.js'
 export type { HarnessHooks, ToolCallResult, RunEndReason } from './hooks.js'
 export { LOAD_SKILL_TOOL, formatSkillsSystemAppendix } from './skills.js'

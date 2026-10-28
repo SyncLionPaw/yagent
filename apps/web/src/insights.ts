@@ -1,8 +1,9 @@
-import type { Insight, InsightMark } from '@yagent/core'
+import type { Insight, InsightCategory, InsightMark } from '@yagent/core'
 
 export type InsightDraft = {
   title: string
   text: string
+  category: InsightCategory
   why?: string
   convId?: string
 }
@@ -19,6 +20,11 @@ export function registerInsightHandler(next: InsightHandler | null): void {
   handler = next
 }
 
+function parseCategory(raw: unknown): InsightCategory {
+  if (typeof raw === 'string' && raw.trim()) return raw.trim().slice(0, 32)
+  return '未分类'
+}
+
 export function parseInsightInput(input: Record<string, unknown>): InsightDraft {
   const title = typeof input.title === 'string' ? input.title.trim() : ''
   const text = typeof input.text === 'string' ? input.text.trim() : ''
@@ -28,7 +34,16 @@ export function parseInsightInput(input: Record<string, unknown>): InsightDraft 
   return {
     title: title.slice(0, 24),
     text: text.slice(0, 280),
+    category: parseCategory(input.category),
     ...(why ? { why: why.slice(0, 120) } : {}),
+  }
+}
+
+/** 读盘时补齐旧数据缺省类别 */
+export function normalizeInsight(raw: Insight): Insight {
+  return {
+    ...raw,
+    category: parseCategory(raw.category),
   }
 }
 
@@ -94,16 +109,17 @@ function syncLocalSight(insight: Insight) {
 
 /** 写入收获正文：桌面 → dataDir/insights/<id>.json（收藏同步 sight/）；浏览器 → localStorage */
 export async function writeInsight(insight: Insight): Promise<void> {
+  const next = normalizeInsight(insight)
   const ipc = window.yagentDesktop?.insights
   if (ipc) {
-    await ipc.write(insight)
+    await ipc.write(next)
     return
   }
   try {
-    localStorage.setItem(LS_PREFIX + insight.id, JSON.stringify(insight))
+    localStorage.setItem(LS_PREFIX + next.id, JSON.stringify(next))
     const idx = localIndex()
-    if (!idx.includes(insight.id)) setLocalIndex([insight.id, ...idx])
-    syncLocalSight(insight)
+    if (!idx.includes(next.id)) setLocalIndex([next.id, ...idx])
+    syncLocalSight(next)
   } catch {
     //
   }
@@ -114,7 +130,7 @@ export async function markInsight(
   insight: Insight,
   mark: InsightMark | null,
 ): Promise<Insight> {
-  const next: Insight = { ...insight }
+  const next: Insight = { ...normalizeInsight(insight) }
   if (mark) next.mark = mark
   else delete next.mark
   await writeInsight(next)
@@ -125,26 +141,32 @@ export async function readInsights(ids: string[]): Promise<Insight[]> {
   const list = ids.filter(Boolean)
   if (!list.length) return []
   const ipc = window.yagentDesktop?.insights
-  if (ipc) return ipc.readMany(list)
-
-  const out: Insight[] = []
-  for (const id of list) {
-    try {
-      const raw = localStorage.getItem(LS_PREFIX + id)
-      if (!raw) continue
-      const obj = JSON.parse(raw) as Insight
-      if (obj && typeof obj.id === 'string') out.push(obj)
-    } catch {
-      //
-    }
-  }
-  return out
+  const rawList = ipc
+    ? await ipc.readMany(list)
+    : (() => {
+        const out: Insight[] = []
+        for (const id of list) {
+          try {
+            const raw = localStorage.getItem(LS_PREFIX + id)
+            if (!raw) continue
+            const obj = JSON.parse(raw) as Insight
+            if (obj && typeof obj.id === 'string') out.push(obj)
+          } catch {
+            //
+          }
+        }
+        return out
+      })()
+  return rawList.map(normalizeInsight)
 }
 
 /** 收藏库：桌面读 insights/sight/；浏览器按 sight 索引 */
 export async function listSightInsights(): Promise<Insight[]> {
   const ipc = window.yagentDesktop?.insights
-  if (ipc?.listSight) return ipc.listSight()
+  if (ipc?.listSight) {
+    const list = await ipc.listSight()
+    return list.map(normalizeInsight)
+  }
 
   const out: Insight[] = []
   for (const id of localSightIndex()) {
@@ -152,7 +174,9 @@ export async function listSightInsights(): Promise<Insight[]> {
       const raw = localStorage.getItem(LS_PREFIX + id)
       if (!raw) continue
       const obj = JSON.parse(raw) as Insight
-      if (obj && typeof obj.id === 'string' && obj.mark === 'keep') out.push(obj)
+      if (obj && typeof obj.id === 'string' && obj.mark === 'keep') {
+        out.push(normalizeInsight(obj))
+      }
     } catch {
       //
     }
@@ -188,4 +212,8 @@ export async function deleteInsights(
   const list = ids.filter(Boolean)
   if (!list.length) return
   for (const id of list) await deleteInsight(id, opts)
+}
+
+export function categoryMatches(insightCat: string, keyword: string): boolean {
+  return insightCat.trim().toLowerCase() === keyword.trim().toLowerCase()
 }

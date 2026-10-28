@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react'
-import { Bookmark, EyeOff, Files, Globe, Lightbulb, Search, Trash2, X } from 'lucide-react'
+import { Bookmark, EyeOff, Files, Globe, Lightbulb, PanelRight, Search, Trash2, X } from 'lucide-react'
 import type { Conversation, Insight, InsightMark, Ref } from '@yagent/core'
 import { formatSize } from '../lib/utils'
 import { FileIcon } from './FileIcon'
@@ -22,6 +22,8 @@ interface RightPanelProps {
   onSelectSrc: (id: number | null) => void
   onMarkInsight: (id: string, mark: InsightMark | null) => void
   onDeleteInsight: (id: string) => void
+  /** 与主区顶栏「任务面板」相同：收起/展开右栏 */
+  onTogglePanel: () => void
 }
 
 const BASE_TABS: {
@@ -67,18 +69,26 @@ function InsightsPane({
         : '本会话还没有收获'
       : filter === 'keep'
         ? '还没有收藏'
-        : '没有标为不感兴趣的'
+        : '没有略过的收获'
 
   const emptyDesc =
     filter === 'inbox'
-      ? 'Agent 记下的小 tip 会出现在这里，供你筛选：不感兴趣或收藏。'
+      ? '新收获会出现在这里。'
       : filter === 'keep'
-        ? '点收藏后会收拢到 insights/sight/，可跨会话回看。'
-        : '标为不感兴趣的 tip 会留在这里，可随时改主意。'
+        ? '收藏后会出现在这里。'
+        : '点略过的条目会留在这里。'
+
+  const markAndFollow = (id: string, next: InsightMark | null) => {
+    onMark(id, next)
+    // 打标后跟着切到对应列表，避免「从待看消失」像被删了
+    if (next === 'pass') setFilter('pass')
+    else if (next === 'keep') setFilter('keep')
+    else setFilter('inbox')
+  }
 
   return (
     <div className="insights-pane">
-      <div className="insights-hint">给用户筛选的 tip；收藏会进 sight 子目录。</div>
+      <div className="insights-hint">可略过或收藏。</div>
       <div className="insights-filters" role="tablist" aria-label="收获筛选">
         {(
           [
@@ -108,16 +118,22 @@ function InsightsPane({
         </div>
       ) : (
         list.map((ins) => (
-          <article className={`insight-card${ins.mark ? ` mark-${ins.mark}` : ''}`} key={ins.id}>
+          <article
+            className={`insight-card${ins.mark ? ` mark-${ins.mark}` : ''}`}
+            key={ins.id}
+          >
             <div className="insight-card-head">
-              <h3 className="insight-title">{ins.title}</h3>
+              <div className="insight-title-row">
+                <h3 className="insight-title">{ins.title}</h3>
+                <span className="insight-tag">{ins.category}</span>
+              </div>
               <div className="insight-actions">
                 <button
                   type="button"
                   className={`icon-btn${ins.mark === 'pass' ? ' on' : ''}`}
-                  title={ins.mark === 'pass' ? '取消略过' : '不感兴趣'}
-                  aria-label={ins.mark === 'pass' ? '取消略过' : '不感兴趣'}
-                  onClick={() => onMark(ins.id, ins.mark === 'pass' ? null : 'pass')}
+                  title={ins.mark === 'pass' ? '取消略过' : '略过'}
+                  aria-label={ins.mark === 'pass' ? '取消略过' : '略过'}
+                  onClick={() => markAndFollow(ins.id, ins.mark === 'pass' ? null : 'pass')}
                 >
                   <EyeOff className="ic ic-sm" />
                 </button>
@@ -126,7 +142,7 @@ function InsightsPane({
                   className={`icon-btn${ins.mark === 'keep' ? ' on' : ''}`}
                   title={ins.mark === 'keep' ? '取消收藏' : '收藏'}
                   aria-label={ins.mark === 'keep' ? '取消收藏' : '收藏'}
-                  onClick={() => onMark(ins.id, ins.mark === 'keep' ? null : 'keep')}
+                  onClick={() => markAndFollow(ins.id, ins.mark === 'keep' ? null : 'keep')}
                 >
                   <Bookmark className="ic ic-sm" />
                 </button>
@@ -143,7 +159,9 @@ function InsightsPane({
             </div>
             <p className="insight-text">{ins.text}</p>
             {ins.why ? <p className="insight-why">{ins.why}</p> : null}
-            <div className="insight-meta">{formatInsightTime(ins.createdAt)}</div>
+            <div className="insight-meta">
+              <span>{formatInsightTime(ins.createdAt)}</span>
+            </div>
           </article>
         ))
       )}
@@ -161,6 +179,7 @@ export function RightPanel({
   onSelectSrc,
   onMarkInsight,
   onDeleteInsight,
+  onTogglePanel,
 }: RightPanelProps) {
   const [browserPage, setBrowserPage] = useState<BrowserPage | null>(null)
   const browserOpen = !!browserPage
@@ -242,6 +261,15 @@ export function RightPanel({
             </button>
           </span>
         )}
+        <button
+          type="button"
+          className="icon-btn panel-collapse"
+          title="任务面板"
+          aria-label="收起任务面板"
+          onClick={onTogglePanel}
+        >
+          <PanelRight className="ic" />
+        </button>
       </div>
 
       <div className={`p-pane pane-insights${tab === 'insights' ? ' active' : ''}`}>

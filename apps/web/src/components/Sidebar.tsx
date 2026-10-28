@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import { BookMarked, ChevronDown, Cpu, FolderOpen, MessageCircle, Moon, Palette, Plug, Plus, Settings as SettingsIcon, Sparkles, Sun, User, Wrench, X } from 'lucide-react'
+import { BookMarked, ChevronDown, Cpu, FolderOpen, Lightbulb, MessageCircle, Moon, Palette, Plug, Plus, Settings as SettingsIcon, Sparkles, Sun, User, Wrench, X } from 'lucide-react'
 import type { Conversation } from '@yagent/core'
 import { formatSidebarTime } from '../lib/utils'
 import type { SettingsPaneId } from './SettingsPanel'
@@ -30,6 +30,7 @@ const SETTINGS_MENU: { id: SettingsPaneId; label: string; icon: typeof Cpu }[] =
   { id: 'models', label: '模型配置', icon: Cpu },
   { id: 'appearance', label: '外观', icon: Palette },
   { id: 'skills', label: '技能', icon: Sparkles },
+  { id: 'inspiration', label: '灵感', icon: Lightbulb },
   { id: 'knowledge', label: '知识库', icon: BookMarked },
   { id: 'tools', label: '工具', icon: Wrench },
   { id: 'connectors', label: '连接器', icon: Plug },

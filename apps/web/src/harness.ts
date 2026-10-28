@@ -13,6 +13,7 @@ import {
   formatSkillsSystemAppendix,
   Harness,
   OpenAIProvider,
+  saveInsightToolDef,
   type ToolExecutor,
 } from '@yagent/core'
 import type { ChatRequest, ModelConfig, ModelProvider, Settings, StreamEvent } from '@yagent/core'
@@ -168,29 +169,44 @@ const BASE_SYSTEM =
   '同一 URL 可重复标签；客户端会汇总到右栏「搜索」并显示为角标。' +
   '有对用户真正有用、且其可能还不知道的点时，可用 save_insight 写入右侧「收获」：本轮可以是 0 条、1 条或若干条，没有硬性数量；有就记、没有就不硬写。每条尽量拆细（一次调用只写一个小点），多点就多次调用，正文优先一句话。不要记任务进度或废话。'
 
+/** 用户在设置「灵感」里填的关键词，注入 system + save_insight */
+let insightKeywords: string[] = []
+
+export function setInsightKeywords(keywords: string[] | undefined): void {
+  insightKeywords = (keywords ?? []).map((k) => k.trim()).filter(Boolean)
+}
+
+function buildSystem(skillsAppendix = ''): string {
+  const kw =
+    insightKeywords.length > 0
+      ? `用户「灵感」关键词（save_insight 的 category 必须取其一）：${insightKeywords.join('、')}。只在有实质、用户可能还不知道的要点时写入，勿硬凑。`
+      : ''
+  return BASE_SYSTEM + kw + skillsAppendix
+}
+
 export const harness = new Harness({
   provider: new MissingKeyProvider('尚未配置模型'),
   model: '',
-  system: BASE_SYSTEM,
+  system: buildSystem(),
 })
 
 /** 从磁盘扫 skills，把 L1 目录写入 system；无桌面端则清空附录 */
 export async function syncSkillsIntoHarness(): Promise<{ total: number; invocable: number }> {
   if (!skillsAvailable()) {
-    harness.configure({ system: BASE_SYSTEM })
+    harness.configure({ system: buildSystem() })
     return { total: 0, invocable: 0 }
   }
   try {
     const skills = await listSkills()
     harness.configure({
-      system: BASE_SYSTEM + formatSkillsSystemAppendix(skills),
+      system: buildSystem(formatSkillsSystemAppendix(skills)),
     })
     return {
       total: skills.length,
       invocable: skills.filter((s) => !s.disableModelInvocation).length,
     }
   } catch {
-    harness.configure({ system: BASE_SYSTEM })
+    harness.configure({ system: buildSystem() })
     return { total: 0, invocable: 0 }
   }
 }
@@ -205,17 +221,17 @@ export function updateToolsFor(convId: string, toolFlags?: Settings['tools']): v
   const canSkills = skillsAvailable()
   const tools = DEFAULT_TOOLS.filter((t) => {
     if (t.name === 'load_skill') return canSkills
+    if (t.name === 'save_insight') return true
     if (
       t.name === 'fetch_url' ||
       t.name === 'read_file' ||
-      t.name === 'ask_user_question' ||
-      t.name === 'save_insight'
+      t.name === 'ask_user_question'
     ) {
       return true
     }
     if (t.name === 'search_web') return toolFlags?.webSearch ?? true
     return !!workdir
-  })
+  }).map((t) => (t.name === 'save_insight' ? saveInsightToolDef(insightKeywords) : t))
   harness.configure({ tools, executor: createExecutor(workdir) })
 }
 

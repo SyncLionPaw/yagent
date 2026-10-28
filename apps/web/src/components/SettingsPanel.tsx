@@ -1,9 +1,20 @@
-import { useEffect, useMemo, useRef, useState, type DragEvent } from 'react'
+import {
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  type CSSProperties,
+  type DragEvent,
+  type PointerEvent as ReactPointerEvent,
+  type TransitionEvent,
+} from 'react'
 import {
   ArrowLeft,
   BookOpen,
   Check,
   ChevronDown,
+  ChevronLeft,
+  ChevronRight,
   Code2,
   FolderOpen,
   Globe,
@@ -17,16 +28,19 @@ import {
   RefreshCw,
   Trash2,
   Upload,
+  X,
   Zap,
 } from 'lucide-react'
 import type {
   AccentId,
   Conversation,
+  Insight,
   KnowledgeSource,
   KnowledgeSourceKind,
   ModelConfig,
   Settings,
 } from '@yagent/core'
+import { categoryMatches, listSightInsights } from '../insights'
 import { BrandIcon } from './BrandIcons'
 import {
   devDeepseekKey,
@@ -66,6 +80,7 @@ export type SettingsPaneId =
   | 'models'
   | 'appearance'
   | 'skills'
+  | 'inspiration'
   | 'knowledge'
   | 'tools'
   | 'connectors'
@@ -83,6 +98,7 @@ const PANE_META: Record<SettingsPaneId, [string, string]> = {
   models: ['模型配置', '每个模型条目自带密钥与端点（BYOK），仅存储在本地'],
   appearance: ['外观', '主题强调色会应用到按钮、高亮与边缘光等全局样式'],
   skills: ['技能', '管理 SKILL.md；可扫描 Cursor / Claude 等目录并迁移'],
+  inspiration: ['灵感', '收获优先朝这些方向提取'],
   knowledge: ['知识库', '连接本地目录或云端文档源，供 Agent 检索引用'],
   tools: ['工具', '配置 Agent 的默认工具与沙箱'],
   connectors: ['连接器', '连接外部服务，让 Agent 读写你的工具和数据'],
@@ -141,6 +157,9 @@ export function SettingsPanel({
         </div>
         <div className={`s-pane${pane === 'skills' ? ' active' : ''}`}>
           <SkillsPane active={pane === 'skills'} />
+        </div>
+        <div className={`s-pane s-pane-inspiration${pane === 'inspiration' ? ' active' : ''}`}>
+          <InspirationPane active={pane === 'inspiration'} settings={settings} onChange={onChange} />
         </div>
         <div className={`s-pane${pane === 'knowledge' ? ' active' : ''}`}>
           <KnowledgePane settings={settings} onChange={onChange} />
@@ -1528,6 +1547,423 @@ const KB_PROVIDERS: {
   },
   { kind: 'web', name: '网站 / Sitemap', desc: '按 URL 抓取并索引', icon: Globe, color: '#6c5ce7' },
 ]
+
+/* ---------- 灵感：关键词 + 其下收藏卡片 ---------- */
+
+const INSP_PAGE = 4
+
+/** 关键词 → 固定色调 1..6，与轮播位置无关 */
+function keywordTone(k: string): number {
+  let h = 2166136261
+  for (let i = 0; i < k.length; i++) {
+    h ^= k.charCodeAt(i)
+    h = Math.imul(h, 16777619)
+  }
+  return (Math.abs(h) % 6) + 1
+}
+
+const INSP_WHEEL_THRESHOLD = 48
+const INSP_DRAG_THRESHOLD = 56
+
+function InspBadgePreview({
+  title,
+  text,
+  keyword,
+  onClose,
+}: {
+  title: string
+  text: string
+  keyword: string
+  onClose: () => void
+}) {
+  const rot = useRef({ x: 20, y: -8 })
+  const drag = useRef<{ px: number; py: number; x: number; y: number } | null>(null)
+  const cardRef = useRef<HTMLDivElement>(null)
+
+  const paint = () => {
+    const el = cardRef.current
+    if (!el) return
+    el.style.transform = `rotateX(${rot.current.x}deg) rotateY(${rot.current.y}deg)`
+  }
+
+  useEffect(() => {
+    paint()
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') onClose()
+    }
+    document.addEventListener('keydown', onKey)
+    return () => document.removeEventListener('keydown', onKey)
+  }, [onClose])
+
+  const onPointerDown = (e: ReactPointerEvent<HTMLDivElement>) => {
+    e.stopPropagation()
+    drag.current = { px: e.clientX, py: e.clientY, x: rot.current.x, y: rot.current.y }
+    e.currentTarget.setPointerCapture(e.pointerId)
+  }
+
+  const onPointerMove = (e: ReactPointerEvent<HTMLDivElement>) => {
+    const d = drag.current
+    if (!d) return
+    rot.current = {
+      x: d.x - (e.clientY - d.py) * 0.55,
+      y: d.y + (e.clientX - d.px) * 0.55,
+    }
+    paint()
+  }
+
+  const onPointerUp = (e: ReactPointerEvent<HTMLDivElement>) => {
+    drag.current = null
+    if (e.currentTarget.hasPointerCapture(e.pointerId)) {
+      e.currentTarget.releasePointerCapture(e.pointerId)
+    }
+  }
+
+  return (
+    <div className="insp-badge" role="dialog" aria-modal="true" aria-label={title}>
+      <div className="img-lightbox-bar">
+        <span className="img-lightbox-cap">{keyword}</span>
+        <button type="button" className="icon-btn img-lb-btn" title="关闭" onClick={onClose}>
+          <X className="ic ic-sm" />
+        </button>
+      </div>
+      <div className="insp-badge-stage" onClick={onClose}>
+        <div
+          className="insp-badge-spin"
+          ref={cardRef}
+          onClick={(e) => e.stopPropagation()}
+          onPointerDown={onPointerDown}
+          onPointerMove={onPointerMove}
+          onPointerUp={onPointerUp}
+          onPointerCancel={onPointerUp}
+        >
+          <div className="insp-badge-ply" aria-hidden="true" />
+          <i className="insp-badge-edge t" aria-hidden="true" />
+          <i className="insp-badge-edge r" aria-hidden="true" />
+          <i className="insp-badge-edge b" aria-hidden="true" />
+          <i className="insp-badge-edge l" aria-hidden="true" />
+          <div className="insp-badge-card">
+            <h3 className="insp-badge-title">{title}</h3>
+            <div className="insp-badge-perf" aria-hidden="true" />
+            <p className="insp-badge-text">{text}</p>
+          </div>
+        </div>
+      </div>
+      <div className="img-lightbox-hint">拖动旋转</div>
+    </div>
+  )
+}
+
+function InspirationPane({
+  active,
+  settings,
+  onChange,
+}: {
+  active: boolean
+  settings: Settings
+  onChange: (s: Settings) => void
+}) {
+  const keywords = settings.inspiration?.keywords ?? []
+  const [draft, setDraft] = useState('')
+  const [sight, setSight] = useState<Insight[]>([])
+  const [preview, setPreview] = useState<{ ins: Insight; keyword: string } | null>(null)
+  const [start, setStart] = useState(0)
+  const [snap, setSnap] = useState(false)
+  const animating = useRef(false)
+  const wheelAcc = useRef(0)
+  const drag = useRef<{ pointerId: number; origin: number } | null>(null)
+  const viewportRef = useRef<HTMLDivElement>(null)
+  const carousel = keywords.length > INSP_PAGE
+  const n = keywords.length
+  const carouselRef = useRef(carousel)
+  const nRef = useRef(n)
+  const startRef = useRef(start)
+  carouselRef.current = carousel
+  nRef.current = n
+  startRef.current = start
+
+  const strip = useMemo(() => {
+    if (!keywords.length) return [] as { k: string; ki: number; copy: number }[]
+    if (!carousel) return keywords.map((k, ki) => ({ k, ki, copy: 0 }))
+    return [0, 1].flatMap((copy) => keywords.map((k, ki) => ({ k, ki, copy })))
+  }, [keywords, carousel])
+
+  useEffect(() => {
+    if (!active) return
+    let alive = true
+    void listSightInsights().then((list) => {
+      if (alive) setSight(list)
+    })
+    return () => {
+      alive = false
+    }
+  }, [active, keywords])
+
+  useEffect(() => {
+    animating.current = false
+    wheelAcc.current = 0
+    setSnap(false)
+    if (!n) {
+      setStart(0)
+      return
+    }
+    setStart((s) => ((s % n) + n) % n)
+  }, [n])
+
+  const step = (dir: -1 | 1) => {
+    if (!carouselRef.current || animating.current) return false
+    const len = nRef.current
+    if (len <= INSP_PAGE) return false
+    animating.current = true
+
+    if (dir < 0 && startRef.current === 0) {
+      // 无缝绕到副本尾部，再滑到最后一个
+      setSnap(true)
+      setStart(len)
+      requestAnimationFrame(() => {
+        requestAnimationFrame(() => {
+          setSnap(false)
+          setStart(len - 1)
+        })
+      })
+      return true
+    }
+
+    setSnap(false)
+    setStart((s) => s + dir)
+    return true
+  }
+
+  useEffect(() => {
+    if (!carousel || !active) return
+    const el = viewportRef.current
+    if (!el) return
+
+    const onWheel = (e: WheelEvent) => {
+      const dx = e.deltaX
+      const dy = e.deltaY
+      // 触控板横滑：以横向为主；Shift+滚轮也当横滑
+      const horizontal =
+        Math.abs(dx) > Math.abs(dy) || (e.shiftKey && Math.abs(dy) > 0)
+      if (!horizontal) return
+      const delta = Math.abs(dx) >= Math.abs(dy) ? dx : dy
+      if (Math.abs(delta) < 1) return
+      e.preventDefault()
+      if (animating.current) return
+      wheelAcc.current += delta
+      if (wheelAcc.current >= INSP_WHEEL_THRESHOLD) {
+        wheelAcc.current = 0
+        step(1)
+      } else if (wheelAcc.current <= -INSP_WHEEL_THRESHOLD) {
+        wheelAcc.current = 0
+        step(-1)
+      }
+    }
+
+    el.addEventListener('wheel', onWheel, { passive: false })
+    return () => el.removeEventListener('wheel', onWheel)
+  }, [carousel, active])
+
+  const commitKeywords = (next: string[]) => {
+    const cleaned = next.map((k) => k.trim()).filter(Boolean)
+    const seen = new Set<string>()
+    const unique: string[] = []
+    for (const k of cleaned) {
+      const key = k.toLowerCase()
+      if (seen.has(key)) continue
+      seen.add(key)
+      unique.push(k)
+    }
+    onChange({ ...settings, inspiration: { keywords: unique } })
+  }
+
+  const addDraft = () => {
+    const parts = draft
+      .split(/[,，、\n]/)
+      .map((s) => s.trim())
+      .filter(Boolean)
+    if (!parts.length) return
+    commitKeywords([...keywords, ...parts])
+    setDraft('')
+  }
+
+  const onTrackTransitionEnd = (e: TransitionEvent<HTMLDivElement>) => {
+    if (e.propertyName !== 'transform') return
+    const len = nRef.current
+    const s = startRef.current
+    if (s >= len) {
+      setSnap(true)
+      setStart(s - len)
+      requestAnimationFrame(() => {
+        requestAnimationFrame(() => {
+          setSnap(false)
+          animating.current = false
+        })
+      })
+      return
+    }
+    animating.current = false
+  }
+
+  const onPointerDown = (e: ReactPointerEvent<HTMLDivElement>) => {
+    if (!carousel || e.button !== 0) return
+    if ((e.target as HTMLElement).closest('button')) return
+    drag.current = { pointerId: e.pointerId, origin: e.clientX }
+    e.currentTarget.setPointerCapture(e.pointerId)
+  }
+
+  const onPointerMove = (e: ReactPointerEvent<HTMLDivElement>) => {
+    const d = drag.current
+    if (!d || d.pointerId !== e.pointerId || animating.current) return
+    const dx = e.clientX - d.origin
+    if (dx >= INSP_DRAG_THRESHOLD) {
+      d.origin = e.clientX
+      step(-1)
+    } else if (dx <= -INSP_DRAG_THRESHOLD) {
+      d.origin = e.clientX
+      step(1)
+    }
+  }
+
+  const onPointerUp = (e: ReactPointerEvent<HTMLDivElement>) => {
+    if (!drag.current || drag.current.pointerId !== e.pointerId) return
+    drag.current = null
+    if (e.currentTarget.hasPointerCapture(e.pointerId)) {
+      e.currentTarget.releasePointerCapture(e.pointerId)
+    }
+  }
+
+  return (
+    <div className="insp-pane">
+      <div className={`insp-carousel${carousel ? ' peek' : ''}`}>
+        {carousel ? (
+          <button
+            type="button"
+            className="insp-nav prev"
+            aria-label="上一个关键词"
+            onClick={() => step(-1)}
+          >
+            <ChevronLeft className="ic" />
+          </button>
+        ) : null}
+        <div
+          className="insp-viewport"
+          ref={viewportRef}
+          aria-label="灵感槽位"
+          onPointerDown={carousel ? onPointerDown : undefined}
+          onPointerMove={carousel ? onPointerMove : undefined}
+          onPointerUp={carousel ? onPointerUp : undefined}
+          onPointerCancel={carousel ? onPointerUp : undefined}
+        >
+          {!keywords.length ? (
+            <div className="insp-wall-empty">添加关键词后会出现竖向槽位</div>
+          ) : (
+            <div
+              className={`insp-track${carousel ? '' : ' static'}${snap ? ' snap' : ''}`}
+              style={
+                carousel
+                  ? ({ ['--start' as string]: start } as CSSProperties)
+                  : undefined
+              }
+              onTransitionEnd={carousel ? onTrackTransitionEnd : undefined}
+            >
+              {strip.map(({ k, ki, copy }) => {
+                const cards = sight.filter((ins) => categoryMatches(ins.category, k))
+                const stack = cards.slice(0, 10)
+                const tone = keywordTone(k)
+                return (
+                  <section className={`insp-folder tone-${tone}`} key={`${copy}-${ki}-${k}`}>
+                    <div className="insp-folder-tab">
+                      <h3 className="insp-folder-title">{k}</h3>
+                      <button
+                        type="button"
+                        className="insp-folder-x"
+                        title="移除"
+                        aria-label={`移除 ${k}`}
+                        onClick={() => commitKeywords(keywords.filter((x) => x !== k))}
+                      >
+                        <X className="ic ic-sm" />
+                      </button>
+                    </div>
+                    <div className="insp-folder-body">
+                      <div className={`insp-stack${stack.length ? '' : ' empty'}`}>
+                        {stack.length ? (
+                          stack.map((ins, i) => (
+                            <article
+                              className="insp-stack-card"
+                              key={ins.id}
+                              role="button"
+                              tabIndex={0}
+                              style={{
+                                /* i=0 插进兜里最前；越大越往上抬 */
+                                zIndex: stack.length - i,
+                                ['--i' as string]: i,
+                              }}
+                              onPointerDown={(e) => e.stopPropagation()}
+                              onClick={() => setPreview({ ins, keyword: k })}
+                              onKeyDown={(e) => {
+                                if (e.key === 'Enter' || e.key === ' ') {
+                                  e.preventDefault()
+                                  setPreview({ ins, keyword: k })
+                                }
+                              }}
+                            >
+                              <h4 className="insp-stack-title">{ins.title}</h4>
+                              <div className="insp-stack-perf" aria-hidden="true" />
+                              <p className="insp-stack-text">{ins.text}</p>
+                            </article>
+                          ))
+                        ) : (
+                          <div className="insp-stack-empty">空文件夹</div>
+                        )}
+                      </div>
+                      <div className="insp-folder-pocket" aria-hidden={!cards.length}>
+                        {cards.length > 0 ? (
+                          <div className="insp-folder-meta">{cards.length} 张</div>
+                        ) : null}
+                      </div>
+                    </div>
+                  </section>
+                )
+              })}
+            </div>
+          )}
+        </div>
+        {carousel ? (
+          <button
+            type="button"
+            className="insp-nav next"
+            aria-label="下一个关键词"
+            onClick={() => step(1)}
+          >
+            <ChevronRight className="ic" />
+          </button>
+        ) : null}
+      </div>
+      {preview ? (
+        <InspBadgePreview
+          title={preview.ins.title}
+          text={preview.ins.text}
+          keyword={preview.keyword}
+          onClose={() => setPreview(null)}
+        />
+      ) : null}
+      <div className="insp-box">
+        <textarea
+          rows={2}
+          value={draft}
+          placeholder="输入关键词，回车添加…"
+          onChange={(e) => setDraft(e.target.value)}
+          onKeyDown={(e) => {
+            if (e.key === 'Enter' && !e.shiftKey) {
+              e.preventDefault()
+              addDraft()
+            }
+          }}
+        />
+      </div>
+    </div>
+  )
+}
 
 function KnowledgePane({
   settings,
