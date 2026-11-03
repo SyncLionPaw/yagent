@@ -398,6 +398,77 @@ function runCommand(command: string, cwd: string): Promise<string> {
   })
 }
 
+/* ============ SSH 远程执行（workdir = ssh://host/path） ============ */
+
+function parseSshRoot(root: string): { host: string; path: string } | null {
+  if (!root.startsWith('ssh://')) return null
+  const rest = root.slice('ssh://'.length)
+  const slash = rest.indexOf('/')
+  if (slash < 0) return { host: rest, path: '/' }
+  const host = rest.slice(0, slash)
+  const raw = rest.slice(slash) || '/'
+  if (raw === '/~') return { host, path: '~' }
+  if (raw.startsWith('/~/')) return { host, path: `~/${raw.slice(3)}` }
+  return { host, path: raw }
+}
+
+/** 供远程 shell 安全内嵌的路径引用；~ / ~/ 前缀用双引号让 $HOME 展开，其余单引号 */
+function shq(s: string): string {
+  if (s === '~') return '"$HOME"'
+  if (s.startsWith('~/')) return `"$HOME/${s.slice(2).replace(/"/g, '\\"')}"`
+  return `'${s.replace(/'/g, `'\\''`)}'`
+}
+
+/** 通过 ssh 在远程跑一段 shell，stdin 可喂数据；resolve 不 reject（带 exit 码） */
+function sshRun(host: string, script: string, stdin?: string): Promise<{ out: string; err: string; code: number }> {
+  return new Promise((resolve, reject) => {
+    const child = spawn(
+      'ssh',
+      ['-o', 'BatchMode=yes', '-o', 'ConnectTimeout=8', '-o', 'StrictHostKeyChecking=accept-new', host, script],
+      { stdio: ['pipe', 'pipe', 'pipe'] },
+    )
+    let out = ''
+    let err = ''
+    const timer = setTimeout(() => {
+      child.kill('SIGKILL')
+      reject(new Error('ssh 执行超时'))
+    }, 60000)
+    child.stdout.setEncoding('utf8').on('data', (c: string) => { out += c })
+    child.stderr.setEncoding('utf8').on('data', (c: string) => { err += c })
+    child.once('error', (e: any) => { clearTimeout(timer); reject(e) })
+    child.once('close', (code: any) => {
+      clearTimeout(timer)
+      resolve({ out, err, code: code ?? 1 })
+    })
+    if (stdin != null) child.stdin.write(stdin)
+    child.stdin.end()
+  })
+}
+
+/** 远程读文件分页（与本地 readFilePaged 输出格式一致：[OK]/[PARTIAL] + LN: 行） */
+async function sshReadFilePaged(host: string, cwd: string, relPath: string, offset: number, limit: number): Promise<string> {
+  const off = Math.max(1, offset)
+  const lim = Math.max(1, limit)
+  const script = [
+    `cd ${shq(cwd)} 2>/dev/null || { echo "无法进入目录 ${cwd}" >&2; exit 3; }`,
+    `f=${shq(relPath)}`,
+    `[ -f "$f" ] || { echo "File not found: ${relPath}" >&2; exit 4; }`,
+    `awk -v off=${off} -v lim=${lim} -v f="$f" '`,
+    `{ total++ }`,
+    `NR>=off && NR<off+lim { buf = buf "L" NR ": " $0 "\\n"; last=NR }`,
+    `END {`,
+    `  if (off > total) { printf "File has %d lines; offset=%d is past the end.", total, off; exit }`,
+    `  more = (off+lim-1) < total`,
+    `  if (more) printf "[PARTIAL] %s: lines %d-%d of %d. Next: offset=%d limit=%d\\n", f, off, last, total, last+1, lim`,
+    `  else printf "[OK] %s: lines %d-%d of %d\\n", f, off, last, total`,
+    `  printf "%s", buf`,
+    `}' "$f"`,
+  ].join(' && ')
+  const { out, err, code } = await sshRun(host, script)
+  if (code !== 0) throw new Error(err.trim() || `远程读取失败（exit ${code}）`)
+  return out
+}
+
 /** 从 settings.json 解析网络内容后端（每次工具调用读盘，改设置立刻生效） */
 async function resolveWebProviderFromDisk(): Promise<ReturnType<typeof resolveWebContentProvider>> {
   let provider: string | undefined
@@ -432,6 +503,41 @@ async function executeTool(_event: any, request: { name: string; input: Record<s
   }
 
   const root = request.workdir.trim()
+  // 远程（SSH）工作目录：读写/命令通过 ssh 在远程主机执行
+  const ssh = parseSshRoot(root)
+  if (ssh) {
+    switch (request.name) {
+      case 'read_file': {
+        const file = requiredString(request.input, 'path')
+        const offset = optionalPositiveInt(request.input, 'offset', 1)
+        const limit = optionalPositiveInt(request.input, 'limit', READ_DEFAULT_LIMIT)
+        return sshReadFilePaged(ssh.host, ssh.path, file, offset, limit)
+      }
+      case 'write_file': {
+        const file = requiredString(request.input, 'path')
+        const content = requiredString(request.input, 'content')
+        const script = `cd ${shq(ssh.path)} && mkdir -p "$(dirname ${shq(file)})" && cat > ${shq(file)}`
+        const w = await sshRun(ssh.host, script, content)
+        if (w.code !== 0) throw new Error(w.err.trim() || `远程写入失败（exit ${w.code}）`)
+        return `Wrote ${file} (ssh: ${ssh.host})`
+      }
+      case 'run_command': {
+        const command = requiredString(request.input, 'command')
+        const r = await sshRun(ssh.host, `cd ${shq(ssh.path)} && ${command}`)
+        return `${r.out}${r.err ? `\n${r.err}` : ''}\n[exit ${r.code}] (ssh: ${ssh.host})`
+      }
+      case 'load_skill': {
+        const id = requiredString(request.input, 'id')
+        const file =
+          typeof request.input.file === 'string' && request.input.file.trim()
+            ? request.input.file.trim()
+            : undefined
+        return loadSkillContent(id, file)
+      }
+      default:
+        throw new Error(`Unknown tool: ${request.name}`)
+    }
+  }
   // read_file 可在无 workdir 时读 uploads 绝对路径；写/命令仍要求绑定目录
   if (request.name === 'read_file') {
     const file = await resolveReadable(root, requiredString(request.input, 'path'))
@@ -887,6 +993,112 @@ void app.whenReady().then(async () => {
       title: '选择工作目录',
     })
     return result.canceled ? null : result.filePaths[0] ?? null
+  })
+
+  // 读取 ~/.ssh/config 的 Host 别名（含可选 HostName/User/Port），供「新建远程任务」选择
+  ipcMain.handle('ssh:listHosts', async () => {
+    const file = path.join(os.homedir(), '.ssh', 'config')
+    let text: string
+    try {
+      text = await readFile(file, 'utf8')
+    } catch {
+      return []
+    }
+    const hosts: { host: string; hostname?: string; user?: string; port?: string }[] = []
+    let cur: (typeof hosts)[number] | null = null
+    for (const raw of text.split('\n')) {
+      const line = raw.trim()
+      if (!line || line.startsWith('#')) continue
+      const m = /^(\S+)\s+(.+)$/.exec(line)
+      if (!m) continue
+      const key = m[1]!.toLowerCase()
+      const val = m[2]!.trim()
+      if (key === 'host') {
+        // 排除通配符块（Host * / Host *.example.com）
+        if (!/[*?]/.test(val)) {
+          cur = { host: val }
+          hosts.push(cur)
+        } else {
+          cur = null
+        }
+      } else if (cur) {
+        if (key === 'hostname') cur.hostname = val
+        else if (key === 'user') cur.user = val
+        else if (key === 'port') cur.port = val
+      }
+    }
+    return hosts
+  })
+
+  // 通过 ssh 列出远程目录的子目录（非交互、短超时），供「新建远程任务」浏览选择
+  ipcMain.handle('ssh:listDirs', async (_e: any, host: string, dir: string) => {
+    const h = String(host ?? '').trim()
+    if (!h) throw new Error('host required')
+    const base = String(dir ?? '').trim() || '~'
+    // 仅列目录，逐项一行；~ 由远程 shell 展开
+    const script = `cd ${base} 2>/dev/null && for d in */; do echo "$d"; done`
+    const args = [
+      '-o', 'BatchMode=yes',
+      '-o', 'ConnectTimeout=6',
+      '-o', 'StrictHostKeyChecking=accept-new',
+      h,
+      script,
+    ]
+    return new Promise((resolve) => {
+      const child = spawn('ssh', args, { stdio: ['ignore', 'pipe', 'pipe'] })
+      let out = ''
+      let err = ''
+      const timer = setTimeout(() => {
+        child.kill('SIGKILL')
+        resolve({ ok: false, error: '连接超时', dirs: [], cwd: base })
+      }, 9000)
+      child.stdout.setEncoding('utf8').on('data', (c: string) => { out += c })
+      child.stderr.setEncoding('utf8').on('data', (c: string) => { err += c })
+      child.once('error', (e: any) => {
+        clearTimeout(timer)
+        resolve({ ok: false, error: String(e?.message ?? e), dirs: [], cwd: base })
+      })
+      child.once('close', (code: any) => {
+        clearTimeout(timer)
+        if (code !== 0) {
+          resolve({ ok: false, error: err.trim() || `ssh 退出码 ${code ?? 1}`, dirs: [], cwd: base })
+          return
+        }
+        const dirs = out
+          .split('\n')
+          .map((s) => s.trim().replace(/\/$/, ''))
+          .filter(Boolean)
+          .sort()
+        resolve({ ok: true, dirs, cwd: base })
+      })
+    })
+  })
+
+  // 轻量连通性探测：能否 ssh 上主机（短超时，供顶栏状态点着色）
+  ipcMain.handle('ssh:ping', async (_e: any, host: string) => {
+    const h = String(host ?? '').trim()
+    if (!h) return { ok: false, error: 'host required' }
+    return new Promise((resolve) => {
+      const child = spawn(
+        'ssh',
+        ['-o', 'BatchMode=yes', '-o', 'ConnectTimeout=5', '-o', 'StrictHostKeyChecking=accept-new', h, 'true'],
+        { stdio: ['ignore', 'ignore', 'pipe'] },
+      )
+      let err = ''
+      const timer = setTimeout(() => {
+        child.kill('SIGKILL')
+        resolve({ ok: false, error: '连接超时' })
+      }, 8000)
+      child.stderr.setEncoding('utf8').on('data', (c: string) => { err += c })
+      child.once('error', (e: any) => {
+        clearTimeout(timer)
+        resolve({ ok: false, error: String(e?.message ?? e) })
+      })
+      child.once('close', (code: any) => {
+        clearTimeout(timer)
+        resolve(code === 0 ? { ok: true } : { ok: false, error: err.trim() || `ssh 退出码 ${code ?? 1}` })
+      })
+    })
   })
 
   // 技能：<dataDir>/skills/<id>/SKILL.md（L1 目录经 list；L2/L3 经 load_skill）

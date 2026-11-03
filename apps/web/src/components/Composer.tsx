@@ -1,27 +1,20 @@
 import { useEffect, useRef, useState } from 'react'
 import type { ClipboardEvent, DragEvent, ReactNode, RefObject } from 'react'
 import {
-  Check,
-  ChevronDown,
-  Cloud,
   Command,
   CornerDownLeft,
   FilePen,
-  Laptop,
-  MessageCircle,
   // Mic, // 语音输入暂关
   ShieldAlert,
-  Smartphone,
   X,
   Zap,
 } from 'lucide-react'
-import type { Mode } from '@yagent/core'
 import type { ApprovalMode } from '../approval'
 import { acceptAttachReason, MAX_ATTACH_BYTES } from '../lib/attachAccept'
 import { HTML_PREVIEW_SANDBOX } from '../lib/htmlPreview'
 import { fileKindOf } from '../lib/utils'
 import { filterSlashCommands, slashMenuQuery } from '../slashCommands'
-import type { PopoverId } from './Topbar'
+
 import { AttachPreviewCard, type AttachVisual } from './AttachPreviewCard'
 import { TextBlock } from './TextBlock'
 
@@ -58,8 +51,6 @@ export interface ContextMeter {
 
 interface ComposerProps {
   draft: string
-  mode: Mode
-  popover: PopoverId
   running: boolean
   textareaRef: RefObject<HTMLTextAreaElement | null>
   attachments: PendingAttachment[]
@@ -76,19 +67,11 @@ interface ComposerProps {
   onAttachmentsChange: (files: PendingAttachment[]) => void
   onSend: () => void
   onStop: () => void
-  onModeChange: (m: Mode) => void
-  onPopover: (id: PopoverId) => void
   /** 语音输入暂关 */
   onOpenVoice?: () => void
   onApprovalModeChange: (mode: ApprovalMode) => void
   onCancelEdit?: () => void
 }
-
-const MODES: { id: Mode; label: string; desc: string; icon: typeof Laptop }[] = [
-  { id: 'chat', label: '纯对话', desc: '只聊天，不执行操作', icon: MessageCircle },
-  { id: 'local', label: '本地沙箱', desc: '本机隔离沙箱中执行', icon: Laptop },
-  { id: 'cloud', label: '云端远程', desc: '云端运行，手机可接管', icon: Cloud },
-]
 
 /** 从 DataTransfer 收集文件（粘贴 / 拖放）；纯文本返回空 */
 export function filesFromDataTransfer(data: DataTransfer | null): File[] {
@@ -119,8 +102,6 @@ export function filesFromDataTransfer(data: DataTransfer | null): File[] {
 
 export function Composer({
   draft,
-  mode,
-  popover,
   running,
   textareaRef,
   attachments,
@@ -133,8 +114,6 @@ export function Composer({
   onAttachmentsChange,
   onSend,
   onStop,
-  onModeChange,
-  onPopover,
   // onOpenVoice, // 语音输入暂关
   onApprovalModeChange,
   onCancelEdit,
@@ -148,9 +127,6 @@ export function Composer({
   const slashPrefix = slashMenuQuery(draft)
   const slashHits = slashPrefix != null ? filterSlashCommands(slashPrefix) : []
   const slashOpen = !editingMessage && slashHits.length > 0
-  const modeOpen = popover === 'mode'
-  const current = MODES.find((m) => m.id === mode) ?? MODES[1]
-  const ModeIcon = current.icon
 
   // textarea 自适应高度：随内容长高，上限 180px（CSS max-height 控制内滚），发送后复位
   useEffect(() => {
@@ -264,14 +240,6 @@ export function Composer({
               ))}
             </div>
           )}
-          <div className={`remote-hint${mode === 'cloud' ? ' show' : ''}`}>
-            <Smartphone className="ic ic-sm" />
-            远程控制已开启，手机端可接管此会话
-            <span className="rh-link">
-              连接手机
-              <ChevronDown className="ic ic-sm" />
-            </span>
-          </div>
           {attachHint && <div className="attach-hint">{attachHint}</div>}
           {editingMessage && (
             <div className="composer-edit-bar">
@@ -372,47 +340,6 @@ export function Composer({
           />
 
           <div className="composer-bar">
-            <span
-              className={`chip mode-chip${modeOpen ? ' open' : ''}`}
-              onClick={(e) => {
-                e.stopPropagation()
-                onPopover(modeOpen ? null : 'mode')
-              }}
-            >
-              <ModeIcon className="ic ic-sm" />
-              <span className="chip-text">{current.label}</span>
-              <ChevronDown className="ic ic-sm ic-caret" />
-            </span>
-            <div
-              className={`mode-pop${modeOpen ? ' open' : ''}`}
-              onClick={(e) => e.stopPropagation()}
-            >
-              {MODES.map((m) => {
-                const Icon = m.icon
-                return (
-                  <button
-                    key={m.id}
-                    className={`mode-opt${m.id === mode ? ' active' : ''}`}
-                    onClick={() => {
-                      onModeChange(m.id)
-                      onPopover(null)
-                    }}
-                  >
-                    <span className="m-icon">
-                      <Icon className="ic" />
-                    </span>
-                    <span className="m-body">
-                      <span className="m-title">{m.label}</span>
-                      <span className="m-desc">{m.desc}</span>
-                    </span>
-                    <span className="m-check">
-                      <Check className="ic ic-sm" />
-                    </span>
-                  </button>
-                )
-              })}
-            </div>
-
             <ApprovalModeSwitch value={approvalMode} onChange={onApprovalModeChange} />
             {/* 语音输入暂关
             <button className="chip mic-chip" title="语音输入" onClick={onOpenVoice}>

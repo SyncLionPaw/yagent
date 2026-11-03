@@ -394,6 +394,264 @@ body.is-resizing .splitter::before {
   margin-top: 4px;
 }
 
+/* SSH 远程任务：项目行主机图标 */
+.proj-ssh {
+  color: var(--accent-text, var(--text-2));
+  flex-shrink: 0;
+}
+
+/* SSH 远程任务表单对话框 */
+.ssh-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.42);
+  backdrop-filter: blur(3px);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 200;
+  animation: ssh-fade 0.16s ease;
+}
+@keyframes ssh-fade {
+  from {
+    opacity: 0;
+  }
+}
+.ssh-dialog {
+  width: 400px;
+  max-width: calc(100vw - 48px);
+  background: var(--bg-surface);
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  box-shadow: var(--shadow-pop);
+  padding: 20px 20px 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 15px;
+  animation: ssh-pop 0.18s cubic-bezier(0.22, 0.9, 0.32, 1.1);
+}
+@keyframes ssh-pop {
+  from {
+    opacity: 0;
+    transform: translateY(8px) scale(0.97);
+  }
+}
+.ssh-title {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 15px;
+  font-weight: 600;
+  color: var(--text-0);
+  letter-spacing: -0.01em;
+}
+.ssh-title .ic {
+  color: var(--accent-text, var(--text-2));
+}
+.ssh-field {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.ssh-label {
+  font-size: 11.5px;
+  font-weight: 500;
+  color: var(--text-2);
+}
+.ssh-input {
+  font: inherit;
+  font-size: 13px;
+  padding: 8px 11px;
+  border: 1px solid var(--border-strong);
+  border-radius: 8px;
+  background: var(--bg-app);
+  color: var(--text-0);
+  outline: none;
+  transition: border-color 0.12s ease;
+}
+.ssh-input:focus {
+  border-color: var(--accent);
+}
+.ssh-input::placeholder {
+  color: var(--text-3, var(--text-2));
+}
+
+/* 主机：自定义下拉（复用 mode-opt 视觉） */
+.ssh-select {
+  position: relative;
+}
+.ssh-select-btn {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font: inherit;
+  font-size: 13px;
+  padding: 8px 11px;
+  border: 1px solid var(--border-strong);
+  border-radius: 8px;
+  background: var(--bg-app);
+  color: var(--text-0);
+  cursor: pointer;
+  transition: border-color 0.12s ease;
+}
+.ssh-select-btn:hover {
+  border-color: var(--accent);
+}
+.ssh-select-btn.open {
+  border-color: var(--accent);
+}
+.ssh-select-btn .ic {
+  color: var(--text-2);
+  flex-shrink: 0;
+}
+.ssh-select-val {
+  flex: 1;
+  text-align: left;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.ssh-select-btn .ssh-caret {
+  transition: transform 0.15s ease;
+}
+.ssh-select-btn.open .ssh-caret {
+  transform: rotate(180deg);
+}
+.ssh-select-pop {
+  position: absolute;
+  top: calc(100% + 4px);
+  left: 0;
+  right: 0;
+  max-height: 220px;
+  overflow-y: auto;
+  background: var(--bg-surface);
+  border: 1px solid var(--border);
+  border-radius: 9px;
+  box-shadow: var(--shadow-pop);
+  padding: 4px;
+  z-index: 20;
+}
+
+/* 远程目录浏览 */
+.ssh-dirbar {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 5px 8px;
+  border: 1px solid var(--border-strong);
+  border-bottom: none;
+  border-radius: 8px 8px 0 0;
+  background: var(--bg-app);
+}
+.ssh-cur {
+  flex: 1;
+  min-width: 0;
+  font-size: 12px;
+  font-family: 'SF Mono', Menlo, monospace;
+  color: var(--text-1);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  padding: 0 2px;
+}
+.ssh-refresh.spin .ic {
+  animation: ssh-spin 0.9s linear infinite;
+}
+@keyframes ssh-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+.ssh-dirlist {
+  height: 168px;
+  overflow-y: auto;
+  border: 1px solid var(--border-strong);
+  border-radius: 0 0 8px 8px;
+  background: var(--bg-surface);
+  padding: 4px;
+}
+.ssh-dir-item {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font: inherit;
+  font-size: 12.5px;
+  padding: 6px 8px;
+  border: none;
+  border-radius: 6px;
+  background: none;
+  color: var(--text-1);
+  cursor: pointer;
+  text-align: left;
+  transition: background 0.1s ease, color 0.1s ease;
+}
+.ssh-dir-item:hover {
+  background: var(--bg-hover);
+  color: var(--text-0);
+}
+.ssh-dir-item .ic {
+  color: var(--text-2);
+  flex-shrink: 0;
+}
+.ssh-dir-empty {
+  height: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 12px;
+  color: var(--text-2);
+  padding: 14px 8px;
+  text-align: center;
+  line-height: 1.5;
+}
+.ssh-dir-err {
+  color: var(--red, #e06c75);
+}
+.ssh-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+  margin-top: 2px;
+}
+.ssh-cancel,
+.ssh-ok {
+  font: inherit;
+  font-size: 13px;
+  font-weight: 500;
+  padding: 7px 16px;
+  border-radius: 8px;
+  cursor: pointer;
+  border: 1px solid var(--border-strong);
+  background: var(--bg-app);
+  color: var(--text-0);
+  transition: border-color 0.12s ease, background 0.12s ease;
+}
+.ssh-cancel:hover {
+  background: var(--bg-hover);
+}
+.ssh-ok {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: var(--accent-fg, #fff);
+}
+.ssh-ok:hover:not(:disabled) {
+  filter: brightness(1.06);
+}
+.ssh-ok:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+.ssh-note {
+  font-size: 11px;
+  color: var(--text-2);
+  line-height: 1.5;
+  border-top: 1px solid var(--border);
+  margin-top: -3px;
+  padding-top: 10px;
+}
+
 .sidebar-scroll {
   flex: 1;
   overflow-y: auto;
@@ -781,6 +1039,68 @@ body.is-resizing .splitter::before {
   border-radius: 50%;
   background: var(--green);
   box-shadow: 0 0 0 1.5px var(--bg-surface);
+}
+/* SSH 远程：状态点按连通性着色 */
+.sandbox-status.ssh.ok .sandbox-status-dot {
+  background: var(--green);
+}
+.sandbox-status.ssh.checking .sandbox-status-dot {
+  background: var(--yellow);
+  animation: ssh-dot-pulse 1.1s ease-in-out infinite;
+}
+.sandbox-status.ssh.fail {
+  color: var(--red, #e06c75);
+}
+.sandbox-status.ssh.fail .sandbox-status-dot {
+  background: var(--red, #e06c75);
+}
+@keyframes ssh-dot-pulse {
+  0%,
+  100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.35;
+  }
+}
+
+/* 主对话区：远程主机不可连通提示条 */
+.ssh-offline-banner {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  margin: 10px auto 0;
+  max-width: var(--content-max);
+  padding: 9px 13px;
+  border-radius: 9px;
+  border: 1px solid color-mix(in srgb, var(--red, #e06c75) 40%, transparent);
+  background: color-mix(in srgb, var(--red, #e06c75) 10%, var(--bg-surface));
+  color: var(--text-0);
+  font-size: 12.5px;
+  line-height: 1.45;
+}
+.ssh-offline-banner .ic {
+  color: var(--red, #e06c75);
+  flex-shrink: 0;
+}
+.ssh-offline-banner strong {
+  font-weight: 600;
+}
+.ssh-offline-retry {
+  margin-left: auto;
+  font: inherit;
+  font-size: 12px;
+  padding: 4px 11px;
+  border-radius: 6px;
+  border: 1px solid var(--border-strong);
+  background: var(--bg-app);
+  color: var(--text-0);
+  cursor: pointer;
+  flex-shrink: 0;
+}
+.ssh-offline-retry:hover {
+  border-color: var(--accent);
+  color: var(--accent-text);
 }
 .sandbox-status[data-tip]::after {
   content: attr(data-tip);
@@ -4082,35 +4402,6 @@ button.src {
   .chip .chip-text {
     display: none;
   }
-  .mode-chip .ic-caret {
-    display: none;
-  }
-}
-.mode-chip {
-  user-select: none;
-}
-.mode-chip .ic-caret {
-  transition: transform 0.15s ease;
-}
-.mode-chip.open .ic-caret {
-  transform: rotate(180deg);
-}
-
-.mode-pop {
-  position: absolute;
-  bottom: calc(100% + 6px);
-  left: 0;
-  width: 220px;
-  background: var(--bg-surface);
-  border: 1px solid var(--border);
-  border-radius: 8px;
-  box-shadow: var(--shadow-pop);
-  padding: 3px;
-  display: none;
-  z-index: 30;
-}
-.mode-pop.open {
-  display: block;
 }
 .mode-opt {
   display: flex;
@@ -4174,29 +4465,7 @@ button.src {
   display: flex;
 }
 
-/* 远程控制提示条 */
-.remote-hint {
-  display: none;
-  align-items: center;
-  gap: 8px;
-  font-size: 12px;
-  color: var(--accent-text);
-  background: var(--accent-soft);
-  border-radius: 7px;
-  padding: 6px 10px;
-  margin-bottom: 9px;
-}
-.remote-hint.show {
-  display: flex;
-}
-.remote-hint .rh-link {
-  margin-left: auto;
-  cursor: pointer;
-  font-weight: 500;
-  display: flex;
-  align-items: center;
-  gap: 4px;
-}
+
 
 /* ================= 设置页（舞台背面，菜单在侧栏） ================= */
 .settings-body {

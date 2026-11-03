@@ -6,9 +6,11 @@ import {
   MessageCircle,
   PanelLeft,
   PanelRight,
+  Server,
   Trash2,
 } from 'lucide-react'
 import type { ContentWidth, Conversation, ModelConfig } from '@yagent/core'
+import { isSshWorkdir, parseSshWorkdir } from '@yagent/core'
 import { EditableTitle } from './EditableTitle'
 import { ModelPicker } from './ModelPicker'
 import { ShareButton } from './ShareButton'
@@ -31,6 +33,8 @@ interface TopbarProps {
   onBindWorkdir: () => void
   onToggleArchive: () => void
   onDelete: () => void
+  /** SSH 远程会话的连通状态；非 SSH 会话为 null */
+  sshStatus?: 'checking' | 'ok' | 'fail' | null
 }
 
 export function Topbar({
@@ -48,6 +52,7 @@ export function Topbar({
   onBindWorkdir,
   onToggleArchive,
   onDelete,
+  sshStatus = null,
 }: TopbarProps) {
   // 分享链接 = 当前分支的只读快照 /s/{convId}-{snapshotId}
   const shareLink = `https://yagent.app/s/${conversation.id}-${conversation.activeNodeId.slice(-4) || 'snap'}`
@@ -62,10 +67,17 @@ export function Topbar({
       <span className="sep">·</span>
       <span className="meta" onClick={onBindWorkdir} style={{ cursor: 'pointer' }} title="点击选择工作目录">
         {conversation.workdir ? (
-          <>
-            <Folder className="ic ic-sm" />
-            <span>{conversation.workdir}</span>
-          </>
+          isSshWorkdir(conversation.workdir) ? (
+            <>
+              <Server className="ic ic-sm" />
+              <span>{parseSshWorkdir(conversation.workdir)?.host ?? conversation.workdir}</span>
+            </>
+          ) : (
+            <>
+              <Folder className="ic ic-sm" />
+              <span>{conversation.workdir}</span>
+            </>
+          )
         ) : (
           <>
             <MessageCircle className="ic ic-sm" />
@@ -76,11 +88,23 @@ export function Topbar({
       <div className="topbar-right">
         {conversation.workdir ? (
           <span
-            className="sandbox-status"
-            data-tip={`沙箱已连接 · ${conversation.workdir}`}
-            aria-label={`沙箱已连接 · ${conversation.workdir}`}
+            className={`sandbox-status${isSshWorkdir(conversation.workdir) ? ` ssh ${sshStatus ?? 'checking'}` : ''}`}
+            data-tip={
+              isSshWorkdir(conversation.workdir)
+                ? `SSH 远程 · ${conversation.workdir} · ${
+                    sshStatus === 'ok' ? '已连接' : sshStatus === 'fail' ? '连接失败' : '检测中…'
+                  }`
+                : `沙箱已连接 · ${conversation.workdir}`
+            }
+            aria-label={
+              isSshWorkdir(conversation.workdir)
+                ? `SSH 远程 · ${conversation.workdir} · ${
+                    sshStatus === 'ok' ? '已连接' : sshStatus === 'fail' ? '连接失败' : '检测中…'
+                  }`
+                : `沙箱已连接 · ${conversation.workdir}`
+            }
           >
-            <Box className="ic" />
+            {isSshWorkdir(conversation.workdir) ? <Server className="ic" /> : <Box className="ic" />}
             <span className="sandbox-status-dot" aria-hidden />
           </span>
         ) : null}

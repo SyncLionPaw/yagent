@@ -1,5 +1,6 @@
-import { useEffect, useState } from 'react'
-import { BookMarked, ChevronDown, Cpu, FolderOpen, Lightbulb, MessageCircle, Moon, Palette, Plug, Plus, Settings as SettingsIcon, Sparkles, Sun, User, Wrench, X } from 'lucide-react'
+import { useCallback, useEffect, useState } from 'react'
+import { BookMarked, Check, ChevronDown, ChevronUp, Cpu, FolderOpen, Lightbulb, MessageCircle, Moon, Palette, Plug, Plus, RefreshCw, Server, Settings as SettingsIcon, Sparkles, Sun, User, Wrench, X } from 'lucide-react'
+import { isSshWorkdir, projectDisplayName } from '@yagent/core'
 import type { Conversation } from '@yagent/core'
 import { formatSidebarTime } from '../lib/utils'
 import type { SettingsPaneId } from './SettingsPanel'
@@ -17,6 +18,8 @@ interface SidebarProps {
   onSelect: (id: string) => void
   onNewChat: () => void
   onNewTaskWithWorkdir: () => void
+  /** 新建绑定 SSH 远程目录的任务（host 为 ssh config 别名或 user@host） */
+  onNewSshTask: (host: string, path: string) => void
   onNewTaskInProject: (workdir: string) => void
   onForgetProject: (workdir: string) => void
   onToggleTheme: () => void
@@ -65,6 +68,7 @@ export function Sidebar({
   onSelect,
   onNewChat,
   onNewTaskWithWorkdir,
+  onNewSshTask,
   onNewTaskInProject,
   onForgetProject,
   onToggleTheme,
@@ -73,6 +77,16 @@ export function Sidebar({
   onSelectSettingsPane,
 }: SidebarProps) {
   const [taskMenuOpen, setTaskMenuOpen] = useState(false)
+  // SSH 远程任务：选主机 + 输远程路径
+  const [sshOpen, setSshOpen] = useState(false)
+  const [sshHosts, setSshHosts] = useState<{ host: string; hostname?: string; user?: string; port?: string }[]>([])
+  const [sshHost, setSshHost] = useState('')
+  const [sshHostOpen, setSshHostOpen] = useState(false)
+  // 远程目录浏览
+  const [sshPath, setSshPath] = useState('~')
+  const [sshDirs, setSshDirs] = useState<string[]>([])
+  const [sshDirsState, setSshDirsState] = useState<'idle' | 'loading' | 'error'>('idle')
+  const [sshDirsErr, setSshDirsErr] = useState('')
   // 任务区项目分组的折叠状态
   const [collapsedProjects, setCollapsedProjects] = useState<Set<string>>(new Set())
   const [archivedOpen, setArchivedOpen] = useState(false)
@@ -86,6 +100,60 @@ export function Sidebar({
     document.addEventListener('click', close)
     return () => document.removeEventListener('click', close)
   }, [taskMenuOpen])
+
+  // 打开 SSH 表单时加载 ~/.ssh/config 主机
+  useEffect(() => {
+    if (!sshOpen) return
+    window.yagentDesktop?.ssh?.listHosts().then((hosts) => {
+      setSshHosts(hosts)
+      if (hosts.length && !sshHost) setSshHost(hosts[0]!.host)
+    })
+  }, [sshOpen])
+
+  // 连接主机并列出指定远程目录的子目录
+  const loadSshDirs = useCallback(async (host: string, dir: string) => {
+    if (!host.trim()) return
+    setSshDirsState('loading')
+    setSshDirsErr('')
+    try {
+      const res = await window.yagentDesktop?.ssh?.listDirs(host, dir)
+      if (!res) throw new Error('桌面端桥接不可用')
+      if (!res.ok) {
+        setSshDirsState('error')
+        setSshDirsErr(res.error || '无法列出目录')
+        setSshDirs([])
+        return
+      }
+      setSshDirs(res.dirs)
+      setSshDirsState('idle')
+    } catch (e: any) {
+      setSshDirsState('error')
+      setSshDirsErr(String(e?.message ?? e))
+      setSshDirs([])
+    }
+  }, [])
+
+  // 主机选定后自动读取其家目录
+  useEffect(() => {
+    if (!sshOpen || !sshHost.trim()) return
+    setSshPath('~')
+    loadSshDirs(sshHost, '~')
+  }, [sshOpen, sshHost, loadSshDirs])
+
+  // 进入子目录 / 返回上级
+  const sshEnter = (sub: string) => {
+    const next = sshPath === '~' ? `~/${sub}` : `${sshPath.replace(/\/$/, '')}/${sub}`
+    setSshPath(next)
+    loadSshDirs(sshHost, next)
+  }
+  const sshUp = () => {
+    if (sshPath === '~' || sshPath === '/') return
+    const next = sshPath.startsWith('~/')
+      ? sshPath.slice(0, sshPath.lastIndexOf('/')) || '~'
+      : sshPath.slice(0, sshPath.lastIndexOf('/')) || '/'
+    setSshPath(next)
+    loadSshDirs(sshHost, next)
+  }
 
   const convTs = (conv: Conversation) => {
     const ts = Object.values(conv.nodes).map((n) => n.createdAt)
@@ -115,8 +183,6 @@ export function Sidebar({
   projects.sort((a, b) => b.latest - a.latest)
 
   const convTime = (conv: Conversation) => formatSidebarTime(convTs(conv))
-  const dirName = (workdir: string) =>
-    workdir.split('/').filter(Boolean).pop() ?? workdir
 
   return (
     <aside className={`sidebar${settingsOpen ? ' settings-mode' : ''}`}>
@@ -185,8 +251,23 @@ export function Sidebar({
                   <FolderOpen className="ic" />
                 </span>
                 <span>
-                  <span className="m-title">绑定工作目录</span>
+                  <span className="m-title">本地目录</span>
                   <span className="m-desc">选择一个本地文件夹，任务在其中执行</span>
+                </span>
+              </button>
+              <button
+                className="mode-opt"
+                onClick={() => {
+                  setTaskMenuOpen(false)
+                  setSshOpen(true)
+                }}
+              >
+                <span className="m-icon">
+                  <Server className="ic" />
+                </span>
+                <span>
+                  <span className="m-title">SSH 远程</span>
+                  <span className="m-desc">连接远程主机目录（执行支持即将上线）</span>
                 </span>
               </button>
               {!canPickDir && (
@@ -194,6 +275,131 @@ export function Sidebar({
               )}
             </div>
           </div>
+
+          {sshOpen && (
+            <div className="ssh-overlay" onClick={() => setSshOpen(false)}>
+              <div className="ssh-dialog" onClick={(e) => e.stopPropagation()}>
+                <div className="ssh-title">
+                  <Server className="ic" />
+                  新建 SSH 远程任务
+                </div>
+                <div className="ssh-field">
+                  <span className="ssh-label">主机</span>
+                  {sshHosts.length > 0 ? (
+                    <div className="ssh-select">
+                      <button
+                        type="button"
+                        className={`ssh-select-btn${sshHostOpen ? ' open' : ''}`}
+                        onClick={() => setSshHostOpen((v) => !v)}
+                      >
+                        <Server className="ic ic-sm" />
+                        <span className="ssh-select-val">{sshHost || '选择主机'}</span>
+                        <ChevronDown className="ic ic-sm ssh-caret" />
+                      </button>
+                      {sshHostOpen && (
+                        <div className="ssh-select-pop">
+                          {sshHosts.map((h) => (
+                            <button
+                              key={h.host}
+                              type="button"
+                              className={`mode-opt${h.host === sshHost ? ' active' : ''}`}
+                              onClick={() => {
+                                setSshHost(h.host)
+                                setSshHostOpen(false)
+                              }}
+                            >
+                              <span className="m-icon">
+                                <Server className="ic" />
+                              </span>
+                              <span className="m-body">
+                                <span className="m-title">{h.host}</span>
+                                {h.user && (
+                                  <span className="m-desc">
+                                    {h.user}
+                                    {h.hostname ? `@${h.hostname}` : ''}
+                                    {h.port ? ` :${h.port}` : ''}
+                                  </span>
+                                )}
+                              </span>
+                              <span className="m-check">
+                                <Check className="ic ic-sm" />
+                              </span>
+                            </button>
+                          ))}
+                        </div>
+                      )}
+                    </div>
+                  ) : (
+                    <input
+                      className="ssh-input"
+                      value={sshHost}
+                      onChange={(e) => setSshHost(e.target.value)}
+                      placeholder="user@host（~/.ssh/config 暂无主机）"
+                    />
+                  )}
+                </div>
+                <div className="ssh-field">
+                  <span className="ssh-label">远程目录</span>
+                  <div className="ssh-dirbar">
+                    <button
+                      type="button"
+                      className="icon-btn"
+                      title="上一级"
+                      disabled={sshPath === '~' || sshPath === '/'}
+                      onClick={sshUp}
+                    >
+                      <ChevronUp className="ic ic-sm" />
+                    </button>
+                    <span className="ssh-cur" title={sshPath}>
+                      {sshPath}
+                    </span>
+                    <button
+                      type="button"
+                      className={`icon-btn ssh-refresh${sshDirsState === 'loading' ? ' spin' : ''}`}
+                      title="重新读取"
+                      onClick={() => loadSshDirs(sshHost, sshPath)}
+                    >
+                      <RefreshCw className="ic ic-sm" />
+                    </button>
+                  </div>
+                  <div className="ssh-dirlist">
+                    {sshDirsState === 'loading' ? (
+                      <div className="ssh-dir-empty">连接中…</div>
+                    ) : sshDirsState === 'error' ? (
+                      <div className="ssh-dir-empty ssh-dir-err" title={sshDirsErr}>
+                        无法读取：{sshDirsErr}
+                      </div>
+                    ) : sshDirs.length === 0 ? (
+                      <div className="ssh-dir-empty">（无子目录，可直接用当前目录创建）</div>
+                    ) : (
+                      sshDirs.map((d) => (
+                        <button key={d} type="button" className="ssh-dir-item" onClick={() => sshEnter(d)}>
+                          <FolderOpen className="ic ic-sm" />
+                          <span>{d}</span>
+                        </button>
+                      ))
+                    )}
+                  </div>
+                </div>
+                <div className="ssh-actions">
+                  <button className="ssh-cancel" onClick={() => setSshOpen(false)}>
+                    取消
+                  </button>
+                  <button
+                    className="ssh-ok"
+                    disabled={!sshHost.trim() || !sshPath.trim() || sshDirsState === 'loading'}
+                    onClick={() => {
+                      onNewSshTask(sshHost.trim(), sshPath.trim())
+                      setSshOpen(false)
+                    }}
+                  >
+                    创建
+                  </button>
+                </div>
+                <div className="ssh-note">读写与命令将通过 ssh 在远程主机执行。</div>
+              </div>
+            </div>
+          )}
 
           <div className="sidebar-scroll">
             {projects.length > 0 && (
@@ -216,8 +422,12 @@ export function Sidebar({
                         }
                       >
                         <ChevronDown className={`ic ic-sm proj-caret${collapsed ? ' closed' : ''}`} />
-                        <FolderOpen className="ic ic-sm" />
-                        <span className="proj-name">{dirName(p.workdir)}</span>
+                        {isSshWorkdir(p.workdir) ? (
+                          <Server className="ic ic-sm proj-ssh" />
+                        ) : (
+                          <FolderOpen className="ic ic-sm" />
+                        )}
+                        <span className="proj-name">{projectDisplayName(p.workdir)}</span>
                         <span className="proj-count">{p.items.length}</span>
                         <button
                           className="icon-btn proj-new"

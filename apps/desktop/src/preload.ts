@@ -43,6 +43,11 @@ contextBridge.exposeInMainWorld('yagentDesktop', {
   dialog: {
     selectDirectory: () => ipcRenderer.invoke('dialog:selectDirectory'),
   },
+  ssh: {
+    listHosts: () => ipcRenderer.invoke('ssh:listHosts'),
+    listDirs: (host: string, dir: string) => ipcRenderer.invoke('ssh:listDirs', host, dir),
+    ping: (host: string) => ipcRenderer.invoke('ssh:ping', host),
+  },
   fs: {
     list: (workdir: string, rel: string) => ipcRenderer.invoke('fs:list', workdir, rel),
     read: (workdir: string, rel: string) => ipcRenderer.invoke('fs:read', workdir, rel),

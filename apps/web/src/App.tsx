@@ -1,14 +1,14 @@
 import { useCallback, useEffect, useRef, useState, type CSSProperties } from 'react'
-import { Check, Info, ShieldAlert, X } from 'lucide-react'
+import { Check, Info, ServerOff, ShieldAlert, X } from 'lucide-react'
 import type {
   ContentWidth,
   ContextSnapshot,
   Conversation,
   Insight,
   InsightMark,
-  Mode,
   Settings,
 } from '@yagent/core'
+import { formatSshWorkdir, parseSshWorkdir } from '@yagent/core'
 import { DEFAULT_SETTINGS, settingsStore } from './settings'
 import { recordTokenUsage } from './tokenUsage'
 import {
@@ -98,7 +98,7 @@ function App() {
   const [settingsOpen, setSettingsOpen] = useState(false)
   const [settingsPane, setSettingsPane] = useState<SettingsPaneId>('models')
   const [popover, setPopover] = useState<PopoverId>(null)
-  const [mode, setMode] = useState<Mode>('local')
+
   // 语音输入暂关
   // const [voiceOpen, setVoiceOpen] = useState(false)
   // 工具审批队列（write_file / run_command），输入框上方横条逐条确认
@@ -166,6 +166,23 @@ function App() {
   const harnessConv = conversation ? harness.getConversation(conversation.id) : undefined
   const running = harnessConv?.status === 'running'
   const contextMeter: ContextMeter | null = contextSnap ? toContextMeter(contextSnap) : null
+
+  // SSH 远程会话：探测连通性，驱动顶栏状态点着色与主区不可连通提示
+  const sshHost = conversation?.workdir ? parseSshWorkdir(conversation.workdir)?.host ?? null : null
+  const [sshStatus, setSshStatus] = useState<'checking' | 'ok' | 'fail'>('checking')
+  useEffect(() => {
+    if (!sshHost) return
+    let alive = true
+    setSshStatus('checking')
+    const probe = () => {
+      window.yagentDesktop?.ssh?.ping(sshHost).then((r) => {
+        if (alive) setSshStatus(r?.ok ? 'ok' : 'fail')
+      }).catch(() => { if (alive) setSshStatus('fail') })
+    }
+    probe()
+    const t = setInterval(probe, 30000)
+    return () => { alive = false; clearInterval(t) }
+  }, [sshHost])
 
   // 各会话上次 totals，用于把增量写入按日用量统计
   const usageTotalsRef = useRef(new Map<string, { input: number; output: number }>())
@@ -796,6 +813,14 @@ function App() {
     openOrCreate('新对话', null)
   }, [openOrCreate])
 
+  // 新建绑定 SSH 远程目录的任务：workdir 存 ssh://host/path 标识
+  const handleNewSshTask = useCallback(
+    (host: string, path: string) => {
+      openOrCreate('新任务', formatSshWorkdir(host, path))
+    },
+    [openOrCreate],
+  )
+
   // 在已有项目（目录）下直接新建任务，无需再选目录
   const handleNewTaskInProject = useCallback(
     (workdir: string) => {
@@ -868,6 +893,7 @@ function App() {
         onSelect={setActiveConvId}
         onNewChat={handleNewChat}
         onNewTaskWithWorkdir={handleNewTask}
+        onNewSshTask={handleNewSshTask}
         onNewTaskInProject={handleNewTaskInProject}
         onForgetProject={handleForgetProject}
         onToggleTheme={() => setTheme((t) => (t === 'dark' ? 'light' : 'dark'))}
@@ -916,7 +942,27 @@ function App() {
                 onBindWorkdir={handleBindWorkdir}
                 onToggleArchive={handleToggleArchive}
                 onDelete={handleDeleteConversation}
+                sshStatus={sshHost ? sshStatus : null}
               />
+              {sshHost && sshStatus === 'fail' && (
+                <div className="ssh-offline-banner">
+                  <ServerOff className="ic ic-sm" />
+                  <span>
+                    无法连接远程主机 <strong>{sshHost}</strong>，读写与命令暂不可用。请检查网络或 SSH 配置。
+                  </span>
+                  <button
+                    className="ssh-offline-retry"
+                    onClick={() => {
+                      setSshStatus('checking')
+                      window.yagentDesktop?.ssh?.ping(sshHost).then((r) =>
+                        setSshStatus(r?.ok ? 'ok' : 'fail'),
+                      )
+                    }}
+                  >
+                    重试
+                  </button>
+                </div>
+              )}
               <ChatView
                 conversation={conversation}
                 editingNodeId={editingNodeId}
@@ -926,8 +972,6 @@ function App() {
               />
               <Composer
                 draft={draft}
-                mode={mode}
-                popover={popover}
                 running={running}
                 askingUser={askQueue.length > 0}
                 textareaRef={textareaRef}
@@ -962,8 +1006,6 @@ function App() {
                 onAttachmentsChange={setPendingFiles}
                 onSend={handleSend}
                 onStop={handleStop}
-                onModeChange={setMode}
-                onPopover={setPopover}
                 // onOpenVoice={() => setVoiceOpen(true)} // 语音输入暂关
                 onApprovalModeChange={handleApprovalModeChange}
                 onCancelEdit={cancelEditMessage}

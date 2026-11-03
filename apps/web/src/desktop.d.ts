@@ -41,6 +41,14 @@ declare global {
       dialog?: {
         selectDirectory(): Promise<string | null>
       }
+      ssh?: {
+        listHosts(): Promise<{ host: string; hostname?: string; user?: string; port?: string }[]>
+        listDirs(
+          host: string,
+          dir: string,
+        ): Promise<{ ok: boolean; dirs: string[]; cwd: string; error?: string }>
+        ping(host: string): Promise<{ ok: boolean; error?: string }>
+      }
       fs?: {
         list(workdir: string, rel: string): Promise<{ name: string; isDir: boolean; size: number }[]>
         read(
