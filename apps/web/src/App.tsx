@@ -165,6 +165,7 @@ function App() {
   const conversation = conversations.find((c) => c.id === activeConvId) ?? conversations[0]
   const harnessConv = conversation ? harness.getConversation(conversation.id) : undefined
   const running = harnessConv?.status === 'running'
+  const queuedItems = conversation ? harness.pendingPreview(conversation.id) : []
   const contextMeter: ContextMeter | null = contextSnap ? toContextMeter(contextSnap) : null
 
   // SSH 远程会话：探测连通性，驱动顶栏状态点着色与主区不可连通提示
@@ -655,7 +656,7 @@ function App() {
     if (!conv) {
       conv = openOrCreate('新对话', null)
     }
-    if (conv.status === 'running') return // 流式中只允许停止
+    // 运行中：消息入队，本轮结束后合并接跑（不再丢弃）
 
     // 编辑已发送消息：分叉重跑，不走新附件上传
     if (editingNodeId) {
@@ -978,6 +979,13 @@ function App() {
                 attachments={pendingFiles}
                 editingMessage={!!editingNodeId}
                 context={contextMeter}
+                queuedItems={queuedItems}
+                onRemoveQueued={(i) => {
+                  if (conversation) harness.removePending(conversation.id, i)
+                }}
+                onClearQueued={() => {
+                  if (conversation) harness.clearPending(conversation.id)
+                }}
                 approvalMode={approvalMode}
                 approval={
                   askQueue.length > 0 ? (

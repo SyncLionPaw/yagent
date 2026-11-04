@@ -46,6 +46,8 @@ export class Harness {
   private readonly convs = new Map<string, Conversation>()
   private readonly listeners = new Set<(e: HarnessEvent) => void>()
   private readonly controllers = new Map<string, AbortController>()
+  /** 运行中到达的用户消息：排队，当前轮结束后合并为一条接跑 */
+  private readonly pendingQueues = new Map<string, { text: string; extras?: { images?: UserImageAttach[]; files?: UserFileAttach[] } }[]>()
   private readonly hooks = new HookRunner()
 
   constructor(opts: HarnessOptions) {
@@ -208,7 +210,14 @@ export class Harness {
     if (!text.trim() && !(extras?.images?.length) && !(extras?.files?.length)) {
       throw new Error('message is empty')
     }
-    if (this.controllers.has(convId)) throw new Error('conversation is already running')
+    // 运行中：消息入队，当前轮结束后合并接跑（不阻塞用户输入）
+    if (this.controllers.has(convId)) {
+      const q = this.pendingQueues.get(convId) ?? []
+      q.push({ text, extras })
+      this.pendingQueues.set(convId, q)
+      this.emit({ type: 'conv_updated', convId })
+      return
+    }
 
     const blocks: Block[] = [{ type: 'text', text: text || '请查看附件' }]
     for (const img of extras?.images ?? []) {
@@ -261,7 +270,53 @@ export class Harness {
       this.controllers.delete(convId)
       // abort → waiting（暂停，等用户）；其余（done / error / maxTurns）→ done
       this.setStatus(conv, controller.signal.aborted ? 'waiting' : 'done')
+      // 本轮结束：drain 排队消息，合并为一条接跑（abort 暂停时不自动接）
+      const queued = this.pendingQueues.get(convId)
+      if (queued?.length && !controller.signal.aborted) {
+        this.pendingQueues.delete(convId)
+        const mergedText = queued
+          .map((m) => m.text)
+          .filter((t) => t.trim())
+          .join('\n\n')
+        const mergedImages = queued.flatMap((m) => m.extras?.images ?? [])
+        const mergedFiles = queued.flatMap((m) => m.extras?.files ?? [])
+        // 异步接跑，避免在 finally 里嵌套 await
+        void this.sendMessage(convId, mergedText, {
+          ...(mergedImages.length ? { images: mergedImages } : {}),
+          ...(mergedFiles.length ? { files: mergedFiles } : {}),
+        }).catch(() => undefined)
+      }
     }
+  }
+
+  /** 当前会话排队条数（供 UI 提示） */
+  pendingCount(convId: string): number {
+    return this.pendingQueues.get(convId)?.length ?? 0
+  }
+
+  /** 排队消息预览（只读；供输入框队列标记展开） */
+  pendingPreview(convId: string): { text: string; hasImages: boolean; hasFiles: boolean }[] {
+    return (this.pendingQueues.get(convId) ?? []).map((m) => ({
+      text: m.text,
+      hasImages: !!(m.extras?.images?.length),
+      hasFiles: !!(m.extras?.files?.length),
+    }))
+  }
+
+  /** 从队列移除一条；index 越界忽略 */
+  removePending(convId: string, index: number): void {
+    const q = this.pendingQueues.get(convId)
+    if (!q || index < 0 || index >= q.length) return
+    q.splice(index, 1)
+    if (!q.length) this.pendingQueues.delete(convId)
+    this.emit({ type: 'conv_updated', convId })
+  }
+
+  /** 清空排队 */
+  clearPending(convId: string): void {
+    if (!this.pendingQueues.has(convId)) return
+    this.pendingQueues.delete(convId)
+    this.emit({ type: 'conv_updated', convId })
   }
 
   abort(convId: string): void {

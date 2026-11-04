@@ -3178,6 +3178,148 @@ pre.math-raw {
   -webkit-user-select: text;
 }
 /* 粘贴附件：浮在输入框上沿外侧，左对齐；空白处穿透，不拉白底横条 */
+/* 运行中排队消息：输入框顶部靠右（可点开查看） */
+.composer-queue-wrap {
+  position: absolute;
+  right: 0;
+  bottom: calc(100% + 8px);
+  z-index: 6;
+}
+.composer-queue {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 11px 6px 9px;
+  border-radius: 999px;
+  border: 1px solid color-mix(in srgb, var(--accent) 40%, var(--border));
+  background: color-mix(in srgb, var(--accent) 14%, var(--bg-surface));
+  color: var(--accent-text, var(--text-0));
+  font: inherit;
+  font-size: 12.5px;
+  font-weight: 600;
+  line-height: 1;
+  cursor: pointer;
+  user-select: none;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.08);
+  transition:
+    background 0.12s ease,
+    border-color 0.12s ease,
+    transform 0.12s ease;
+}
+.composer-queue:hover,
+.composer-queue.open {
+  background: color-mix(in srgb, var(--accent) 22%, var(--bg-surface));
+  border-color: var(--accent);
+}
+.composer-queue .ic {
+  width: 15px;
+  height: 15px;
+  color: var(--accent-text, var(--text-1));
+  flex-shrink: 0;
+}
+.composer-queue-n {
+  font-variant-numeric: tabular-nums;
+  min-width: 0.9em;
+  text-align: center;
+}
+.composer-queue-pop {
+  position: absolute;
+  right: 0;
+  bottom: calc(100% + 6px);
+  width: 280px;
+  max-height: 260px;
+  display: flex;
+  flex-direction: column;
+  background: var(--bg-surface);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  box-shadow: var(--shadow-pop);
+  overflow: hidden;
+  animation: ssh-pop 0.14s ease;
+}
+.composer-queue-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 8px 10px;
+  font-size: 11.5px;
+  color: var(--text-2);
+  border-bottom: 1px solid var(--border);
+  flex-shrink: 0;
+}
+.composer-queue-clear {
+  font: inherit;
+  font-size: 11.5px;
+  color: var(--text-1);
+  background: none;
+  border: none;
+  cursor: pointer;
+  padding: 2px 4px;
+  border-radius: 4px;
+}
+.composer-queue-clear:hover {
+  color: var(--red, #e06c75);
+  background: var(--bg-hover);
+}
+.composer-queue-list {
+  list-style: none;
+  margin: 0;
+  padding: 4px;
+  overflow-y: auto;
+  flex: 1;
+  min-height: 0;
+}
+.composer-queue-item {
+  display: flex;
+  align-items: flex-start;
+  gap: 7px;
+  padding: 7px 6px;
+  border-radius: 7px;
+}
+.composer-queue-item:hover {
+  background: var(--bg-hover);
+}
+.composer-queue-idx {
+  flex-shrink: 0;
+  width: 16px;
+  height: 16px;
+  margin-top: 1px;
+  border-radius: 50%;
+  background: color-mix(in srgb, var(--accent) 18%, transparent);
+  color: var(--accent-text, var(--text-1));
+  font-size: 10px;
+  font-weight: 600;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.composer-queue-text {
+  flex: 1;
+  min-width: 0;
+  font-size: 12.5px;
+  color: var(--text-0);
+  line-height: 1.4;
+  display: -webkit-box;
+  -webkit-line-clamp: 3;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+  word-break: break-word;
+}
+.composer-queue-clip {
+  display: inline;
+  vertical-align: -2px;
+  margin-left: 4px;
+  color: var(--text-2);
+}
+.composer-queue-rm {
+  flex-shrink: 0;
+  opacity: 0.55;
+}
+.composer-queue-item:hover .composer-queue-rm {
+  opacity: 1;
+}
+
 .attach-list {
   position: absolute;
   left: 0;

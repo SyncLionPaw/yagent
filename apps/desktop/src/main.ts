@@ -419,6 +419,47 @@ function shq(s: string): string {
   return `'${s.replace(/'/g, `'\\''`)}'`
 }
 
+/** 远程 cwd + 相对路径拼接；禁止 .. 逃逸 */
+function sshJoin(cwd: string, rel: string): string {
+  const r = String(rel ?? '')
+    .replace(/\\/g, '/')
+    .replace(/^\/+/, '')
+    .replace(/\/+$/, '')
+  if (!r || r === '.') return cwd
+  if (r.split('/').includes('..')) throw new Error('Path escapes working directory')
+  const base = cwd === '~' ? '~' : cwd.replace(/\/$/, '')
+  return `${base}/${r}`
+}
+
+/** 远程列目录（跳过 . / node_modules），返回与本地 fs:list 同结构 */
+async function sshListDir(host: string, dir: string): Promise<{ name: string; isDir: boolean; size: number }[]> {
+  const script = [
+    `cd ${shq(dir)} 2>/dev/null || { echo "ENOENT: ${dir}" >&2; exit 3; }`,
+    `out=""`,
+    `for e in * .[!.]* ..?*; do`,
+    `  [ -e "$e" ] || continue`,
+    `  n="\${e#./}"`,
+    `  case "$n" in .|..|.*) continue ;; esac`,
+    `  [ "$n" = "node_modules" ] && continue`,
+    `  if [ -d "$n" ]; then printf 'd|%s|0\\n' "$n"`,
+    `  elif [ -f "$n" ]; then sz=$(wc -c < "$n" 2>/dev/null | tr -d ' '); printf 'f|%s|%s\\n' "$n" "\${sz:-0}"`,
+    `  fi`,
+    `done`,
+  ].join('\n')
+  const { out, err, code } = await sshRun(host, script)
+  if (code !== 0) throw new Error(err.trim() || `远程列目录失败（exit ${code}）`)
+  const rows: { name: string; isDir: boolean; size: number }[] = []
+  for (const line of out.split('\n')) {
+    if (!line.trim()) continue
+    const [kind, name, sizeStr] = line.split('|')
+    if (!name || (kind !== 'd' && kind !== 'f')) continue
+    rows.push({ name, isDir: kind === 'd', size: Number(sizeStr) || 0 })
+    if (rows.length >= 500) break
+  }
+  rows.sort((a, b) => Number(b.isDir) - Number(a.isDir) || a.name.localeCompare(b.name))
+  return rows
+}
+
 /** 通过 ssh 在远程跑一段 shell，stdin 可喂数据；resolve 不 reject（带 exit 码） */
 function sshRun(host: string, script: string, stdin?: string): Promise<{ out: string; err: string; code: number }> {
   return new Promise((resolve, reject) => {
@@ -836,6 +877,10 @@ void app.whenReady().then(async () => {
   ipcMain.handle('tools:execute', executeTool)
   // 只读文件浏览（右栏文件页）：列目录 / 读文件，路径限制在绑定目录内，隐藏点开头文件（.env 等）
   ipcMain.handle('fs:list', async (_e: any, workdir: string, rel: string) => {
+    const ssh = parseSshRoot(String(workdir ?? '').trim())
+    if (ssh) {
+      return sshListDir(ssh.host, sshJoin(ssh.path, rel || '.'))
+    }
     const dir = await resolveInside(workdir, rel || '.')
     const entries = await readdir(dir, { withFileTypes: true })
     const out: { name: string; isDir: boolean; size: number }[] = []
@@ -854,6 +899,55 @@ void app.whenReady().then(async () => {
   })
   // 返回结构化预览；不可预览（过大 / 二进制）用 unavailable，避免 IPC throw 把 UI 打成异常态
   ipcMain.handle('fs:read', async (_e: any, workdir: string, rel: string) => {
+    const sshRoot = parseSshRoot(String(workdir ?? '').trim())
+    if (sshRoot) {
+      const remote = sshJoin(sshRoot.path, rel)
+      const ext = path.extname(remote).toLowerCase()
+      const meta = await sshRun(
+        sshRoot.host,
+        `[ -f ${shq(remote)} ] || { echo NOTFILE >&2; exit 4; }; wc -c < ${shq(remote)} | tr -d ' '`,
+      )
+      if (meta.code !== 0) {
+        const msg = meta.err.trim()
+        if (msg.includes('NOTFILE') || msg.includes('No such')) throw new Error('Not a file')
+        throw new Error(msg || `远程读取失败（exit ${meta.code}）`)
+      }
+      const size = Number(meta.out.trim()) || 0
+      const unavailable = (reason: string) => ({ kind: 'unavailable' as const, reason, size })
+      const binaryExt = new Set([
+        '.pth', '.pt', '.ckpt', '.safetensors', '.bin', '.pkl', '.pickle', '.npy', '.npz',
+        '.onnx', '.h5', '.pb', '.zip', '.tar', '.gz', '.tgz', '.rar', '.7z', '.exe', '.dll',
+        '.so', '.dylib', '.wasm', '.woff', '.woff2', '.ttf', '.otf', '.mp3', '.wav', '.ogg',
+        '.m4a', '.flac', '.mp4', '.mov', '.webm', '.mkv', '.avi',
+      ])
+      if (binaryExt.has(ext)) return unavailable('二进制文件不支持预览')
+      const imageMime: Record<string, string> = {
+        '.png': 'image/png', '.jpg': 'image/jpeg', '.jpeg': 'image/jpeg', '.gif': 'image/gif',
+        '.webp': 'image/webp', '.bmp': 'image/bmp', '.ico': 'image/x-icon', '.svg': 'image/svg+xml',
+      }
+      const mime = imageMime[ext]
+      if (mime) {
+        if (size > 5 * 1024 * 1024) return unavailable('图片超过 5MB，请在编辑器中打开')
+        const b64 = await sshRun(sshRoot.host, `base64 < ${shq(remote)} | tr -d '\\n'`)
+        if (b64.code !== 0) return unavailable(b64.err.trim() || '远程读取图片失败')
+        return { kind: 'image' as const, mime, dataUrl: `data:${mime};base64,${b64.out.trim()}` }
+      }
+      if (ext === '.pdf') {
+        if (size > 10 * 1024 * 1024) return unavailable('PDF 超过 10MB，请在编辑器中打开')
+        const b64 = await sshRun(sshRoot.host, `base64 < ${shq(remote)} | tr -d '\\n'`)
+        if (b64.code !== 0) return unavailable(b64.err.trim() || '远程读取 PDF 失败')
+        return { kind: 'pdf' as const, dataUrl: `data:application/pdf;base64,${b64.out.trim()}` }
+      }
+      const textLimit =
+        ext === '.html' || ext === '.htm' || ext === '.md' || ext === '.markdown' ? 512 * 1024 : 256 * 1024
+      if (size > textLimit) return unavailable('文件过大，请在编辑器中打开')
+      const body = await sshRun(sshRoot.host, `LC_ALL=C cat ${shq(remote)}`)
+      if (body.code !== 0) return unavailable(body.err.trim() || '远程读取失败')
+      if (body.out.includes('\0')) return unavailable('二进制文件不支持预览')
+      if (ext === '.html' || ext === '.htm') return { kind: 'html' as const, content: body.out }
+      if (ext === '.md' || ext === '.markdown') return { kind: 'markdown' as const, content: body.out }
+      return { kind: 'text' as const, content: body.out }
+    }
     const file = await resolveInside(workdir, rel)
     const info = await stat(file)
     if (!info.isFile()) throw new Error('Not a file')
@@ -944,6 +1038,17 @@ void app.whenReady().then(async () => {
   ipcMain.handle('fs:write', async (_e: any, workdir: string, rel: string, base64: string) => {
     if (typeof base64 !== 'string') throw new Error('content must be base64')
     if (base64.length > 28 * 1024 * 1024) throw new Error('文件过大（上限约 20MB）')
+    const sshW = parseSshRoot(String(workdir ?? '').trim())
+    if (sshW) {
+      const remote = sshJoin(sshW.path, rel)
+      const decoded = await sshRun(
+        sshW.host,
+        `mkdir -p "$(dirname ${shq(remote)})" && base64 -d > ${shq(remote)}`,
+        base64.replace(/\s/g, ''),
+      )
+      if (decoded.code !== 0) throw new Error(decoded.err.trim() || `远程写入失败（exit ${decoded.code}）`)
+      return String(rel).replace(/\\/g, '/')
+    }
     const file = await resolveInside(workdir, rel, true)
     await mkdir(path.dirname(file), { recursive: true })
     await writeFile(file, Buffer.from(base64, 'base64'))

@@ -4,8 +4,11 @@ import {
   Command,
   CornerDownLeft,
   FilePen,
+  Layers,
   // Mic, // 语音输入暂关
+  Paperclip,
   ShieldAlert,
+  Trash2,
   X,
   Zap,
 } from 'lucide-react'
@@ -63,6 +66,10 @@ interface ComposerProps {
   askingUser?: boolean
   /** 输入框左侧上下文占用环 */
   context?: ContextMeter | null
+  /** 运行中已排队、待本轮结束后接跑的消息（展开可查看 / 移除） */
+  queuedItems?: { text: string; hasImages: boolean; hasFiles: boolean }[]
+  onRemoveQueued?: (index: number) => void
+  onClearQueued?: () => void
   onDraftChange: (v: string) => void
   onAttachmentsChange: (files: PendingAttachment[]) => void
   onSend: () => void
@@ -110,6 +117,9 @@ export function Composer({
   editingMessage,
   askingUser,
   context,
+  queuedItems = [],
+  onRemoveQueued,
+  onClearQueued,
   onDraftChange,
   onAttachmentsChange,
   onSend,
@@ -124,6 +134,19 @@ export function Composer({
   const [dragging, setDragging] = useState(false)
   const [attachHint, setAttachHint] = useState('')
   const [slashHi, setSlashHi] = useState(0)
+  const [queueOpen, setQueueOpen] = useState(false)
+  const queuedCount = queuedItems.length
+
+  useEffect(() => {
+    if (queuedCount === 0) setQueueOpen(false)
+  }, [queuedCount])
+
+  useEffect(() => {
+    if (!queueOpen) return
+    const close = () => setQueueOpen(false)
+    document.addEventListener('click', close)
+    return () => document.removeEventListener('click', close)
+  }, [queueOpen])
   const slashPrefix = slashMenuQuery(draft)
   const slashHits = slashPrefix != null ? filterSlashCommands(slashPrefix) : []
   const slashOpen = !editingMessage && slashHits.length > 0
@@ -240,6 +263,70 @@ export function Composer({
               ))}
             </div>
           )}
+          {queuedCount > 0 && (
+            <div className="composer-queue-wrap">
+              <button
+                type="button"
+                className={`composer-queue${queueOpen ? ' open' : ''}`}
+                title={`已排队 ${queuedCount} 条，点击查看`}
+                aria-label={`已排队 ${queuedCount} 条消息`}
+                aria-expanded={queueOpen}
+                onClick={(e) => {
+                  e.stopPropagation()
+                  setQueueOpen((v) => !v)
+                }}
+              >
+                <Layers className="ic" />
+                <span className="composer-queue-n">{queuedCount}</span>
+              </button>
+              {queueOpen && (
+                <div
+                  className="composer-queue-pop"
+                  onClick={(e) => e.stopPropagation()}
+                >
+                  <div className="composer-queue-head">
+                    <span>排队中 · 本轮结束后合并发送</span>
+                    {onClearQueued && (
+                      <button
+                        type="button"
+                        className="composer-queue-clear"
+                        onClick={() => {
+                          onClearQueued()
+                          setQueueOpen(false)
+                        }}
+                      >
+                        清空
+                      </button>
+                    )}
+                  </div>
+                  <ul className="composer-queue-list">
+                    {queuedItems.map((item, i) => (
+                      <li key={i} className="composer-queue-item">
+                        <span className="composer-queue-idx">{i + 1}</span>
+                        <span className="composer-queue-text">
+                          {item.text.trim() ||
+                            (item.hasImages || item.hasFiles ? '（附件）' : '（空）')}
+                          {(item.hasImages || item.hasFiles) && (
+                            <Paperclip className="ic ic-sm composer-queue-clip" />
+                          )}
+                        </span>
+                        {onRemoveQueued && (
+                          <button
+                            type="button"
+                            className="icon-btn composer-queue-rm"
+                            title="移出队列"
+                            onClick={() => onRemoveQueued(i)}
+                          >
+                            <Trash2 className="ic ic-sm" />
+                          </button>
+                        )}
+                      </li>
+                    ))}
+                  </ul>
+                </div>
+              )}
+            </div>
+          )}
           {attachHint && <div className="attach-hint">{attachHint}</div>}
           {editingMessage && (
             <div className="composer-edit-bar">
@@ -282,7 +369,9 @@ export function Composer({
             placeholder={
               editingMessage
                 ? '编辑后发送，将从此处分叉重跑…'
-                : '继续指示，⌘+Enter 发送；输入 / 可用命令…'
+                : running
+                  ? '继续输入，⌘+Enter 排队，本轮结束后合并发送…'
+                  : '继续指示，⌘+Enter 发送；输入 / 可用命令…'
             }
             value={draft}
             onChange={(e) => onDraftChange(e.target.value)}
