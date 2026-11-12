@@ -11,6 +11,8 @@ dist-ssr/
 
 # Electron
 release/
+# macOS open-handlers helper（swiftc 本地产物，源在 scripts/）
+apps/desktop/bin/
 # iconutil 中间产物；保留 build 下 png/icns/ico/svg
 apps/desktop/build/*.iconset/
 

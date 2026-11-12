@@ -171,8 +171,14 @@ export type AccentId =
   | 'sakura-pink'
   | 'maple-red'
 
+/** 界面皮肤：默认实色 / 液态玻璃（测试） */
+export type UiSkin = 'default' | 'liquid-glass'
+
 /** 对话主区内容宽度 */
 export type ContentWidth = 'standard' | 'wide' | 'full'
+
+/** 输入框发送键：Enter 发送 / ⌘Enter 发送（另一组用于换行） */
+export type SendKey = 'enter' | 'cmdEnter'
 
 export interface Settings {
   models: ModelConfig[]
@@ -183,10 +189,11 @@ export interface Settings {
    */
   insights?: Insight[]
   /**
-   * 灵感：用户关心的主题关键词，会注入 save_insight 工具提示，
-   * 引导 Agent 优先提取这些方向的收获。
+   * 灵感：关闭时不提供 save_insight、不显示收获面板；
+   * 开启后按 keywords 引导 Agent 提取收获。默认关闭。
    */
   inspiration?: {
+    enabled?: boolean
     keywords: string[]
   }
   tools: {
@@ -225,12 +232,16 @@ export interface Settings {
   /** 外观：主题强调色等（亮/暗模式仍由客户端本地切换） */
   appearance?: {
     accent?: AccentId
+    /** 界面皮肤；缺省 default。liquid-glass 为测试主题 */
+    skin?: UiSkin
     /** 对话 / 输入框内容列宽；缺省 standard（700px） */
     contentWidth?: ContentWidth
     /** 左侧栏宽度（px）；缺省 236 */
     sidebarWidth?: number
     /** 右侧面板宽度（px）；缺省 288 */
     panelWidth?: number
+    /** 发送快捷键；缺省 cmdEnter（⌘/Ctrl+Enter 发送，Enter 换行） */
+    sendKey?: SendKey
   }
   /** 本地用户资料（仅本机，无账号体系） */
   user?: {
@@ -262,7 +273,13 @@ export interface KnowledgeSource {
   connectedAt: number
 }
 
-/* ============ 沙箱（SPEC.md §11）：可插拔 Provider，本期不实现 ============ */
+/* ============ 沙箱（SPEC.md §11）：可插拔 Provider ============
+ * 当前实现：local-process（本机会话目录 + 子进程 cwd 隔离）
+ * 预留：docker / remote（虚拟机）
+ */
+
+/** 沙箱后端；UI / settings 可切换，执行层按 backend 选 Provider */
+export type SandboxBackend = 'local-process' | 'docker' | 'remote'
 
 export interface ExecResult {
   stdout: string
@@ -271,6 +288,10 @@ export interface ExecResult {
 }
 
 export interface SandboxProvider {
+  readonly backend: SandboxBackend
+  /** 沙箱根目录（local-process 为绝对路径；docker/remote 可为逻辑根） */
+  readonly root: string
+  ensure(): Promise<string>
   exec(cmd: string, cwd?: string): Promise<ExecResult>
   readFile(path: string): Promise<string>
   writeFile(path: string, content: string): Promise<void>

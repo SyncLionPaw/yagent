@@ -1,11 +1,24 @@
 /* ============ 工具执行：ToolExecutor + 单个工具调用的执行块 ============ */
 
 import type { ToolDef } from '../providers/types.js'
-import type { Block, Conversation, ConversationNode } from '../model.js'
+import type { Artifact, Block, Conversation, ConversationNode } from '../model.js'
 import { toError } from '../providers/types.js'
 import type { HarnessEvent } from './events.js'
 import type { HookRunner } from './hooks.js'
 import { LOAD_SKILL_TOOL } from './skills.js'
+
+/** write_file 成功后登记到 outputs / artifacts 卡片 */
+export function artifactKindOf(name: string): Artifact['kind'] {
+  const ext = name.includes('.') ? name.slice(name.lastIndexOf('.') + 1).toLowerCase() : ''
+  if (['png', 'jpg', 'jpeg', 'gif', 'webp', 'svg', 'ico', 'bmp'].includes(ext)) return 'image'
+  if (['html', 'htm'].includes(ext)) return 'html'
+  if (['md', 'txt', 'rst', 'pdf', 'doc', 'docx', 'rtf', 'csv'].includes(ext)) return 'doc'
+  return 'code'
+}
+
+export function utf8Size(text: string): number {
+  return new TextEncoder().encode(text).length
+}
 
 export type ToolExecutor = (
   name: string,
@@ -85,7 +98,9 @@ export const DEFAULT_TOOLS: ToolDef[] = [
   { name: 'write_file', description: 'Write a UTF-8 file in the bound working directory. Requires user approval.', parameters: { type: 'object', properties: { path: { type: 'string' }, content: { type: 'string' } }, required: ['path', 'content'] } },
   {
     name: 'run_command',
-    description: 'Run a shell command from the bound working directory. Requires user approval.',
+    description:
+      'Run a shell command from the bound working directory. Requires user approval. ' +
+      'Over SSH there is a ~10 minute hard limit: for downloads/training/long jobs, start with nohup/setsid in the background and poll with short commands (avoid sleep ≥60s in the foreground).',
     parameters: {
       type: 'object',
       properties: {
@@ -231,7 +246,11 @@ export async function executeToolCall(
   hooks: HookRunner,
   emit: (e: HarnessEvent) => void,
   signal: AbortSignal,
-): Promise<{ resultBlock: Block | null; aborted: boolean }> {
+): Promise<{
+  resultBlock: Block | null
+  aborted: boolean
+  written?: { name: string; size: number }
+}> {
   emit({ type: 'tool_status', convId: conv.id, nodeId: agentNode.id, blockIndex: call.blockIndex, status: 'running' })
   const t0 = Date.now()
   const block = agentNode.blocks[call.blockIndex]
@@ -249,10 +268,18 @@ export async function executeToolCall(
       toolUseId: call.id,
       content: truncate(out, TOOL_RESULT_MAX),
     }
+    let written: { name: string; size: number } | undefined
+    if (call.name === 'write_file') {
+      const p = typeof call.input.path === 'string' ? call.input.path.trim().replace(/\\/g, '/') : ''
+      if (p) {
+        const content = typeof call.input.content === 'string' ? call.input.content : ''
+        written = { name: p, size: utf8Size(content) }
+      }
+    }
     emit({ type: 'tool_status', convId: conv.id, nodeId: agentNode.id, blockIndex: call.blockIndex, status: 'done' })
     await hooks.run('onToolEnd', conv, agentNode, call, { output: out, durationMs: Date.now() - t0, isError: false })
     emit({ type: 'node_updated', convId: conv.id, nodeId: agentNode.id })
-    return { resultBlock, aborted: false }
+    return { resultBlock, aborted: false, written }
   } catch (err) {
     if (signal.aborted) {
       if (block?.type === 'tool') {

@@ -165,6 +165,9 @@ export function ChatView({
                 streaming={i === path.length - 1 && conversation.status === 'running'}
                 canEdit={canEdit}
                 editing={editingNodeId === node.id}
+                /** code/工作区模式不展示产物卡；仅纯 chat 沙箱用 */
+                showArtifacts={!conversation.workdir?.trim()}
+                convId={conversation.id}
                 onStartEditUserMessage={onStartEditUserMessage}
                 onRefClick={onRefClick}
                 onToggleFiles={onToggleFiles}
@@ -211,12 +214,28 @@ function ConversationMinimap({
   )
 }
 
+async function downloadSandboxArtifact(convId: string, rel: string): Promise<void> {
+  const exportFile = window.yagentDesktop?.fs?.exportFile
+  if (!exportFile) throw new Error('下载需要桌面端')
+  const box = await window.yagentDesktop?.sandbox?.ensure(convId)
+  if (!box?.root) throw new Error('沙箱目录不可用')
+  const name = rel.replace(/\\/g, '/').split('/').pop() || rel
+  const res = await exportFile({
+    workdir: box.root,
+    rel: rel.replace(/^\/+/, ''),
+    defaultName: name,
+  })
+  if (!res.ok && !res.canceled) throw new Error(res.error || '下载失败')
+}
+
 function Message({
   node,
   refs,
   streaming,
   canEdit,
   editing,
+  showArtifacts = false,
+  convId,
   onStartEditUserMessage,
   onRefClick,
   onToggleFiles,
@@ -226,6 +245,8 @@ function Message({
   streaming: boolean
   canEdit: boolean
   editing: boolean
+  showArtifacts?: boolean
+  convId: string
   onStartEditUserMessage?: (nodeId: string, text: string) => void
   onRefClick: (id: number) => void
   onToggleFiles: () => void
@@ -281,6 +302,8 @@ function Message({
           refs={refs}
           streaming={streaming}
           node={node}
+          showArtifacts={showArtifacts}
+          convId={convId}
           onRefClick={onRefClick}
           onToggleFiles={onToggleFiles}
         />
@@ -330,6 +353,8 @@ function Message({
         streaming={streaming}
         node={node}
         time={time}
+        showArtifacts={showArtifacts}
+        convId={convId}
         onRefClick={onRefClick}
         onToggleFiles={onToggleFiles}
       />
@@ -344,6 +369,8 @@ function AgentReply({
   streaming,
   node,
   time,
+  showArtifacts = false,
+  convId,
   onRefClick,
   onToggleFiles,
 }: {
@@ -352,6 +379,8 @@ function AgentReply({
   streaming: boolean
   node: ConversationNode
   time?: string
+  showArtifacts?: boolean
+  convId: string
   onRefClick: (id: number) => void
   onToggleFiles: () => void
 }) {
@@ -391,7 +420,7 @@ function AgentReply({
 
       {blocks.map((block, i) => {
         if (!open && isProcessBlock(block)) return null
-        return renderAgentBlock(block, i, node, refs, onRefClick, onToggleFiles)
+        return renderAgentBlock(block, i, node, refs, onRefClick, onToggleFiles, showArtifacts, convId)
       })}
 
       {blocks.length > 0 && <MessageActions node={node} />}
@@ -407,6 +436,8 @@ function renderAgentBlock(
   refs: Ref[],
   onRefClick: (id: number) => void,
   onToggleFiles: () => void,
+  showArtifacts: boolean,
+  convId: string,
 ) {
   switch (block.type) {
     case 'text':
@@ -436,12 +467,14 @@ function renderAgentBlock(
     case 'file':
       return null
     case 'artifacts':
+      if (!showArtifacts) return null
       return (
         <ArtifactBlock
           key={i}
           items={block.items}
           durationMs={node.durationMs}
           onToggleFiles={onToggleFiles}
+          onDownload={(name) => downloadSandboxArtifact(convId, name)}
         />
       )
   }

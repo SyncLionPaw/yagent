@@ -94,20 +94,29 @@ export function Topbar({
                 ? `SSH 远程 · ${conversation.workdir} · ${
                     sshStatus === 'ok' ? '已连接' : sshStatus === 'fail' ? '连接失败' : '检测中…'
                   }`
-                : `沙箱已连接 · ${conversation.workdir}`
+                : `工作区 · ${conversation.workdir}`
             }
             aria-label={
               isSshWorkdir(conversation.workdir)
                 ? `SSH 远程 · ${conversation.workdir} · ${
                     sshStatus === 'ok' ? '已连接' : sshStatus === 'fail' ? '连接失败' : '检测中…'
                   }`
-                : `沙箱已连接 · ${conversation.workdir}`
+                : `工作区 · ${conversation.workdir}`
             }
           >
-            {isSshWorkdir(conversation.workdir) ? <Server className="ic" /> : <Box className="ic" />}
+            {isSshWorkdir(conversation.workdir) ? <Server className="ic" /> : <Folder className="ic" />}
             <span className="sandbox-status-dot" aria-hidden />
           </span>
-        ) : null}
+        ) : (
+          <span
+            className="sandbox-status chat-sandbox"
+            data-tip="进程隔离沙箱 · 本机会话目录（非 Docker）"
+            aria-label="进程隔离沙箱已就绪"
+          >
+            <Box className="ic" />
+            <span className="sandbox-status-dot" aria-hidden />
+          </span>
+        )}
         <WidthPicker
           value={contentWidth}
           open={popover === 'width'}

@@ -12,7 +12,7 @@ import type { ContextManager } from './context.js'
 import { buildMessages } from './messages.js'
 import type { HarnessEvent } from './events.js'
 import type { HookRunner, RunEndReason } from './hooks.js'
-import { executeToolCall, summarizeInput } from './tools.js'
+import { artifactKindOf, executeToolCall, summarizeInput } from './tools.js'
 import type { ToolCallInfo, ToolExecutor } from './tools.js'
 
 export interface LoopContext {
@@ -122,18 +122,58 @@ export async function runAgentLoop(
     if (pending.length === 0) return 'done' // 纯文本回答，本轮结束
 
     // 执行工具调用：结果直接追加进本 round 节点
+    // 产物仅纯 chat（无 workdir）：code/工作区模式文件就在项目树里，不另搞 outputs
+    const trackArtifacts = !conv.workdir?.trim()
+    const writtenBatch: { name: string; size: number }[] = []
     for (const call of pending) {
-      const { resultBlock, aborted } = await executeToolCall(conv, call, roundNode, ctx.executor, hooks, emit, signal)
+      const { resultBlock, aborted, written } = await executeToolCall(
+        conv,
+        call,
+        roundNode,
+        ctx.executor,
+        hooks,
+        emit,
+        signal,
+      )
       if (aborted) return 'aborted'
       if (resultBlock) {
         roundNode.blocks.push(resultBlock)
         nodeUpdated()
       }
+      if (trackArtifacts && written) writtenBatch.push(written)
+    }
+    if (writtenBatch.length) {
+      const now = Date.now()
+      for (const f of writtenBatch) {
+        const i = conv.outputs.findIndex((o) => o.name === f.name)
+        if (i >= 0) conv.outputs[i] = f
+        else conv.outputs.push(f)
+      }
+      roundNode.blocks.push({
+        type: 'artifacts',
+        items: writtenBatch.map((f, idx) => ({
+          id: `${roundNode.id}-w${turn}-${idx}-${f.name}`,
+          name: f.name,
+          kind: artifactKindOf(f.name),
+          size: f.size,
+          createdAt: now,
+        })),
+      })
+      emit({ type: 'conv_updated', convId: conv.id })
+      nodeUpdated()
     }
   }
+  // 触顶时必须在对话里留可见说明，避免看起来像「突然不说话了」
   const maxTurnsError = new Error(`max turns reached (${ctx.maxTurns})`)
-  emit({ type: 'error', convId: conv.id, error: maxTurnsError })
-  await hooks.run('onError', conv, maxTurnsError)
+  roundNode.blocks.push({
+    type: 'text',
+    text:
+      `本轮已达到工具循环上限（${ctx.maxTurns} 轮），先停在这里。` +
+      `已完成的步骤都还在；直接再发一条消息（例如「继续」）即可接着干。`,
+  })
+  emit({ type: 'error', convId: conv.id, nodeId: roundNode.id, error: maxTurnsError })
+  nodeUpdated()
+  await hooks.run('onError', conv, maxTurnsError, roundNode.id)
   return 'max_turns'
 }
 

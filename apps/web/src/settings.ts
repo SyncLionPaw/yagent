@@ -29,7 +29,7 @@ export const DEFAULT_SETTINGS: Settings = {
     },
   ],
   memories: [],
-  inspiration: { keywords: [] },
+  inspiration: { enabled: false, keywords: [] },
   tools: {
     terminal: true,
     fileEdit: true,
@@ -41,9 +41,11 @@ export const DEFAULT_SETTINGS: Settings = {
   sandbox: { env: 'sandbox', workdir: '', network: true },
   appearance: {
     accent: 'violet',
+    skin: 'default',
     contentWidth: 'standard',
     sidebarWidth: 236,
     panelWidth: 288,
+    sendKey: 'cmdEnter',
   },
   user: {},
   knowledgeBases: { sources: [] },

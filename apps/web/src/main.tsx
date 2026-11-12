@@ -5,13 +5,20 @@ import App from './App.tsx'
 import { harness } from './harness'
 import { conversationStore } from './conversations'
 
+/** 启动时保证有一条未绑定目录的空「新对话」，供首屏选中 */
+function ensureEmptyChat() {
+  const empty = harness
+    .listConversations()
+    .find((c) => !c.archived && c.workdir == null && Object.keys(c.nodes).length === 0)
+  if (empty) return empty
+  return harness.createConversation('新对话', null)
+}
+
 async function bootstrap() {
   // 先恢复持久化会话，再渲染，保证首屏侧栏就是完整的
   await conversationStore.loadAll().catch(() => 0)
-  // 无会话时开一条空对话（不落盘，发送后才持久化）；不再播种演示数据
-  if (harness.listConversations().length === 0) {
-    harness.createConversation('新对话', null)
-  }
+  // 每次启动落在空对话上，而不是上次任务
+  ensureEmptyChat()
   createRoot(document.getElementById('root')!).render(
     <StrictMode>
       <App />

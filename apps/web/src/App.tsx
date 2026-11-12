@@ -15,7 +15,9 @@ import {
   configureHarness,
   harness,
   pickInitialModel,
+  setInsightEnabled,
   setInsightKeywords,
+  setRemoteToolsDegraded,
   syncSkillsIntoHarness,
   updateToolsFor,
 } from './harness'
@@ -89,10 +91,17 @@ function titleFrom(text: string): string {
 function App() {
   const [theme, setTheme] = useState<Theme>(initialTheme)
   // 会话全部由 harness 持有（启动时已恢复 + 播种，见 main.tsx）
-  const [activeConvId, setActiveConvId] = useState(() => harness.listConversations()[0]?.id ?? '')
+  // 启动优先选中空「新对话」，避免一打开就停在上次任务
+  const [activeConvId, setActiveConvId] = useState(() => {
+    const list = harness.listConversations()
+    const empty = list.find(
+      (c) => !c.archived && c.workdir == null && Object.keys(c.nodes).length === 0,
+    )
+    return empty?.id ?? list[list.length - 1]?.id ?? list[0]?.id ?? ''
+  })
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false)
   const [panelOpen, setPanelOpen] = useState(false)
-  const [panelTab, setPanelTab] = useState<PanelTab>('insights')
+  const [panelTab, setPanelTab] = useState<PanelTab>('files')
   const [sightOpen, setSightOpen] = useState(false)
   const [activeSrcId, setActiveSrcId] = useState<number | null>(null)
   const [settingsOpen, setSettingsOpen] = useState(false)
@@ -168,22 +177,68 @@ function App() {
   const queuedItems = conversation ? harness.pendingPreview(conversation.id) : []
   const contextMeter: ContextMeter | null = contextSnap ? toContextMeter(contextSnap) : null
 
-  // SSH 远程会话：探测连通性，驱动顶栏状态点着色与主区不可连通提示
+  // SSH 远程会话：探测连通性，驱动顶栏状态点、输入框降级态、工具裁剪与 system reminder
   const sshHost = conversation?.workdir ? parseSshWorkdir(conversation.workdir)?.host ?? null : null
-  const [sshStatus, setSshStatus] = useState<'checking' | 'ok' | 'fail'>('checking')
+  const [sshProbe, setSshProbe] = useState<{
+    host: string
+    status: 'checking' | 'ok' | 'fail'
+    error: string
+  } | null>(null)
+  // 必须与当前 host 对齐，避免换机会话时沿用上一台的 fail
+  const sshStatus: 'checking' | 'ok' | 'fail' | null = sshHost
+    ? sshProbe?.host === sshHost
+      ? sshProbe.status
+      : 'checking'
+    : null
+  const sshError = sshHost && sshProbe?.host === sshHost ? sshProbe.error : ''
+  // checking / fail 都降级：避免探测窗口内 Agent 误调远程工具
+  const remoteToolsDegraded = sshStatus === 'fail' || sshStatus === 'checking'
   useEffect(() => {
     if (!sshHost) return
     let alive = true
-    setSshStatus('checking')
+    let inflight = false
+    setSshProbe({ host: sshHost, status: 'checking', error: '' })
     const probe = () => {
-      window.yagentDesktop?.ssh?.ping(sshHost).then((r) => {
-        if (alive) setSshStatus(r?.ok ? 'ok' : 'fail')
-      }).catch(() => { if (alive) setSshStatus('fail') })
+      if (inflight) return
+      inflight = true
+      window.yagentDesktop?.ssh
+        ?.ping(sshHost)
+        .then((r) => {
+          if (!alive) return
+          setSshProbe({
+            host: sshHost,
+            status: r?.ok ? 'ok' : 'fail',
+            error: r?.ok ? '' : (r?.error ?? '连接失败'),
+          })
+        })
+        .catch((e) => {
+          if (!alive) return
+          setSshProbe({
+            host: sshHost,
+            status: 'fail',
+            error: e instanceof Error ? e.message : String(e),
+          })
+        })
+        .finally(() => {
+          inflight = false
+        })
     }
     probe()
     const t = setInterval(probe, 30000)
-    return () => { alive = false; clearInterval(t) }
+    return () => {
+      alive = false
+      clearInterval(t)
+    }
   }, [sshHost])
+
+  // 探测中/离线：砍掉远程工具 + 注入 reminder；恢复或非 SSH：清掉
+  useEffect(() => {
+    const phase = sshStatus === 'checking' || sshStatus === 'fail' ? sshStatus : null
+    setRemoteToolsDegraded(remoteToolsDegraded, sshHost ?? undefined, phase)
+    if (activeConvId) {
+      updateToolsFor(activeConvId, settings.tools, { remoteOffline: remoteToolsDegraded })
+    }
+  }, [remoteToolsDegraded, sshHost, sshStatus, activeConvId, settings.tools])
 
   // 各会话上次 totals，用于把增量写入按日用量统计
   const usageTotalsRef = useRef(new Map<string, { input: number; output: number }>())
@@ -251,6 +306,11 @@ function App() {
   useEffect(() => {
     document.documentElement.dataset.accent = settings.appearance?.accent ?? 'violet'
   }, [settings.appearance?.accent])
+
+  // 界面皮肤：html data-skin（液态玻璃测试主题）
+  useEffect(() => {
+    document.documentElement.dataset.skin = settings.appearance?.skin ?? 'default'
+  }, [settings.appearance?.skin])
 
   // 内容列宽：data-content-width → CSS --content-max
   useEffect(() => {
@@ -469,14 +529,24 @@ function App() {
     }
   }, [activeConvId])
 
+  const inspirationOn = settings.inspiration?.enabled === true
+
   // 会话切换时，如果是真实会话则更新工具配置
   useEffect(() => {
+    setInsightEnabled(inspirationOn)
     setInsightKeywords(settings.inspiration?.keywords)
     if (harness.getConversation(activeConvId)) {
-      updateToolsFor(activeConvId, settings.tools)
+      updateToolsFor(activeConvId, settings.tools, { remoteOffline: remoteToolsDegraded })
     }
     void syncSkillsIntoHarness()
-  }, [activeConvId, settings.tools, settings.inspiration])
+  }, [activeConvId, settings.tools, settings.inspiration, inspirationOn])
+
+  // 灵感关闭时收起收藏板，并离开「收获」tab
+  useEffect(() => {
+    if (inspirationOn) return
+    setSightOpen(false)
+    setPanelTab((t) => (t === 'insights' ? 'files' : t))
+  }, [inspirationOn])
 
   // 未发送过消息的空会话：同 workdir（含纯对话的 null）直接复用，避免堆空白项
   const openOrCreate = useCallback(
@@ -492,12 +562,17 @@ function App() {
       }
       const conv = harness.createConversation(title, workdir)
       setActiveConvId(conv.id)
-      if (workdir) updateToolsFor(conv.id, settings.tools)
+      if (workdir) {
+        const host = parseSshWorkdir(workdir)?.host
+        const offline =
+          !!host && host === sshHost && (sshStatus === 'fail' || sshStatus === 'checking')
+        updateToolsFor(conv.id, settings.tools, { remoteOffline: offline })
+      }
       trackProject(workdir)
       textareaRef.current?.focus()
       return conv
     },
-    [settings.tools, trackProject],
+    [settings.tools, trackProject, sshHost, sshStatus],
   )
 
   const handleDeleteConversation = useCallback(() => {
@@ -619,7 +694,11 @@ function App() {
       }
 
       harness.setActiveNode(conv.id, node.parentId ?? '')
-      updateToolsFor(conv.id, settings.tools)
+      updateToolsFor(conv.id, settings.tools, {
+        remoteOffline:
+          !!parseSshWorkdir(conv.workdir)?.host &&
+          (sshStatus === 'fail' || sshStatus === 'checking'),
+      })
       void (async () => {
         await syncSkillsIntoHarness()
         await harness.sendMessage(conv.id, message, {
@@ -628,7 +707,7 @@ function App() {
         })
       })().catch(() => undefined)
     },
-    [activeConvId, settings.tools],
+    [activeConvId, settings.tools, sshStatus],
   )
 
   // 发送附件策略：≤1KB 文本内联+路径；图片走多模态；其余只给路径让工具读
@@ -679,7 +758,11 @@ function App() {
     const files = pendingFiles
     setDraft('')
     setPendingFiles([])
-    updateToolsFor(conv.id, settings.tools)
+    updateToolsFor(conv.id, settings.tools, {
+      remoteOffline:
+        !!parseSshWorkdir(conv.workdir)?.host &&
+        (sshStatus === 'fail' || sshStatus === 'checking'),
+    })
     void (async () => {
       await syncSkillsIntoHarness()
       // 气泡只显示用户原文；给模型的附件说明 / 内联文本另附，UI 会折叠成附件条
@@ -779,6 +862,7 @@ function App() {
     openOrCreate,
     editingNodeId,
     handleEditUserMessage,
+    sshStatus,
   ])
 
   const handleStop = useCallback(() => harness.abort(activeConvId), [activeConvId])
@@ -788,7 +872,8 @@ function App() {
     const selectedPath = await window.yagentDesktop?.dialog?.selectDirectory?.()
     if (selectedPath) {
       harness.setWorkdir(activeConvId, selectedPath)
-      updateToolsFor(activeConvId, settings.tools)
+      setRemoteToolsDegraded(false)
+      updateToolsFor(activeConvId, settings.tools, { remoteOffline: false })
       trackProject(selectedPath)
     }
   }, [activeConvId, settings.tools, trackProject])
@@ -919,7 +1004,7 @@ function App() {
         onCommit={commitSidebarWidth}
       />
 
-      <div className={`stage-column${sightOpen ? ' sight-open' : ''}`}>
+      <div className={`stage-column${inspirationOn && sightOpen ? ' sight-open' : ''}`}>
         <main className="stage">
           <div className={`flip-inner${settingsOpen ? ' flipped' : ''}`}>
             <div className="flip-front">
@@ -945,23 +1030,49 @@ function App() {
                 onDelete={handleDeleteConversation}
                 sshStatus={sshHost ? sshStatus : null}
               />
-              {sshHost && sshStatus === 'fail' && (
+              {sshHost && (sshStatus === 'fail' || sshStatus === 'checking') && (
                 <div className="ssh-offline-banner">
                   <ServerOff className="ic ic-sm" />
                   <span>
-                    无法连接远程主机 <strong>{sshHost}</strong>，读写与命令暂不可用。请检查网络或 SSH 配置。
+                    {sshStatus === 'checking' ? (
+                      <>
+                        正在检测远程主机 <strong>{sshHost}</strong>
+                        …仍可对话；确认连通前远程读写与命令已暂停。
+                      </>
+                    ) : (
+                      <>
+                        无法连接远程主机 <strong>{sshHost}</strong>
+                        {sshError ? `：${sshError}` : ''}
+                        。仍可对话；远程读写与命令已暂时关闭。
+                      </>
+                    )}
                   </span>
-                  <button
-                    className="ssh-offline-retry"
-                    onClick={() => {
-                      setSshStatus('checking')
-                      window.yagentDesktop?.ssh?.ping(sshHost).then((r) =>
-                        setSshStatus(r?.ok ? 'ok' : 'fail'),
-                      )
-                    }}
-                  >
-                    重试
-                  </button>
+                  {sshStatus === 'fail' ? (
+                    <button
+                      className="ssh-offline-retry"
+                      onClick={() => {
+                        setSshProbe({ host: sshHost, status: 'checking', error: '' })
+                        window.yagentDesktop?.ssh
+                          ?.ping(sshHost)
+                          .then((r) => {
+                            setSshProbe({
+                              host: sshHost,
+                              status: r?.ok ? 'ok' : 'fail',
+                              error: r?.ok ? '' : (r?.error ?? '连接失败'),
+                            })
+                          })
+                          .catch((e) => {
+                            setSshProbe({
+                              host: sshHost,
+                              status: 'fail',
+                              error: e instanceof Error ? e.message : String(e),
+                            })
+                          })
+                      }}
+                    >
+                      重试
+                    </button>
+                  ) : null}
                 </div>
               )}
               <ChatView
@@ -980,6 +1091,15 @@ function App() {
                 editingMessage={!!editingNodeId}
                 context={contextMeter}
                 queuedItems={queuedItems}
+                toolsDegraded={remoteToolsDegraded}
+                toolsDegradedHint={
+                  remoteToolsDegraded
+                    ? sshStatus === 'checking'
+                      ? `正在检测 · ${sshHost}，读写/命令暂不可用`
+                      : `远程离线 · ${sshHost} 不可用，读写/命令已暂停`
+                    : undefined
+                }
+                sendKey={settings.appearance?.sendKey ?? 'cmdEnter'}
                 onRemoveQueued={(i) => {
                   if (conversation) harness.removePending(conversation.id, i)
                 }}
@@ -1038,34 +1158,40 @@ function App() {
             </div>
           </div>
         </main>
-        <button
-          type="button"
-          className={`sight-pull${sightOpen ? ' open' : ''}`}
-          title={sightOpen ? '收回主区' : '打开收藏便签'}
-          aria-label={sightOpen ? '收回主区' : '打开收藏便签'}
-          aria-expanded={sightOpen}
-          onClick={() => {
-            setSightOpen((v) => !v)
-            refreshSight()
-          }}
-        >
-          <span className="sight-pull-bar" aria-hidden />
-        </button>
-        <SightBoard
-          open={sightOpen}
-          insights={sightInsights}
-          onMove={(id, x, y) => {
-            const hit =
-              sightInsights.find((n) => n.id === id) ??
-              convInsights.find((n) => n.id === id)
-            if (!hit) return
-            const next = { ...hit, board: { x, y }, mark: 'keep' as const }
-            void writeInsight(next).then(() => {
-              setSightInsights((list) => list.map((n) => (n.id === id ? next : n)))
-              setConvInsights((list) => list.map((n) => (n.id === id ? { ...n, board: { x, y } } : n)))
-            })
-          }}
-        />
+        {inspirationOn ? (
+          <>
+            <button
+              type="button"
+              className={`sight-pull${sightOpen ? ' open' : ''}`}
+              title={sightOpen ? '收回主区' : '打开收藏便签'}
+              aria-label={sightOpen ? '收回主区' : '打开收藏便签'}
+              aria-expanded={sightOpen}
+              onClick={() => {
+                setSightOpen((v) => !v)
+                refreshSight()
+              }}
+            >
+              <span className="sight-pull-bar" aria-hidden />
+            </button>
+            <SightBoard
+              open={sightOpen}
+              insights={sightInsights}
+              onMove={(id, x, y) => {
+                const hit =
+                  sightInsights.find((n) => n.id === id) ??
+                  convInsights.find((n) => n.id === id)
+                if (!hit) return
+                const next = { ...hit, board: { x, y }, mark: 'keep' as const }
+                void writeInsight(next).then(() => {
+                  setSightInsights((list) => list.map((n) => (n.id === id ? next : n)))
+                  setConvInsights((list) =>
+                    list.map((n) => (n.id === id ? { ...n, board: { x, y } } : n)),
+                  )
+                })
+              }}
+            />
+          </>
+        ) : null}
       </div>
 
       <Splitter
@@ -1081,8 +1207,10 @@ function App() {
         conversation={conversation}
         tab={panelTab}
         activeSrcId={activeSrcId}
+        inspirationEnabled={inspirationOn}
         insights={convInsights}
         sightInsights={sightInsights}
+        remoteFs={sshHost ? sshStatus : null}
         onTabChange={setPanelTab}
         onSelectSrc={setActiveSrcId}
         onMarkInsight={(insightId, mark: InsightMark | null) => {

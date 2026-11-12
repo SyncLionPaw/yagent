@@ -3,64 +3,11 @@ import type { ReactElement, ReactNode } from 'react'
 import Markdown from 'react-markdown'
 import remarkGfm from 'remark-gfm'
 import remarkMath from 'remark-math'
-import hljs from 'highlight.js/lib/core'
 import katex from 'katex'
 import { materializeRefs, type Ref } from '@yagent/core'
+import { highlightCode } from '../lib/highlight'
 import { Check, Copy, WrapText } from 'lucide-react'
 import 'katex/dist/katex.min.css'
-
-// 按需注册高亮语言（避免全量 bundle）；别名一并 register
-import bash from 'highlight.js/lib/languages/bash'
-import c from 'highlight.js/lib/languages/c'
-import cpp from 'highlight.js/lib/languages/cpp'
-import css from 'highlight.js/lib/languages/css'
-import diff from 'highlight.js/lib/languages/diff'
-import go from 'highlight.js/lib/languages/go'
-import java from 'highlight.js/lib/languages/java'
-import javascript from 'highlight.js/lib/languages/javascript'
-import json from 'highlight.js/lib/languages/json'
-import markdown from 'highlight.js/lib/languages/markdown'
-import python from 'highlight.js/lib/languages/python'
-import rust from 'highlight.js/lib/languages/rust'
-import sql from 'highlight.js/lib/languages/sql'
-import typescript from 'highlight.js/lib/languages/typescript'
-import xml from 'highlight.js/lib/languages/xml'
-import yaml from 'highlight.js/lib/languages/yaml'
-
-const HLJS_LANGS: [string, typeof bash, ...string[]][] = [
-  ['bash', bash, 'sh', 'shell', 'zsh', 'console', 'terminal'],
-  ['c', c],
-  ['cpp', cpp, 'c++'],
-  ['css', css],
-  ['diff', diff, 'patch'],
-  ['go', go, 'golang'],
-  ['java', java],
-  ['javascript', javascript, 'js', 'jsx'],
-  ['json', json],
-  ['markdown', markdown, 'md'],
-  ['python', python, 'py'],
-  ['rust', rust, 'rs'],
-  ['sql', sql],
-  ['typescript', typescript, 'ts', 'tsx'],
-  ['xml', xml, 'html', 'svg'],
-  ['yaml', yaml, 'yml'],
-]
-
-for (const [name, def, ...aliases] of HLJS_LANGS) {
-  hljs.registerLanguage(name, def)
-  for (const a of aliases) hljs.registerLanguage(a, def)
-}
-
-function highlightCode(code: string, lang?: string): string | null {
-  if (!lang) return null
-  const id = lang.toLowerCase()
-  if (!hljs.getLanguage(id)) return null
-  try {
-    return hljs.highlight(code, { language: id, ignoreIllegals: true }).value
-  } catch {
-    return null
-  }
-}
 
 interface TextBlockProps {
   text: string

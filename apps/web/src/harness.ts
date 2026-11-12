@@ -130,7 +130,18 @@ export function resolveProvider(model: ModelConfig | undefined): ModelProvider {
 // 需要用户在审批条上确认的危险工具
 const APPROVAL_TOOLS = new Set(['write_file', 'run_command'])
 
-const createExecutor = (workdir: string): ToolExecutor => {
+/** 解析工具落点：用户工作区优先；纯 chat 用本机进程隔离沙箱目录 */
+async function resolveToolRoot(userWorkdir: string, convId: string): Promise<string> {
+  const wd = userWorkdir.trim()
+  if (wd) return wd
+  const ensure = window.yagentDesktop?.sandbox?.ensure
+  if (!ensure) throw new Error('沙箱不可用（需要桌面端）')
+  const info = await ensure(convId)
+  if (!info?.root) throw new Error('无法创建会话沙箱')
+  return info.root
+}
+
+const createExecutor = (userWorkdir: string): ToolExecutor => {
   return async (name, input, signal, conv) => {
     // 问答 / 收获只走渲染层，不依赖桌面 IPC
     if (name === 'ask_user_question') {
@@ -157,7 +168,8 @@ const createExecutor = (workdir: string): ToolExecutor => {
       const ok = await requestApproval({ name, input }, signal)
       if (!ok) throw new Error('用户拒绝了该操作')
     }
-    return ipcTools.execute(name, input, workdir)
+    const root = await resolveToolRoot(userWorkdir, conv.id)
+    return ipcTools.execute(name, input, root)
   }
 }
 
@@ -166,22 +178,85 @@ const BASE_SYSTEM =
   '用户附件保存在应用数据目录（…/projects/<slug>/uploads/<convId>/ 或 …/chats/uploads/<convId>/），消息里若给出「绝对路径」请原样传给 read_file，不要猜测 .yagent/uploads/ 这类相对路径。' +
   '引用网页来源时，在相关句子后插入标签（不要只写裸 [1]）：' +
   '<ref url="完整https地址" title="短标题">一两句摘要</ref>；也可简写 <ref_link>完整https地址</ref_link>。' +
-  '同一 URL 可重复标签；客户端会汇总到右栏「搜索」并显示为角标。' +
+  '同一 URL 可重复标签；客户端会汇总到右栏「搜索」并显示为角标。'
+
+const CHAT_SANDBOX_SYSTEM =
+  '当前是纯对话（未绑定用户项目）：read_file / write_file / run_command 落在本机「进程隔离」会话沙箱（仅 cwd 隔离的子进程，不是 Docker）。' +
+  '写入的文件会出现在右栏「Agent 产物」；不要假设能访问用户磁盘其它路径。'
+
+const INSIGHT_SYSTEM =
   '有对用户真正有用、且其可能还不知道的点时，可用 save_insight 写入右侧「收获」：本轮可以是 0 条、1 条或若干条，没有硬性数量；有就记、没有就不硬写。每条尽量拆细（一次调用只写一个小点），多点就多次调用，正文优先一句话。不要记任务进度或废话。'
+
+/** 灵感总开关；关闭时不注入提示、不挂 save_insight */
+let insightEnabled = false
 
 /** 用户在设置「灵感」里填的关键词，注入 system + save_insight */
 let insightKeywords: string[] = []
+
+/** skills L1 附录缓存；与远程降级 reminder 一起拼进 system */
+let skillsAppendixCache = ''
+
+/** SSH 不可达时注入的系统提醒（空串 = 正常） */
+let remoteOfflineReminder = ''
+
+/** 纯 chat 时注入沙箱说明（有用户 workdir 时为空） */
+let chatSandboxReminder = ''
+
+/** 远程依赖工具名：SSH 离线时从工具列表拿掉 */
+const REMOTE_DEP_TOOLS = new Set(['read_file', 'write_file', 'run_command'])
+
+export function setInsightEnabled(enabled: boolean): void {
+  insightEnabled = enabled
+}
 
 export function setInsightKeywords(keywords: string[] | undefined): void {
   insightKeywords = (keywords ?? []).map((k) => k.trim()).filter(Boolean)
 }
 
-function buildSystem(skillsAppendix = ''): string {
-  const kw =
-    insightKeywords.length > 0
-      ? `用户「灵感」关键词（save_insight 的 category 必须取其一）：${insightKeywords.join('、')}。只在有实质、用户可能还不知道的要点时写入，勿硬凑。`
-      : ''
-  return BASE_SYSTEM + kw + skillsAppendix
+function buildSystem(): string {
+  let s = BASE_SYSTEM
+  if (insightEnabled) {
+    s += INSIGHT_SYSTEM
+    if (insightKeywords.length > 0) {
+      s += `用户「灵感」关键词（save_insight 的 category 必须取其一）：${insightKeywords.join('、')}。只在有实质、用户可能还不知道的要点时写入，勿硬凑。`
+    }
+  }
+  s += skillsAppendixCache
+  if (chatSandboxReminder) s += chatSandboxReminder
+  if (remoteOfflineReminder) s += remoteOfflineReminder
+  return s
+}
+
+function pushSystem(): void {
+  harness.configure({ system: buildSystem() })
+}
+
+/**
+ * SSH 探测中 / 不可达：写入 system reminder，并与 updateToolsFor({ remoteOffline }) 配套。
+ * host 仅用于文案；degraded=false 时清掉提醒。
+ */
+export function setRemoteToolsDegraded(
+  degraded: boolean,
+  host?: string,
+  phase?: 'checking' | 'fail' | null,
+): void {
+  if (!degraded) {
+    if (!remoteOfflineReminder) return
+    remoteOfflineReminder = ''
+    pushSystem()
+    return
+  }
+  const where = host?.trim() ? `「${host.trim()}」` : '当前绑定主机'
+  const head =
+    phase === 'checking'
+      ? `[系统提醒 · 远程探测中] 正在确认远程主机 ${where} 是否可达。`
+      : `[系统提醒 · 远程离线] 无法连接远程主机 ${where}。`
+  remoteOfflineReminder =
+    `\n\n${head}` +
+    '在确认可用前，本轮已暂时移除 read_file / write_file / run_command；远程工作区不可读写，也不能执行命令。' +
+    '请只做不依赖该主机的对话、推理与（若仍可用的）网络检索；不要声称已访问、修改或运行了远程环境中的内容。' +
+    '主机恢复连通后工具会重新可用。'
+  pushSystem()
 }
 
 export const harness = new Harness({
@@ -193,35 +268,50 @@ export const harness = new Harness({
 /** 从磁盘扫 skills，把 L1 目录写入 system；无桌面端则清空附录 */
 export async function syncSkillsIntoHarness(): Promise<{ total: number; invocable: number }> {
   if (!skillsAvailable()) {
-    harness.configure({ system: buildSystem() })
+    skillsAppendixCache = ''
+    pushSystem()
     return { total: 0, invocable: 0 }
   }
   try {
     const skills = await listSkills()
-    harness.configure({
-      system: buildSystem(formatSkillsSystemAppendix(skills)),
-    })
+    skillsAppendixCache = formatSkillsSystemAppendix(skills)
+    pushSystem()
     return {
       total: skills.length,
       invocable: skills.filter((s) => !s.disableModelInvocation).length,
     }
   } catch {
-    harness.configure({ system: buildSystem() })
+    skillsAppendixCache = ''
+    pushSystem()
     return { total: 0, invocable: 0 }
   }
 }
 
 /** 根据会话工作目录 + 工具开关动态配置工具：
- *  fetch_url / read_file / ask_user_question / save_insight / load_skill 始终可用；
- *  search_web 跟随设置；write_file / run_command 需绑定目录。 */
-export function updateToolsFor(convId: string, toolFlags?: Settings['tools']): void {
+ *  fetch_url / ask_user_question / load_skill 始终可用；
+ *  read_file 默认可；SSH 离线时与 write_file / run_command 一并拿掉；
+ *  save_insight 跟随灵感开关；search_web 跟随设置；
+ *  write_file / run_command：绑定用户目录，或纯 chat 的进程隔离沙箱。 */
+export function updateToolsFor(
+  convId: string,
+  toolFlags?: Settings['tools'],
+  opts?: { remoteOffline?: boolean },
+): void {
   const conv = harness.getConversation(convId)
   if (!conv) return
   const workdir = conv.workdir?.trim() ?? ''
+  const chatSandbox = !workdir
+  const remoteOffline = !!opts?.remoteOffline
   const canSkills = skillsAvailable()
+  const nextChatReminder = chatSandbox ? `\n\n${CHAT_SANDBOX_SYSTEM}` : ''
+  if (nextChatReminder !== chatSandboxReminder) {
+    chatSandboxReminder = nextChatReminder
+    pushSystem()
+  }
   const tools = DEFAULT_TOOLS.filter((t) => {
+    if (remoteOffline && REMOTE_DEP_TOOLS.has(t.name)) return false
     if (t.name === 'load_skill') return canSkills
-    if (t.name === 'save_insight') return true
+    if (t.name === 'save_insight') return insightEnabled
     if (
       t.name === 'fetch_url' ||
       t.name === 'read_file' ||
@@ -230,9 +320,15 @@ export function updateToolsFor(convId: string, toolFlags?: Settings['tools']): v
       return true
     }
     if (t.name === 'search_web') return toolFlags?.webSearch ?? true
+    // 用户项目 或 纯 chat 沙箱
+    if (t.name === 'write_file' || t.name === 'run_command') return chatSandbox || !!workdir
     return !!workdir
   }).map((t) => (t.name === 'save_insight' ? saveInsightToolDef(insightKeywords) : t))
   harness.configure({ tools, executor: createExecutor(workdir) })
+  // 纯 chat：预热沙箱目录（不阻塞；失败时工具调用再 ensure）
+  if (chatSandbox) {
+    void window.yagentDesktop?.sandbox?.ensure(convId).catch(() => undefined)
+  }
 }
 
 /** 设置 / 当前模型变化时调用，下一条消息生效 */

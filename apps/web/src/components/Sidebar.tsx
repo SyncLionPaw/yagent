@@ -1,9 +1,10 @@
-import { useCallback, useEffect, useState } from 'react'
-import { BookMarked, Check, ChevronDown, ChevronUp, Cpu, FolderOpen, Lightbulb, MessageCircle, Moon, Palette, Plug, Plus, RefreshCw, Server, Settings as SettingsIcon, Sparkles, Sun, User, Wrench, X } from 'lucide-react'
+import { useCallback, useEffect, useRef, useState } from 'react'
+import { BookMarked, Check, ChevronDown, ChevronsDownUp, ChevronsUpDown, ChevronUp, Cpu, FolderOpen, FolderPlus, HardDrive, Lightbulb, MessageCircle, Moon, Palette, Plug, Plus, RefreshCw, Server, Settings as SettingsIcon, Sparkles, Sun, User, Wrench, X } from 'lucide-react'
 import { isSshWorkdir, projectDisplayName } from '@yagent/core'
 import type { Conversation } from '@yagent/core'
 import { formatSidebarTime } from '../lib/utils'
 import type { SettingsPaneId } from './SettingsPanel'
+import { UserAvatar } from './UserAvatar'
 
 interface SidebarProps {
   conversations: Conversation[]
@@ -37,12 +38,23 @@ const SETTINGS_MENU: { id: SettingsPaneId; label: string; icon: typeof Cpu }[] =
   { id: 'knowledge', label: '知识库', icon: BookMarked },
   { id: 'tools', label: '工具', icon: Wrench },
   { id: 'connectors', label: '连接器', icon: Plug },
+  { id: 'storage', label: '存储空间', icon: HardDrive },
 ]
 
 const DOT_CLASS: Record<Conversation['status'], string> = {
   running: 'dot dot-run',
   waiting: 'dot dot-wait',
   done: 'dot dot-done',
+}
+
+/** 桌面端走系统默认浏览器；纯网页回退 window.open */
+async function openInBrowser(url: string) {
+  const api = window.yagentDesktop?.shell?.openExternal
+  if (api) {
+    await api(url)
+    return
+  }
+  window.open(url, '_blank', 'noopener,noreferrer')
 }
 
 // 空会话（新建任务）没有节点，记录首次见到的时间作为分组/显示基准
@@ -87,9 +99,18 @@ export function Sidebar({
   const [sshDirs, setSshDirs] = useState<string[]>([])
   const [sshDirsState, setSshDirsState] = useState<'idle' | 'loading' | 'error'>('idle')
   const [sshDirsErr, setSshDirsErr] = useState('')
+  const [sshMkdirOpen, setSshMkdirOpen] = useState(false)
+  const [sshMkdirName, setSshMkdirName] = useState('')
+  const [sshMkdirBusy, setSshMkdirBusy] = useState(false)
+  const [sshMkdirErr, setSshMkdirErr] = useState('')
   // 任务区项目分组的折叠状态
   const [collapsedProjects, setCollapsedProjects] = useState<Set<string>>(new Set())
+  /** 对话区整体折叠 */
+  const [chatsCollapsed, setChatsCollapsed] = useState(false)
   const [archivedOpen, setArchivedOpen] = useState(false)
+  /** 左下角用户块向上展开 */
+  const [footerOpen, setFooterOpen] = useState(false)
+  const footerWrapRef = useRef<HTMLDivElement | null>(null)
   // 目录选择依赖桌面端桥接，浏览器环境只能提示
   const canPickDir = !!window.yagentDesktop?.dialog?.selectDirectory
 
@@ -100,6 +121,15 @@ export function Sidebar({
     document.addEventListener('click', close)
     return () => document.removeEventListener('click', close)
   }, [taskMenuOpen])
+
+  useEffect(() => {
+    if (!footerOpen) return
+    const onDoc = (e: MouseEvent) => {
+      if (!footerWrapRef.current?.contains(e.target as Node)) setFooterOpen(false)
+    }
+    document.addEventListener('mousedown', onDoc)
+    return () => document.removeEventListener('mousedown', onDoc)
+  }, [footerOpen])
 
   // 打开 SSH 表单时加载 ~/.ssh/config 主机
   useEffect(() => {
@@ -143,6 +173,9 @@ export function Sidebar({
   // 进入子目录 / 返回上级
   const sshEnter = (sub: string) => {
     const next = sshPath === '~' ? `~/${sub}` : `${sshPath.replace(/\/$/, '')}/${sub}`
+    setSshMkdirOpen(false)
+    setSshMkdirName('')
+    setSshMkdirErr('')
     setSshPath(next)
     loadSshDirs(sshHost, next)
   }
@@ -151,8 +184,33 @@ export function Sidebar({
     const next = sshPath.startsWith('~/')
       ? sshPath.slice(0, sshPath.lastIndexOf('/')) || '~'
       : sshPath.slice(0, sshPath.lastIndexOf('/')) || '/'
+    setSshMkdirOpen(false)
+    setSshMkdirName('')
+    setSshMkdirErr('')
     setSshPath(next)
     loadSshDirs(sshHost, next)
+  }
+  const sshMkdir = async () => {
+    const name = sshMkdirName.trim()
+    if (!name || !sshHost.trim() || sshMkdirBusy) return
+    setSshMkdirBusy(true)
+    setSshMkdirErr('')
+    try {
+      const res = await window.yagentDesktop?.ssh?.mkdir(sshHost.trim(), sshPath, name)
+      if (!res?.ok) {
+        setSshMkdirErr(res?.error || '创建失败')
+        return
+      }
+      setSshMkdirOpen(false)
+      setSshMkdirName('')
+      const next = res.path || (sshPath === '~' ? `~/${name}` : `${sshPath.replace(/\/$/, '')}/${name}`)
+      setSshPath(next)
+      await loadSshDirs(sshHost, next)
+    } catch (e) {
+      setSshMkdirErr(e instanceof Error ? e.message : String(e))
+    } finally {
+      setSshMkdirBusy(false)
+    }
   }
 
   const convTs = (conv: Conversation) => {
@@ -181,6 +239,8 @@ export function Sidebar({
     }
   }
   projects.sort((a, b) => b.latest - a.latest)
+  const allProjectsCollapsed =
+    projects.length > 0 && projects.every((p) => collapsedProjects.has(p.workdir))
 
   const convTime = (conv: Conversation) => formatSidebarTime(convTs(conv))
 
@@ -355,6 +415,18 @@ export function Sidebar({
                     </span>
                     <button
                       type="button"
+                      className="icon-btn"
+                      title="新建目录"
+                      disabled={!sshHost.trim() || sshDirsState === 'loading'}
+                      onClick={() => {
+                        setSshMkdirOpen((v) => !v)
+                        setSshMkdirErr('')
+                      }}
+                    >
+                      <FolderPlus className="ic ic-sm" />
+                    </button>
+                    <button
+                      type="button"
                       className={`icon-btn ssh-refresh${sshDirsState === 'loading' ? ' spin' : ''}`}
                       title="重新读取"
                       onClick={() => loadSshDirs(sshHost, sshPath)}
@@ -362,6 +434,38 @@ export function Sidebar({
                       <RefreshCw className="ic ic-sm" />
                     </button>
                   </div>
+                  {sshMkdirOpen && (
+                    <div className="ssh-mkdir">
+                      <input
+                        className="ssh-input"
+                        value={sshMkdirName}
+                        autoFocus
+                        placeholder="新目录名"
+                        disabled={sshMkdirBusy}
+                        onChange={(e) => setSshMkdirName(e.target.value)}
+                        onKeyDown={(e) => {
+                          if (e.key === 'Enter') {
+                            e.preventDefault()
+                            void sshMkdir()
+                          }
+                          if (e.key === 'Escape') {
+                            setSshMkdirOpen(false)
+                            setSshMkdirName('')
+                            setSshMkdirErr('')
+                          }
+                        }}
+                      />
+                      <button
+                        type="button"
+                        className="ssh-mkdir-ok"
+                        disabled={!sshMkdirName.trim() || sshMkdirBusy}
+                        onClick={() => void sshMkdir()}
+                      >
+                        {sshMkdirBusy ? '…' : '确定'}
+                      </button>
+                    </div>
+                  )}
+                  {sshMkdirErr && <div className="ssh-mkdir-err">{sshMkdirErr}</div>}
                   <div className="ssh-dirlist">
                     {sshDirsState === 'loading' ? (
                       <div className="ssh-dir-empty">连接中…</div>
@@ -370,7 +474,7 @@ export function Sidebar({
                         无法读取：{sshDirsErr}
                       </div>
                     ) : sshDirs.length === 0 ? (
-                      <div className="ssh-dir-empty">（无子目录，可直接用当前目录创建）</div>
+                      <div className="ssh-dir-empty">（无子目录，可新建或直接用当前目录创建）</div>
                     ) : (
                       sshDirs.map((d) => (
                         <button key={d} type="button" className="ssh-dir-item" onClick={() => sshEnter(d)}>
@@ -404,7 +508,25 @@ export function Sidebar({
           <div className="sidebar-scroll">
             {projects.length > 0 && (
               <div>
-                <div className="nav-label">任务</div>
+                <div className="nav-label nav-label-row">
+                  <span>任务</span>
+                  <button
+                    type="button"
+                    className="icon-btn nav-fold-all"
+                    title={allProjectsCollapsed ? '展开全部' : '折叠全部'}
+                    aria-label={allProjectsCollapsed ? '展开全部任务项目' : '折叠全部任务项目'}
+                    onClick={() => {
+                      if (allProjectsCollapsed) setCollapsedProjects(new Set())
+                      else setCollapsedProjects(new Set(projects.map((p) => p.workdir)))
+                    }}
+                  >
+                    {allProjectsCollapsed ? (
+                      <ChevronsUpDown className="ic ic-sm" />
+                    ) : (
+                      <ChevronsDownUp className="ic ic-sm" />
+                    )}
+                  </button>
+                </div>
                 {projects.map((p) => {
                   const collapsed = collapsedProjects.has(p.workdir)
                   return (
@@ -480,18 +602,35 @@ export function Sidebar({
             )}
             {chats.length > 0 && (
               <div>
-                <div className="nav-label">对话</div>
-                {chats.map((conv) => (
-                  <div
-                    key={conv.id}
-                    className={`conv${conv.id === activeId ? ' active' : ''}`}
-                    onClick={() => onSelect(conv.id)}
+                <div className="nav-label nav-label-row">
+                  <span>对话</span>
+                  <span className="proj-count">{chats.length}</span>
+                  <button
+                    type="button"
+                    className="icon-btn nav-fold-all"
+                    title={chatsCollapsed ? '展开全部' : '折叠全部'}
+                    aria-label={chatsCollapsed ? '展开全部对话' : '折叠全部对话'}
+                    onClick={() => setChatsCollapsed((v) => !v)}
                   >
-                    <span className={DOT_CLASS[conv.status]}></span>
-                    <span className="title">{conv.title}</span>
-                    <span className="time">{convTime(conv)}</span>
-                  </div>
-                ))}
+                    {chatsCollapsed ? (
+                      <ChevronsUpDown className="ic ic-sm" />
+                    ) : (
+                      <ChevronsDownUp className="ic ic-sm" />
+                    )}
+                  </button>
+                </div>
+                {!chatsCollapsed &&
+                  chats.map((conv) => (
+                    <div
+                      key={conv.id}
+                      className={`conv${conv.id === activeId ? ' active' : ''}`}
+                      onClick={() => onSelect(conv.id)}
+                    >
+                      <span className={DOT_CLASS[conv.status]}></span>
+                      <span className="title">{conv.title}</span>
+                      <span className="time">{convTime(conv)}</span>
+                    </div>
+                  ))}
               </div>
             )}
             {archived.length > 0 && (
@@ -522,30 +661,80 @@ export function Sidebar({
         </>
       )}
 
-      <div className="sidebar-footer" onClick={onOpenUserSettings}>
-        <div className="avatar">{avatarLetter}</div>
-        <div className="ws">{nickname}</div>
-        <div className="footer-actions">
-          <button
-            className="icon-btn"
-            title="切换主题"
-            onClick={(e) => {
-              e.stopPropagation()
-              onToggleTheme()
+      <div className={`sidebar-footer-wrap${footerOpen ? ' open' : ''}`} ref={footerWrapRef}>
+        <button
+          type="button"
+          className="sidebar-footer-lift"
+          title={footerOpen ? '收起' : '展开'}
+          aria-label={footerOpen ? '收起' : '展开联系与文档'}
+          aria-expanded={footerOpen}
+          onClick={(e) => {
+            e.stopPropagation()
+            setFooterOpen((v) => !v)
+          }}
+        >
+          <ChevronUp className={`ic ic-sm sidebar-footer-caret${footerOpen ? ' open' : ''}`} />
+        </button>
+        <div className={`sidebar-footer${footerOpen ? ' is-open' : ''}`}>
+          <div
+            className="sidebar-footer-row"
+            onClick={() => {
+              setFooterOpen(false)
+              onOpenUserSettings()
             }}
           >
-            {theme === 'dark' ? <Sun className="ic" /> : <Moon className="ic" />}
-          </button>
-          <button
-            className={`icon-btn${settingsOpen ? ' active' : ''}`}
-            title="设置"
-            onClick={(e) => {
-              e.stopPropagation()
-              onOpenSettings()
-            }}
-          >
-            <SettingsIcon className="ic" />
-          </button>
+            <UserAvatar letter={avatarLetter} />
+            <div className="ws">{nickname}</div>
+            <div className="footer-actions">
+              <button
+                className="icon-btn"
+                title="切换主题"
+                onClick={(e) => {
+                  e.stopPropagation()
+                  onToggleTheme()
+                }}
+              >
+                {theme === 'dark' ? <Sun className="ic" /> : <Moon className="ic" />}
+              </button>
+              <button
+                className={`icon-btn${settingsOpen ? ' active' : ''}`}
+                title="设置"
+                onClick={(e) => {
+                  e.stopPropagation()
+                  setFooterOpen(false)
+                  onOpenSettings()
+                }}
+              >
+                <SettingsIcon className="ic" />
+              </button>
+            </div>
+          </div>
+          <div className="sidebar-footer-reveal" aria-hidden={!footerOpen}>
+            <div className="sidebar-footer-links" role="menu">
+              <button
+                type="button"
+                className="sidebar-footer-link"
+                role="menuitem"
+                tabIndex={footerOpen ? 0 : -1}
+                onClick={() => {
+                  void openInBrowser('https://github.com/SyncLionPaw/yagent/issues')
+                }}
+              >
+                联系与反馈
+              </button>
+              <button
+                type="button"
+                className="sidebar-footer-link"
+                role="menuitem"
+                tabIndex={footerOpen ? 0 : -1}
+                onClick={() => {
+                  void openInBrowser('https://synclionpaw.github.io/yagent/docs.html')
+                }}
+              >
+                文档
+              </button>
+            </div>
+          </div>
         </div>
       </div>
     </aside>

@@ -38,10 +38,13 @@ import type {
   KnowledgeSource,
   KnowledgeSourceKind,
   ModelConfig,
+  SendKey,
   Settings,
+  UiSkin,
 } from '@yagent/core'
 import { categoryMatches, listSightInsights } from '../insights'
 import { BrandIcon } from './BrandIcons'
+import { UserAvatar } from './UserAvatar'
 import {
   devDeepseekKey,
   keyHasBadChars,
@@ -84,6 +87,7 @@ export type SettingsPaneId =
   | 'knowledge'
   | 'tools'
   | 'connectors'
+  | 'storage'
 
 interface SettingsPanelProps {
   pane: SettingsPaneId
@@ -96,12 +100,13 @@ interface SettingsPanelProps {
 const PANE_META: Record<SettingsPaneId, [string, string]> = {
   user: ['用户', '本机昵称、头像字标，以及近一年对话打卡'],
   models: ['模型配置', '每个模型条目自带密钥与端点（BYOK），仅存储在本地'],
-  appearance: ['外观', '主题强调色会应用到按钮、高亮与边缘光等全局样式'],
+  appearance: ['外观', '界面皮肤与主题强调色会应用到全局样式'],
   skills: ['技能', '管理 SKILL.md；可扫描 Cursor / Claude 等目录并迁移'],
-  inspiration: ['灵感', '收获优先朝这些方向提取'],
+  inspiration: ['灵感', '关闭时不提取收获；开启后可配置关键词引导方向'],
   knowledge: ['知识库', '连接本地目录或云端文档源，供 Agent 检索引用'],
   tools: ['工具', '配置 Agent 的默认工具与沙箱'],
   connectors: ['连接器', '连接外部服务，让 Agent 读写你的工具和数据'],
+  storage: ['存储空间', '查看应用数据目录占用，以及各子目录体积'],
 }
 
 export function userNickname(settings: Settings): string {
@@ -121,6 +126,11 @@ const ACCENT_OPTIONS: { id: AccentId; label: string; desc: string; swatch: strin
   { id: 'ice-blue', label: '冰晶蓝', desc: '清冽冰蓝', swatch: '#3d8fd1' },
   { id: 'sakura-pink', label: '初樱粉', desc: '淡樱初放', swatch: '#e08aa4' },
   { id: 'maple-red', label: '枫红', desc: '秋枫鲜红', swatch: '#d63b3b' },
+]
+
+const SKIN_OPTIONS: { id: UiSkin; label: string; desc: string }[] = [
+  { id: 'default', label: '默认', desc: '实色面板' },
+  { id: 'liquid-glass', label: '液态玻璃', desc: '测试主题 · 磨砂透光' },
 ]
 
 /** 设置页：渲染在舞台翻面后的背面（非弹窗），左侧菜单在侧栏里 */
@@ -169,6 +179,9 @@ export function SettingsPanel({
         </div>
         <div className={`s-pane${pane === 'connectors' ? ' active' : ''}`}>
           <ConnectorsPane />
+        </div>
+        <div className={`s-pane${pane === 'storage' ? ' active' : ''}`}>
+          <StoragePane active={pane === 'storage'} />
         </div>
       </div>
     </div>
@@ -671,7 +684,7 @@ function UserPane({
     <>
       <div className="sub-label">资料</div>
       <div className="user-profile">
-        <div className="avatar user-profile-avatar">{letter}</div>
+        <UserAvatar letter={letter} className="user-profile-avatar" />
         <div className="user-profile-fields">
           <div className="field" style={{ marginBottom: 0 }}>
             <div className="field-label">昵称</div>
@@ -690,7 +703,7 @@ function UserPane({
           </div>
         </div>
       </div>
-      <p className="user-profile-hint">头像字标取昵称首字；暂无账号登录，仅本机使用。</p>
+      <p className="user-profile-hint">默认头像为 Chiikawa 小八；暂无账号登录，仅本机使用。</p>
       <div className="sub-label">活跃度</div>
       <ActivityHeatmap conversations={conversations} />
       <div className="sub-label">Token 使用</div>
@@ -998,9 +1011,23 @@ function ModelsPane({
 
 /* ---------- 2. 外观 ---------- */
 
-function ProductThumb({ theme, accent }: { theme: 'light' | 'dark'; accent: AccentId }) {
+function ProductThumb({
+  theme,
+  accent,
+  skin = 'default',
+}: {
+  theme: 'light' | 'dark'
+  accent: AccentId
+  skin?: UiSkin
+}) {
   return (
-    <div className="ui-thumb" data-theme={theme} data-accent={accent} aria-hidden>
+    <div
+      className={`ui-thumb${skin === 'liquid-glass' ? ' ui-thumb-glass' : ''}`}
+      data-theme={theme}
+      data-accent={accent}
+      data-skin={skin}
+      aria-hidden
+    >
       <div className="ui-thumb-side">
         <div className="ui-thumb-brand" />
         <div className="ui-thumb-nav on" />
@@ -1062,11 +1089,39 @@ function AppearancePane({
   onChange: (s: Settings) => void
 }) {
   const accent = settings.appearance?.accent ?? 'violet'
+  const skin: UiSkin = settings.appearance?.skin ?? 'default'
+  const sendKey: SendKey = settings.appearance?.sendKey ?? 'cmdEnter'
+  const mod = /Mac|iPhone|iPod|iPad/i.test(navigator.platform) || navigator.userAgent.includes('Mac')
+    ? '⌘'
+    : 'Ctrl'
   const setAccent = (id: AccentId) =>
     onChange({ ...settings, appearance: { ...settings.appearance, accent: id } })
+  const setSkin = (id: UiSkin) =>
+    onChange({ ...settings, appearance: { ...settings.appearance, skin: id } })
+  const setSendKey = (id: SendKey) =>
+    onChange({ ...settings, appearance: { ...settings.appearance, sendKey: id } })
 
   return (
     <>
+      <div className="sub-label">界面皮肤</div>
+      <div className="accent-grid skin-grid">
+        {SKIN_OPTIONS.map((o) => (
+          <button
+            key={o.id}
+            type="button"
+            className={`accent-card skin-card${skin === o.id ? ' on' : ''}${o.id === 'liquid-glass' ? ' skin-liquid' : ''}`}
+            onClick={() => setSkin(o.id)}
+          >
+            <span className={`skin-preview${o.id === 'liquid-glass' ? ' liquid' : ''}`} aria-hidden />
+            <span className="accent-meta">
+              <span className="accent-name">{o.label}</span>
+              <span className="accent-desc">{o.desc}</span>
+            </span>
+            {skin === o.id && <Check className="ic ic-sm accent-check" />}
+          </button>
+        ))}
+      </div>
+
       <div className="sub-label">主题色</div>
       <div className="accent-grid">
         {ACCENT_OPTIONS.map((o) => (
@@ -1085,14 +1140,42 @@ function AppearancePane({
           </button>
         ))}
       </div>
+
+      <div className="sub-label">发送快捷键</div>
+      <div className="field">
+        <div className="segmented">
+          <button
+            type="button"
+            className={sendKey === 'enter' ? 'on' : ''}
+            onClick={() => setSendKey('enter')}
+          >
+            Enter 发送
+          </button>
+          <button
+            type="button"
+            className={sendKey === 'cmdEnter' ? 'on' : ''}
+            onClick={() => setSendKey('cmdEnter')}
+          >
+            {mod}+Enter 发送
+          </button>
+        </div>
+        <div className="field-label" style={{ marginTop: 8 }}>
+          <span className="hint">
+            {sendKey === 'enter'
+              ? `Enter 发送，${mod}+Enter 换行`
+              : `${mod}+Enter 发送，Enter 换行`}
+          </span>
+        </div>
+      </div>
+
       <div className="sub-label">预览</div>
       <div className="ui-thumb-row">
         <div className="ui-thumb-wrap">
-          <ProductThumb theme="light" accent={accent} />
+          <ProductThumb theme="light" accent={accent} skin={skin} />
           <span className="ui-thumb-caption">浅色</span>
         </div>
         <div className="ui-thumb-wrap">
-          <ProductThumb theme="dark" accent={accent} />
+          <ProductThumb theme="dark" accent={accent} skin={skin} />
           <span className="ui-thumb-caption">深色</span>
         </div>
       </div>
@@ -1662,6 +1745,7 @@ function InspirationPane({
   settings: Settings
   onChange: (s: Settings) => void
 }) {
+  const enabled = settings.inspiration?.enabled === true
   const keywords = settings.inspiration?.keywords ?? []
   const [draft, setDraft] = useState('')
   const [sight, setSight] = useState<Insight[]>([])
@@ -1688,7 +1772,7 @@ function InspirationPane({
   }, [keywords, carousel])
 
   useEffect(() => {
-    if (!active) return
+    if (!active || !enabled) return
     let alive = true
     void listSightInsights().then((list) => {
       if (alive) setSight(list)
@@ -1696,7 +1780,7 @@ function InspirationPane({
     return () => {
       alive = false
     }
-  }, [active, keywords])
+  }, [active, keywords, enabled])
 
   useEffect(() => {
     animating.current = false
@@ -1763,6 +1847,16 @@ function InspirationPane({
     return () => el.removeEventListener('wheel', onWheel)
   }, [carousel, active])
 
+  const setInspiration = (patch: { enabled?: boolean; keywords?: string[] }) => {
+    onChange({
+      ...settings,
+      inspiration: {
+        enabled: patch.enabled ?? enabled,
+        keywords: patch.keywords ?? keywords,
+      },
+    })
+  }
+
   const commitKeywords = (next: string[]) => {
     const cleaned = next.map((k) => k.trim()).filter(Boolean)
     const seen = new Set<string>()
@@ -1773,7 +1867,7 @@ function InspirationPane({
       seen.add(key)
       unique.push(k)
     }
-    onChange({ ...settings, inspiration: { keywords: unique } })
+    setInspiration({ keywords: unique })
   }
 
   const addDraft = () => {
@@ -1834,6 +1928,23 @@ function InspirationPane({
 
   return (
     <div className="insp-pane">
+      <div className="switch-row">
+        <span className="sr-text">
+          启用灵感<small>开启后 Agent 可写入收获，右栏显示收获与收藏便签</small>
+        </span>
+        <button
+          type="button"
+          className={`switch${enabled ? ' on' : ''}`}
+          aria-pressed={enabled}
+          onClick={() => setInspiration({ enabled: !enabled })}
+        />
+      </div>
+      {!enabled ? (
+        <div className="files-note" style={{ marginTop: 10 }}>
+          灵感已关闭。开启后可配置关键词，并出现「收获」面板。
+        </div>
+      ) : (
+      <>
       <div className={`insp-carousel${carousel ? ' peek' : ''}`}>
         {carousel ? (
           <button
@@ -1961,6 +2072,8 @@ function InspirationPane({
           }}
         />
       </div>
+      </>
+      )}
     </div>
   )
 }
@@ -2195,16 +2308,23 @@ function ToolsPane({
               onChange({ ...settings, sandbox: { ...settings.sandbox, env: 'local' } })
             }
           >
-            本地直连
+            进程隔离
           </button>
           <button
             className={settings.sandbox.env === 'sandbox' ? 'on' : ''}
+            disabled
+            title="Docker / 远程沙箱尚未接线"
             onClick={() =>
               onChange({ ...settings, sandbox: { ...settings.sandbox, env: 'sandbox' } })
             }
           >
-            隔离沙箱
+            Docker（预留）
           </button>
+        </div>
+        <div className="field-label" style={{ marginTop: 8 }}>
+          <span className="hint">
+            纯 chat 当前使用本机进程隔离沙箱（每会话独立目录 + 子进程 cwd）。Docker / 远程虚拟机接口已预留，尚未实现。
+          </span>
         </div>
       </div>
       <div className="field">
@@ -2304,6 +2424,384 @@ function ConnectorsPane() {
 
       <div className="files-note" style={{ marginTop: 16 }}>
         连接器为预览功能：连接状态仅本地演示，真实授权（OAuth）与 MCP 接入尚未实现。
+      </div>
+    </>
+  )
+}
+
+/* ---------- 存储空间 ---------- */
+
+const STORAGE_LABELS: Record<string, string> = {
+  chats: '对话',
+  projects: '任务项目',
+  insights: '灵感收获',
+  skills: '技能',
+  'settings.json': '设置',
+  'token-usage.json': 'Token 用量',
+}
+
+const STORAGE_COLORS = [
+  'var(--accent)',
+  '#3d8fd1',
+  '#1faa6e',
+  '#e07a3a',
+  '#e08aa4',
+  '#d63b3b',
+  '#8b7cf6',
+  '#94a3b8',
+]
+
+function formatBytes(n: number): string {
+  if (!Number.isFinite(n) || n <= 0) return '0 B'
+  if (n < 1024) return `${n} B`
+  if (n < 1024 * 1024) return `${(n / 1024).toFixed(n < 10 * 1024 ? 1 : 0)} KB`
+  if (n < 1024 * 1024 * 1024) return `${(n / (1024 * 1024)).toFixed(n < 10 * 1024 * 1024 ? 1 : 0)} MB`
+  return `${(n / (1024 * 1024 * 1024)).toFixed(2)} GB`
+}
+
+type StorageEntry = {
+  name: string
+  rel: string
+  bytes: number
+  kind: 'dir' | 'file'
+  children?: { name: string; rel: string; bytes: number; kind: 'dir' | 'file' }[]
+}
+
+function polar(cx: number, cy: number, r: number, angle: number): [number, number] {
+  return [cx + r * Math.cos(angle), cy + r * Math.sin(angle)]
+}
+
+/** 圆环扇区：angle 从正右逆时针，调用方从 -π/2 起算 */
+function donutSlice(
+  cx: number,
+  cy: number,
+  rOut: number,
+  rIn: number,
+  start: number,
+  end: number,
+): string {
+  const sweep = end - start
+  if (sweep <= 0.0001) return ''
+  // 满圆用两段弧，避免起终点重合画不出来
+  if (sweep >= Math.PI * 2 - 0.0001) {
+    const mid = start + Math.PI
+    const [ox0, oy0] = polar(cx, cy, rOut, start)
+    const [ox1, oy1] = polar(cx, cy, rOut, mid)
+    const [ox2, oy2] = polar(cx, cy, rOut, start + Math.PI * 2)
+    const [ix0, iy0] = polar(cx, cy, rIn, start + Math.PI * 2)
+    const [ix1, iy1] = polar(cx, cy, rIn, mid)
+    const [ix2, iy2] = polar(cx, cy, rIn, start)
+    return [
+      `M ${ox0} ${oy0}`,
+      `A ${rOut} ${rOut} 0 1 1 ${ox1} ${oy1}`,
+      `A ${rOut} ${rOut} 0 1 1 ${ox2} ${oy2}`,
+      `L ${ix0} ${iy0}`,
+      `A ${rIn} ${rIn} 0 1 0 ${ix1} ${iy1}`,
+      `A ${rIn} ${rIn} 0 1 0 ${ix2} ${iy2}`,
+      'Z',
+    ].join(' ')
+  }
+  const large = sweep > Math.PI ? 1 : 0
+  const [x0, y0] = polar(cx, cy, rOut, start)
+  const [x1, y1] = polar(cx, cy, rOut, end)
+  const [x2, y2] = polar(cx, cy, rIn, end)
+  const [x3, y3] = polar(cx, cy, rIn, start)
+  return [
+    `M ${x0} ${y0}`,
+    `A ${rOut} ${rOut} 0 ${large} 1 ${x1} ${y1}`,
+    `L ${x2} ${y2}`,
+    `A ${rIn} ${rIn} 0 ${large} 0 ${x3} ${y3}`,
+    'Z',
+  ].join(' ')
+}
+
+function StoragePie({
+  entries,
+  totalBytes,
+  hoverRel,
+  onHover,
+}: {
+  entries: StorageEntry[]
+  totalBytes: number
+  hoverRel: string | null
+  onHover: (rel: string | null) => void
+}) {
+  const slices = useMemo(() => {
+    const total = Math.max(0, totalBytes)
+    if (total <= 0 || !entries.length) return [] as {
+      rel: string
+      label: string
+      bytes: number
+      color: string
+      start: number
+      end: number
+      d: string
+    }[]
+    const CX = 80
+    const CY = 80
+    const R_OUT = 68
+    const R_IN = 42
+    let angle = -Math.PI / 2
+    return entries
+      .filter((e) => e.bytes > 0)
+      .map((e, i) => {
+        const sweep = (e.bytes / total) * Math.PI * 2
+        const start = angle
+        const end = angle + sweep
+        angle = end
+        return {
+          rel: e.rel,
+          label: STORAGE_LABELS[e.name] || e.name,
+          bytes: e.bytes,
+          color: STORAGE_COLORS[i % STORAGE_COLORS.length]!,
+          start,
+          end,
+          d: donutSlice(CX, CY, R_OUT, R_IN, start, end),
+        }
+      })
+  }, [entries, totalBytes])
+
+  const hover = hoverRel ? slices.find((s) => s.rel === hoverRel) : null
+  const centerLabel = hover ? hover.label : '合计'
+  const centerValue = hover ? formatBytes(hover.bytes) : formatBytes(totalBytes)
+  const centerPct =
+    hover && totalBytes > 0 ? `${Math.round((hover.bytes / totalBytes) * 100)}%` : null
+
+  return (
+    <div className="storage-pie-wrap" role="img" aria-label="各分类磁盘占用占比">
+      <svg className="storage-pie" viewBox="0 0 160 160" aria-hidden="true">
+        <circle className="storage-pie-track" cx="80" cy="80" r="68" />
+        {slices.map((s) => (
+          <path
+            key={s.rel}
+            className={`storage-pie-slice${hoverRel === s.rel ? ' is-hot' : ''}${hoverRel && hoverRel !== s.rel ? ' is-dim' : ''}`}
+            d={s.d}
+            fill={s.color}
+            onMouseEnter={() => onHover(s.rel)}
+            onMouseLeave={() => onHover(null)}
+          />
+        ))}
+        <text className="storage-pie-value" x="80" y={centerPct ? 74 : 78} textAnchor="middle">
+          {centerValue}
+        </text>
+        <text className="storage-pie-sub" x="80" y={centerPct ? 92 : 96} textAnchor="middle">
+          {centerLabel}
+        </text>
+        {centerPct ? (
+          <text className="storage-pie-pct" x="80" y="108" textAnchor="middle">
+            {centerPct}
+          </text>
+        ) : null}
+      </svg>
+      <div className="storage-pie-legend">
+        {slices.map((s) => {
+          const pct = totalBytes > 0 ? Math.round((s.bytes / totalBytes) * 100) : 0
+          return (
+            <button
+              type="button"
+              key={s.rel}
+              className={`storage-legend-item${hoverRel === s.rel ? ' is-hot' : ''}`}
+              onMouseEnter={() => onHover(s.rel)}
+              onMouseLeave={() => onHover(null)}
+            >
+              <i className="storage-swatch" style={{ background: s.color }} />
+              <span>{s.label}</span>
+              <strong>{formatBytes(s.bytes)}</strong>
+              <em>{pct}%</em>
+            </button>
+          )
+        })}
+      </div>
+    </div>
+  )
+}
+
+function StoragePane({ active }: { active: boolean }) {
+  const [loading, setLoading] = useState(false)
+  const [error, setError] = useState('')
+  const [root, setRoot] = useState('')
+  const [totalBytes, setTotalBytes] = useState(0)
+  const [entries, setEntries] = useState<StorageEntry[]>([])
+  const [openRels, setOpenRels] = useState<Set<string>>(() => new Set())
+  const [hoverRel, setHoverRel] = useState<string | null>(null)
+
+  const colorByRel = useMemo(() => {
+    const map = new Map<string, string>()
+    entries.forEach((e, i) => {
+      map.set(e.rel, STORAGE_COLORS[i % STORAGE_COLORS.length]!)
+    })
+    return map
+  }, [entries])
+
+  const reload = async () => {
+    const api = window.yagentDesktop?.storage?.usage
+    if (!api) {
+      setError('当前环境无法读取本地存储（需桌面端）')
+      setEntries([])
+      setTotalBytes(0)
+      setRoot('')
+      return
+    }
+    setLoading(true)
+    setError('')
+    try {
+      const res = await api()
+      if (!res.ok) {
+        setError(res.error || '统计失败')
+        setEntries([])
+        setTotalBytes(0)
+        setRoot(res.root || '')
+        return
+      }
+      setRoot(res.root)
+      setTotalBytes(res.totalBytes)
+      setEntries(res.entries || [])
+    } catch (e) {
+      setError(e instanceof Error ? e.message : String(e))
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  useEffect(() => {
+    if (!active) return
+    void reload()
+  }, [active])
+
+  const maxBytes = Math.max(1, ...entries.map((e) => e.bytes), totalBytes)
+
+  return (
+    <>
+      <div className="storage-summary">
+        <div className="storage-summary-main">
+          <div className="storage-summary-label">应用数据合计</div>
+          <div className="storage-summary-size">{formatBytes(totalBytes)}</div>
+          {root ? (
+            <div className="storage-summary-path" title={root}>
+              {root}
+            </div>
+          ) : null}
+        </div>
+        <div className="storage-summary-actions">
+          <button
+            type="button"
+            className="btn"
+            disabled={loading}
+            onClick={() => void reload()}
+            title="重新统计"
+          >
+            <RefreshCw className={`ic ic-sm${loading ? ' spin' : ''}`} />
+            刷新
+          </button>
+          <button
+            type="button"
+            className="btn"
+            disabled={!window.yagentDesktop?.storage?.reveal}
+            onClick={() => void window.yagentDesktop?.storage?.reveal()}
+            title="在访达中打开数据目录"
+          >
+            <FolderOpen className="ic ic-sm" />
+            打开目录
+          </button>
+        </div>
+      </div>
+
+      {entries.some((e) => e.bytes > 0) ? (
+        <>
+          <div className="sub-label">占用构成</div>
+          <div className="storage-pie-card">
+            <StoragePie
+              entries={entries}
+              totalBytes={totalBytes}
+              hoverRel={hoverRel}
+              onHover={setHoverRel}
+            />
+          </div>
+        </>
+      ) : null}
+
+      <div className="sub-label">分类占用</div>
+      {error ? <div className="files-note">{error}</div> : null}
+      {loading && !entries.length ? <div className="files-note">正在统计…</div> : null}
+      {!loading && !error && !entries.length ? (
+        <div className="files-note">数据目录为空</div>
+      ) : null}
+
+      <div className="storage-list">
+        {entries.map((e) => {
+          const label = STORAGE_LABELS[e.name] || e.name
+          const open = openRels.has(e.rel)
+          const kids = e.children || []
+          const pct = Math.max(2, Math.round((e.bytes / maxBytes) * 100))
+          const color = colorByRel.get(e.rel) || STORAGE_COLORS[0]!
+          return (
+            <div
+              className={`storage-row${hoverRel === e.rel ? ' is-hot' : ''}`}
+              key={e.rel}
+              onMouseEnter={() => setHoverRel(e.rel)}
+              onMouseLeave={() => setHoverRel(null)}
+            >
+              <button
+                type="button"
+                className={`storage-item${kids.length ? '' : ' is-leaf'}`}
+                onClick={() => {
+                  if (!kids.length) return
+                  setOpenRels((prev) => {
+                    const next = new Set(prev)
+                    if (next.has(e.rel)) next.delete(e.rel)
+                    else next.add(e.rel)
+                    return next
+                  })
+                }}
+              >
+                {kids.length ? (
+                  <ChevronDown className={`ic ic-sm storage-caret${open ? '' : ' is-collapsed'}`} />
+                ) : (
+                  <span className="storage-caret-gap" />
+                )}
+                <span className="storage-name">
+                  <i className="storage-swatch" style={{ background: color }} />
+                  {label}
+                  {label !== e.name ? <span className="storage-name-raw">{e.name}</span> : null}
+                </span>
+                <span className="storage-bytes">{formatBytes(e.bytes)}</span>
+                <span className="storage-bar" aria-hidden>
+                  <span
+                    className="storage-bar-fill"
+                    style={{ width: `${pct}%`, background: color }}
+                  />
+                </span>
+              </button>
+              {open && kids.length ? (
+                <div className="storage-children">
+                  {kids.map((c) => {
+                    const childPct = Math.max(
+                      2,
+                      Math.round((c.bytes / Math.max(1, e.bytes)) * 100),
+                    )
+                    return (
+                      <div className="storage-item storage-child" key={c.rel}>
+                        <span className="storage-caret-gap" />
+                        <span className="storage-name">{c.name}</span>
+                        <span className="storage-bytes">{formatBytes(c.bytes)}</span>
+                        <span className="storage-bar" aria-hidden>
+                          <span
+                            className="storage-bar-fill is-child"
+                            style={{ width: `${childPct}%`, background: color }}
+                          />
+                        </span>
+                      </div>
+                    )
+                  })}
+                </div>
+              ) : null}
+            </div>
+          )
+        })}
+      </div>
+
+      <div className="files-note" style={{ marginTop: 8 }}>
+        统计范围为应用数据目录（对话、项目附件、技能等），不含应用本体安装体积。
       </div>
     </>
   )

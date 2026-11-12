@@ -45,9 +45,17 @@ export function mergeSettings(defaults: Settings, saved: Partial<Settings>): Set
     user: { ...defaults.user, ...saved.user },
     // insights 已迁出；保留字段仅供启动迁移读一次
     insights: saved.insights ?? [],
-    inspiration: {
-      keywords: saved.inspiration?.keywords ?? defaults.inspiration?.keywords ?? [],
-    },
+    inspiration: (() => {
+      const savedInsp = saved.inspiration
+      const keywords = savedInsp?.keywords ?? defaults.inspiration?.keywords ?? []
+      // 显式 enabled 优先；旧配置仅有关键词时视为已开启，避免升级后突然关掉
+      const enabled =
+        savedInsp?.enabled ??
+        (Array.isArray(savedInsp?.keywords) && savedInsp.keywords.length > 0
+          ? true
+          : (defaults.inspiration?.enabled ?? false))
+      return { enabled, keywords }
+    })(),
     knowledgeBases: {
       sources: saved.knowledgeBases?.sources ?? defaults.knowledgeBases?.sources ?? [],
     },

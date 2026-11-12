@@ -12,6 +12,7 @@ import {
   X,
   Zap,
 } from 'lucide-react'
+import type { SendKey } from '@yagent/core'
 import type { ApprovalMode } from '../approval'
 import { acceptAttachReason, MAX_ATTACH_BYTES } from '../lib/attachAccept'
 import { HTML_PREVIEW_SANDBOX } from '../lib/htmlPreview'
@@ -60,6 +61,12 @@ interface ComposerProps {
   approval?: ReactNode
   /** 工具审批档位：询问 / 写文件自动 / 全自动 */
   approvalMode: ApprovalMode
+  /** Enter 发送 或 ⌘/Ctrl+Enter 发送；另一组换行 */
+  sendKey?: SendKey
+  /** SSH 等远程不可达：工具不全，输入框展示降级态 */
+  toolsDegraded?: boolean
+  /** 降级态短提示，如「远程离线 · host」 */
+  toolsDegradedHint?: string
   /** 正在编辑某条已发送消息时展示横条 */
   editingMessage?: boolean
   /** ask_user_question 挂起：禁用停止，避免误点打断问答 */
@@ -78,6 +85,16 @@ interface ComposerProps {
   onOpenVoice?: () => void
   onApprovalModeChange: (mode: ApprovalMode) => void
   onCancelEdit?: () => void
+}
+
+function isModEnter(e: { metaKey: boolean; ctrlKey: boolean }): boolean {
+  return e.metaKey || e.ctrlKey
+}
+
+function modLabel(): string {
+  return /Mac|iPhone|iPod|iPad/i.test(navigator.platform) || navigator.userAgent.includes('Mac')
+    ? '⌘'
+    : 'Ctrl'
 }
 
 /** 从 DataTransfer 收集文件（粘贴 / 拖放）；纯文本返回空 */
@@ -114,6 +131,9 @@ export function Composer({
   attachments,
   approval,
   approvalMode,
+  sendKey = 'cmdEnter',
+  toolsDegraded = false,
+  toolsDegradedHint,
   editingMessage,
   askingUser,
   context,
@@ -136,6 +156,26 @@ export function Composer({
   const [slashHi, setSlashHi] = useState(0)
   const [queueOpen, setQueueOpen] = useState(false)
   const queuedCount = queuedItems.length
+  const enterToSend = sendKey === 'enter'
+  const mod = modLabel()
+  const sendShortcut = enterToSend ? 'Enter' : `${mod}+Enter`
+  const newlineShortcut = enterToSend ? `${mod}+Enter` : 'Enter'
+
+  const insertNewline = () => {
+    const el = ta.current
+    if (!el) {
+      onDraftChange(draft + '\n')
+      return
+    }
+    const start = el.selectionStart ?? draft.length
+    const end = el.selectionEnd ?? draft.length
+    const next = draft.slice(0, start) + '\n' + draft.slice(end)
+    onDraftChange(next)
+    requestAnimationFrame(() => {
+      const pos = start + 1
+      el.selectionStart = el.selectionEnd = pos
+    })
+  }
 
   useEffect(() => {
     if (queuedCount === 0) setQueueOpen(false)
@@ -244,13 +284,19 @@ export function Composer({
       <div className="composer-main">
         {approval}
         <div
-          className={`composer-box${dragging ? ' drag-over' : ''}${running ? ' is-generating' : ''}`}
+          className={`composer-box${dragging ? ' drag-over' : ''}${running ? ' is-generating' : ''}${toolsDegraded ? ' is-tools-degraded' : ''}`}
           onPaste={handlePaste}
           onDragEnter={handleDragEnter}
           onDragLeave={handleDragLeave}
           onDragOver={handleDragOver}
           onDrop={handleDrop}
         >
+          {toolsDegraded ? (
+            <div className="composer-degraded-badge" title={toolsDegradedHint || '部分工具暂不可用'}>
+              <ShieldAlert className="ic ic-sm" />
+              <span>{toolsDegradedHint || '工具降级 · 远程能力暂不可用'}</span>
+            </div>
+          ) : null}
           {/* 浮在输入框上方：不占文档流，避免舞台白底拉出整条遮挡带 */}
           {attachments.length > 0 && (
             <div className="attach-list">
@@ -370,8 +416,10 @@ export function Composer({
               editingMessage
                 ? '编辑后发送，将从此处分叉重跑…'
                 : running
-                  ? '继续输入，⌘+Enter 排队，本轮结束后合并发送…'
-                  : '继续指示，⌘+Enter 发送；输入 / 可用命令…'
+                  ? `继续输入，${sendShortcut} 排队，本轮结束后合并发送…`
+                  : enterToSend
+                    ? `继续指示，Enter 发送；${newlineShortcut} 或 Shift+Enter 换行；输入 / 可用命令…`
+                    : `继续指示，${sendShortcut} 发送；${newlineShortcut} 换行；输入 / 可用命令…`
             }
             value={draft}
             onChange={(e) => onDraftChange(e.target.value)}
@@ -395,8 +443,8 @@ export function Composer({
                   setSlashHi((h) => (h - 1 + slashHits.length) % slashHits.length)
                   return
                 }
-                // Enter / Tab：只补全进输入框，不发送（发送仍走 ⌘+Enter）
-                if (e.key === 'Tab' || (e.key === 'Enter' && !e.metaKey && !e.ctrlKey)) {
+                // Enter / ⌘Enter / Tab：只补全进输入框，不发送（避免误发）
+                if (e.key === 'Tab' || e.key === 'Enter') {
                   e.preventDefault()
                   const pick = slashHits[slashHi] ?? slashHits[0]
                   if (pick) onDraftChange(`/${pick.name}`)
@@ -420,8 +468,20 @@ export function Composer({
                 onAttachmentsChange(attachments.slice(0, -1))
                 return
               }
-              // ⌘/Ctrl + Enter 发送，Enter 换行
-              if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) {
+              if (e.key !== 'Enter') return
+              const modPressed = isModEnter(e)
+              if (enterToSend) {
+                if (modPressed) {
+                  e.preventDefault()
+                  insertNewline()
+                } else if (!e.shiftKey) {
+                  e.preventDefault()
+                  onSend()
+                }
+                return
+              }
+              // cmdEnter：⌘/Ctrl+Enter 发送，Enter 换行
+              if (modPressed) {
                 e.preventDefault()
                 onSend()
               }
@@ -447,10 +507,22 @@ export function Composer({
                 <span className="ring" />
               </button>
             ) : (
-              <button className="send" title="发送 (⌘+Enter)" onClick={onSend}>
-                <Command className="ic send-ic" />
-                <span className="send-plus">+</span>
-                <CornerDownLeft className="ic send-ic" />
+              <button className="send" title={`发送 (${sendShortcut})`} onClick={onSend}>
+                {enterToSend ? (
+                  <CornerDownLeft className="ic send-ic" />
+                ) : mod === '⌘' ? (
+                  <>
+                    <Command className="ic send-ic" />
+                    <span className="send-plus">+</span>
+                    <CornerDownLeft className="ic send-ic" />
+                  </>
+                ) : (
+                  <>
+                    <span className="send-mod-label">Ctrl</span>
+                    <span className="send-plus">+</span>
+                    <CornerDownLeft className="ic send-ic" />
+                  </>
+                )}
               </button>
             )}
           </div>

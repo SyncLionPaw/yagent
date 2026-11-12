@@ -40,12 +40,35 @@ contextBridge.exposeInMainWorld('yagentDesktop', {
     execute: (name: string, input: Record<string, unknown>, workdir: string) =>
       ipcRenderer.invoke('tools:execute', { name, input, workdir }),
   },
+  /** 纯 chat 沙箱：当前为 local-process；后续可扩展 docker / remote */
+  sandbox: {
+    ensure: (convId: string) =>
+      ipcRenderer.invoke('sandbox:ensure', convId) as Promise<{
+        backend: 'local-process' | 'docker' | 'remote'
+        root: string
+      }>,
+    info: (convId: string) =>
+      ipcRenderer.invoke('sandbox:info', convId) as Promise<{
+        backend: 'local-process' | 'docker' | 'remote'
+        root: string
+        ready: boolean
+      }>,
+  },
   dialog: {
     selectDirectory: () => ipcRenderer.invoke('dialog:selectDirectory'),
+  },
+  shell: {
+    openExternal: (url: string) => ipcRenderer.invoke('shell:openExternal', url),
+  },
+  storage: {
+    usage: () => ipcRenderer.invoke('storage:usage'),
+    reveal: () => ipcRenderer.invoke('storage:reveal'),
   },
   ssh: {
     listHosts: () => ipcRenderer.invoke('ssh:listHosts'),
     listDirs: (host: string, dir: string) => ipcRenderer.invoke('ssh:listDirs', host, dir),
+    mkdir: (host: string, parent: string, name: string) =>
+      ipcRenderer.invoke('ssh:mkdir', host, parent, name),
     ping: (host: string) => ipcRenderer.invoke('ssh:ping', host),
   },
   fs: {
@@ -53,6 +76,25 @@ contextBridge.exposeInMainWorld('yagentDesktop', {
     read: (workdir: string, rel: string) => ipcRenderer.invoke('fs:read', workdir, rel),
     write: (workdir: string, rel: string, base64: string) =>
       ipcRenderer.invoke('fs:write', workdir, rel, base64),
+    openMenu: (workdir: string, rel: string) => ipcRenderer.invoke('fs:openMenu', workdir, rel),
+    openWithApp: (workdir: string, rel: string, appPath?: string | null) =>
+      ipcRenderer.invoke('fs:openWithApp', workdir, rel, appPath ?? null),
+    revealInFolder: (workdir: string, rel: string) =>
+      ipcRenderer.invoke('fs:revealInFolder', workdir, rel),
+    openParentInTerminal: (workdir: string, rel: string) =>
+      ipcRenderer.invoke('fs:openParentInTerminal', workdir, rel),
+    exportFile: (opts: {
+      workdir?: string
+      rel?: string
+      absPath?: string
+      defaultName?: string
+    }) =>
+      ipcRenderer.invoke('fs:exportFile', opts) as Promise<{
+        ok: boolean
+        canceled?: boolean
+        path?: string
+        error?: string
+      }>,
   },
   attachments: {
     write: (convId: string, name: string, base64: string, workdir?: string | null) =>

@@ -1,6 +1,6 @@
-const { app, BrowserWindow, dialog, ipcMain, nativeImage } = require('electron')
+const { app, BrowserWindow, dialog, ipcMain, nativeImage, session, shell } = require('electron')
 const { spawn, execFile } = require('node:child_process')
-const { existsSync } = require('node:fs')
+const { existsSync, mkdirSync } = require('node:fs')
 const { appendFile, cp, mkdtemp, readFile, readdir, realpath, rm, stat, writeFile } = require('node:fs/promises')
 const path = require('node:path')
 const { mkdir, rename, writeFile: fsWriteFile } = require('node:fs/promises')
@@ -12,6 +12,38 @@ const {
   pickDeepSeekKeyFromSettings,
   resolveWebContentProvider,
 } = require('./web-content/resolve')
+
+/**
+ * Electron 在 IPC handler reject 时会 console.error → 写 stderr。
+ * 经 concurrently / 断管启动时 stderr 常已 EPIPE，未监听的 stream error 会变成 Uncaught Exception。
+ * 吞掉管道断开即可；其它错误仍抛出。
+ */
+function isBrokenPipe(err: unknown): boolean {
+  const code = (err as NodeJS.ErrnoException | undefined)?.code
+  return code === 'EPIPE' || code === 'ERR_STREAM_DESTROYED' || code === 'EIO'
+}
+for (const stream of [process.stdout, process.stderr]) {
+  stream?.on?.('error', (err: NodeJS.ErrnoException) => {
+    if (isBrokenPipe(err)) return
+    throw err
+  })
+}
+process.on('uncaughtException', (err: NodeJS.ErrnoException) => {
+  if (isBrokenPipe(err)) return
+  try {
+    console.error('[yagent] uncaughtException', err)
+  } catch {
+    /* stderr 也可能已断 */
+  }
+})
+process.on('unhandledRejection', (reason: unknown) => {
+  if (isBrokenPipe(reason)) return
+  try {
+    console.error('[yagent] unhandledRejection', reason)
+  } catch {
+    /* ignore */
+  }
+})
 
 // --dev：数据目录放到项目根目录（apps/desktop 的上两级），方便测试后随手删掉
 const devMode = process.argv.includes('--dev')
@@ -253,6 +285,38 @@ function applyAppIcon(): void {
   if (devMode) console.log('[yagent] 应用图标:', file, image.getSize())
 }
 
+/**
+ * 右栏内嵌浏览器：去掉 X-Frame-Options / CSP frame-ancestors，
+ * 否则 PyPI 等站点会 ERR_BLOCKED_BY_RESPONSE 导致白屏。
+ */
+function allowEmbeddedBrowsing(): void {
+  session.defaultSession.webRequest.onHeadersReceived((details: any, callback: any) => {
+    const headers = { ...(details.responseHeaders ?? {}) }
+    for (const key of Object.keys(headers)) {
+      const lower = key.toLowerCase()
+      if (lower === 'x-frame-options') {
+        delete headers[key]
+        continue
+      }
+      if (lower === 'content-security-policy' || lower === 'content-security-policy-report-only') {
+        const raw = headers[key]
+        const list = Array.isArray(raw) ? raw : [raw]
+        headers[key] = list
+          .map((v: string) =>
+            String(v)
+              .replace(/;\s*frame-ancestors[^;]*/gi, '')
+              .replace(/frame-ancestors[^;]*;?/gi, '')
+              .replace(/^\s*;\s*|\s*;\s*$/g, '')
+              .trim(),
+          )
+          .filter(Boolean)
+        if (!headers[key].length) delete headers[key]
+      }
+    }
+    callback({ responseHeaders: headers })
+  })
+}
+
 function createWindow(): void {
   const icon = appIconPath()
   const win = new BrowserWindow({
@@ -351,6 +415,27 @@ function uploadsDirFor(convId: string, workdir?: string | null): string {
     : path.join(dataDir(), 'chats', 'uploads', convId)
 }
 
+/**
+ * 纯 chat 进程隔离沙箱根目录（本机 mock；后续可换成 docker/remote）。
+ * <dataDir>/sandboxes/local-process/<convId>/
+ */
+function localProcessSandboxDir(convId: string): string {
+  return path.join(dataDir(), 'sandboxes', 'local-process', convId)
+}
+
+async function ensureLocalProcessSandbox(convId: string): Promise<{
+  backend: 'local-process'
+  root: string
+}> {
+  const id = String(convId ?? '').trim()
+  if (!id || id.includes('..') || id.includes('/') || id.includes('\\')) {
+    throw new Error('Invalid convId')
+  }
+  const root = localProcessSandboxDir(id)
+  await mkdir(root, { recursive: true })
+  return { backend: 'local-process', root }
+}
+
 /** 是否落在应用附件目录：projects/<slug>/uploads 或 chats/uploads */
 function isUnderUploads(absPath: string): boolean {
   const root = path.resolve(dataDir())
@@ -362,7 +447,16 @@ function isUnderUploads(absPath: string): boolean {
   return false
 }
 
-/** read_file：工作区内相对路径，或 uploads 下的绝对路径 */
+/** 是否落在本机进程沙箱：sandboxes/local-process/<convId>/… */
+function isUnderLocalSandbox(absPath: string): boolean {
+  const root = path.resolve(dataDir())
+  const rel = path.relative(root, absPath)
+  if (rel.startsWith('..') || path.isAbsolute(rel)) return false
+  const parts = rel.split(path.sep)
+  return parts[0] === 'sandboxes' && parts[1] === 'local-process' && parts.length >= 3
+}
+
+/** read_file / fs:read：工作区内相对路径，或 uploads / 会话沙箱下的绝对路径 */
 async function resolveReadable(workdir: string, inputPath: string): Promise<string> {
   const raw = inputPath.trim()
   if (!raw) throw new Error('path is empty')
@@ -374,13 +468,13 @@ async function resolveReadable(workdir: string, inputPath: string): Promise<stri
       if (error.code === 'ENOENT') throw new Error(`File not found: ${raw}`)
       throw error
     }
-    if (isUnderUploads(actual)) return actual
+    if (isUnderUploads(actual) || isUnderLocalSandbox(actual)) return actual
     // 也允许绝对路径落在工作区内
     if (workdir.trim()) {
       const base = await realpath(workdir.trim())
       if (actual === base || actual.startsWith(`${base}${path.sep}`)) return actual
     }
-    throw new Error('Absolute path must be under the bound working directory or app uploads/')
+    throw new Error('Absolute path must be under the bound working directory, app uploads/, or chat sandbox')
   }
   if (!workdir.trim()) throw new Error('Bind a working directory before using relative paths')
   return resolveInside(workdir.trim(), raw)
@@ -431,18 +525,66 @@ function sshJoin(cwd: string, rel: string): string {
   return `${base}/${r}`
 }
 
-/** 远程列目录（跳过 . / node_modules），返回与本地 fs:list 同结构 */
+/**
+ * ControlMaster socket 路径必须够短：macOS sockaddr_un ≈104 字节。
+ * 勿用 os.tmpdir()（/var/folders/.../T），否则 + %C 超长 → exit 255。
+ */
+function sshControlPath(): string {
+  if (process.platform === 'win32') {
+    const dir = path.join(os.tmpdir(), 'yagent-ssh')
+    mkdirSync(dir, { recursive: true })
+    return path.join(dir, '%C')
+  }
+  // /tmp/yag-<40hex> ≈ 47 字节，远低于上限
+  return '/tmp/yag-%C'
+}
+
+/** 共用 ssh 参数；mux=false 时不做连接复用（socket 路径失败时的回退） */
+function sshArgs(opts?: { connectTimeout?: number; mux?: boolean }): string[] {
+  const t = opts?.connectTimeout ?? 8
+  const args = [
+    '-o',
+    'BatchMode=yes',
+    '-o',
+    `ConnectTimeout=${t}`,
+    '-o',
+    'StrictHostKeyChecking=accept-new',
+  ]
+  if (opts?.mux !== false) {
+    args.push(
+      '-o',
+      'ControlMaster=auto',
+      '-o',
+      `ControlPath=${sshControlPath()}`,
+      '-o',
+      'ControlPersist=600',
+    )
+  }
+  return args
+}
+
+/**
+ * 远程列目录（跳过点文件 / node_modules）。
+ * 优先 GNU find 一次拿齐类型+大小；否则回退到循环 + stat（不再 wc -c 读整文件）。
+ */
 async function sshListDir(host: string, dir: string): Promise<{ name: string; isDir: boolean; size: number }[]> {
   const script = [
     `cd ${shq(dir)} 2>/dev/null || { echo "ENOENT: ${dir}" >&2; exit 3; }`,
-    `out=""`,
+    // GNU find：单次扫目录，%s 来自 inode，不读文件内容
+    `if find --version >/dev/null 2>&1; then`,
+    `  find . -maxdepth 1 -mindepth 1 ! -name '.*' ! -name node_modules \\( -type d -printf 'd|%P|0\\n' -o \\( -type f -o -type l \\) -printf 'f|%P|%s\\n' \\)`,
+    `  exit 0`,
+    `fi`,
+    // 回退：stat 取大小（GNU -c / BSD -f），避免 wc -c
     `for e in * .[!.]* ..?*; do`,
     `  [ -e "$e" ] || continue`,
     `  n="\${e#./}"`,
     `  case "$n" in .|..|.*) continue ;; esac`,
     `  [ "$n" = "node_modules" ] && continue`,
     `  if [ -d "$n" ]; then printf 'd|%s|0\\n' "$n"`,
-    `  elif [ -f "$n" ]; then sz=$(wc -c < "$n" 2>/dev/null | tr -d ' '); printf 'f|%s|%s\\n' "$n" "\${sz:-0}"`,
+    `  elif [ -f "$n" ] || [ -L "$n" ]; then`,
+    `    sz=$(stat -c '%s' -- "$n" 2>/dev/null || stat -f '%z' -- "$n" 2>/dev/null || echo 0)`,
+    `    printf 'f|%s|%s\\n' "$n" "\${sz:-0}"`,
     `  fi`,
     `done`,
   ].join('\n')
@@ -460,23 +602,41 @@ async function sshListDir(host: string, dir: string): Promise<{ name: string; is
   return rows
 }
 
-/** 通过 ssh 在远程跑一段 shell，stdin 可喂数据；resolve 不 reject（带 exit 码） */
-function sshRun(host: string, script: string, stdin?: string): Promise<{ out: string; err: string; code: number }> {
+/** 读写/列目录等短操作 */
+const SSH_DEFAULT_TIMEOUT_MS = 60_000
+/** run_command：训练、下载等可能很久；仍建议长任务后台跑 + 短轮询 */
+const SSH_RUN_COMMAND_TIMEOUT_MS = 600_000
+
+function sshRunOnce(
+  host: string,
+  script: string,
+  stdin: string | undefined,
+  args: string[],
+  timeoutMs: number,
+): Promise<{ out: string; err: string; code: number }> {
   return new Promise((resolve, reject) => {
-    const child = spawn(
-      'ssh',
-      ['-o', 'BatchMode=yes', '-o', 'ConnectTimeout=8', '-o', 'StrictHostKeyChecking=accept-new', host, script],
-      { stdio: ['pipe', 'pipe', 'pipe'] },
-    )
+    const child = spawn('ssh', [...args, host, script], { stdio: ['pipe', 'pipe', 'pipe'] })
     let out = ''
     let err = ''
     const timer = setTimeout(() => {
       child.kill('SIGKILL')
-      reject(new Error('ssh 执行超时'))
-    }, 60000)
-    child.stdout.setEncoding('utf8').on('data', (c: string) => { out += c })
-    child.stderr.setEncoding('utf8').on('data', (c: string) => { err += c })
-    child.once('error', (e: any) => { clearTimeout(timer); reject(e) })
+      const partial = `${out}${err ? `\n${err}` : ''}`.trim()
+      const tip =
+        `ssh 执行超时（>${Math.round(timeoutMs / 1000)}s）。` +
+        `本地 SSH 已断开；若远程是 nohup/setsid 后台任务，进程多半还在——先 pgrep/tail 日志接上，不要重复启动。` +
+        `若是前台长命令，远程侧通常已随会话结束，需改后台后重跑。`
+      reject(new Error(partial ? `${tip}\n--- partial ---\n${partial.slice(-6000)}` : tip))
+    }, timeoutMs)
+    child.stdout.setEncoding('utf8').on('data', (c: string) => {
+      out += c
+    })
+    child.stderr.setEncoding('utf8').on('data', (c: string) => {
+      err += c
+    })
+    child.once('error', (e: any) => {
+      clearTimeout(timer)
+      reject(e)
+    })
     child.once('close', (code: any) => {
       clearTimeout(timer)
       resolve({ out, err, code: code ?? 1 })
@@ -484,6 +644,31 @@ function sshRun(host: string, script: string, stdin?: string): Promise<{ out: st
     if (stdin != null) child.stdin.write(stdin)
     child.stdin.end()
   })
+}
+
+/** 通过 ssh 在远程跑一段 shell；默认走 ControlMaster 复用，socket 过长则自动降级 */
+async function sshRun(
+  host: string,
+  script: string,
+  stdin?: string,
+  opts?: { timeoutMs?: number; connectTimeout?: number },
+): Promise<{ out: string; err: string; code: number }> {
+  const timeoutMs = opts?.timeoutMs ?? SSH_DEFAULT_TIMEOUT_MS
+  const connectTimeout = opts?.connectTimeout
+  const first = await sshRunOnce(
+    host,
+    script,
+    stdin,
+    sshArgs({ connectTimeout }),
+    timeoutMs,
+  )
+  if (
+    first.code !== 0 &&
+    /too long for Unix domain socket|cannot bind to path/i.test(first.err)
+  ) {
+    return sshRunOnce(host, script, stdin, sshArgs({ connectTimeout, mux: false }), timeoutMs)
+  }
+  return first
 }
 
 /** 远程读文件分页（与本地 readFilePaged 输出格式一致：[OK]/[PARTIAL] + LN: 行） */
@@ -564,8 +749,22 @@ async function executeTool(_event: any, request: { name: string; input: Record<s
       }
       case 'run_command': {
         const command = requiredString(request.input, 'command')
-        const r = await sshRun(ssh.host, `cd ${shq(ssh.path)} && ${command}`)
-        return `${r.out}${r.err ? `\n${r.err}` : ''}\n[exit ${r.code}] (ssh: ${ssh.host})`
+        try {
+          const r = await sshRun(ssh.host, `cd ${shq(ssh.path)} && ${command}`, undefined, {
+            timeoutMs: SSH_RUN_COMMAND_TIMEOUT_MS,
+          })
+          return `${r.out}${r.err ? `\n${r.err}` : ''}\n[exit ${r.code}] (ssh: ${ssh.host})`
+        } catch (e: any) {
+          const msg = String(e?.message ?? e)
+          // 超时不抛死：把已有输出 + 接续步骤交回 agent，方便挽救
+          if (/ssh 执行超时/.test(msg)) {
+            return (
+              `${msg}\n[exit timeout] (ssh: ${ssh.host})\n` +
+              `接续步骤：pgrep -af 相关进程；tail -n 50 日志；确认仍在跑则只轮询，确认已结束后再读结果。`
+            )
+          }
+          throw e
+        }
       }
       case 'load_skill': {
         const id = requiredString(request.input, 'id')
@@ -617,6 +816,7 @@ async function executeTool(_event: any, request: { name: string; input: Record<s
 }
 
 void app.whenReady().then(async () => {
+  allowEmbeddedBrowsing()
   if (devMode) console.log(`[yagent] dev 模式：数据目录 = ${dataDir()}`)
   applyAppIcon()
   // 语音输入暂关：不再启动时要麦克风权限
@@ -903,52 +1103,97 @@ void app.whenReady().then(async () => {
     if (sshRoot) {
       const remote = sshJoin(sshRoot.path, rel)
       const ext = path.extname(remote).toLowerCase()
-      const meta = await sshRun(
-        sshRoot.host,
-        `[ -f ${shq(remote)} ] || { echo NOTFILE >&2; exit 4; }; wc -c < ${shq(remote)} | tr -d ' '`,
-      )
-      if (meta.code !== 0) {
-        const msg = meta.err.trim()
-        if (msg.includes('NOTFILE') || msg.includes('No such')) throw new Error('Not a file')
-        throw new Error(msg || `远程读取失败（exit ${meta.code}）`)
-      }
-      const size = Number(meta.out.trim()) || 0
-      const unavailable = (reason: string) => ({ kind: 'unavailable' as const, reason, size })
+      const unavailable = (reason: string, size = 0) => ({ kind: 'unavailable' as const, reason, size })
       const binaryExt = new Set([
         '.pth', '.pt', '.ckpt', '.safetensors', '.bin', '.pkl', '.pickle', '.npy', '.npz',
         '.onnx', '.h5', '.pb', '.zip', '.tar', '.gz', '.tgz', '.rar', '.7z', '.exe', '.dll',
         '.so', '.dylib', '.wasm', '.woff', '.woff2', '.ttf', '.otf', '.mp3', '.wav', '.ogg',
         '.m4a', '.flac', '.mp4', '.mov', '.webm', '.mkv', '.avi',
       ])
-      if (binaryExt.has(ext)) return unavailable('二进制文件不支持预览')
+      if (binaryExt.has(ext)) {
+        // 仅取大小，一次往返
+        const meta = await sshRun(
+          sshRoot.host,
+          `[ -f ${shq(remote)} ] || { echo NOTFILE >&2; exit 4; }; stat -c '%s' -- ${shq(remote)} 2>/dev/null || stat -f '%z' -- ${shq(remote)}`,
+        )
+        if (meta.code !== 0) {
+          const msg = meta.err.trim()
+          if (msg.includes('NOTFILE') || msg.includes('No such')) throw new Error('Not a file')
+          throw new Error(msg || `远程读取失败（exit ${meta.code}）`)
+        }
+        return unavailable('二进制文件不支持预览', Number(meta.out.trim()) || 0)
+      }
       const imageMime: Record<string, string> = {
         '.png': 'image/png', '.jpg': 'image/jpeg', '.jpeg': 'image/jpeg', '.gif': 'image/gif',
         '.webp': 'image/webp', '.bmp': 'image/bmp', '.ico': 'image/x-icon', '.svg': 'image/svg+xml',
       }
       const mime = imageMime[ext]
+      const moleculeExt = new Set(['.xyz', '.pdb', '.sdf', '.mol', '.mol2', '.cif', '.gro', '.pqr'])
+      const textLimit =
+        ext === '.html' || ext === '.htm' || ext === '.md' || ext === '.markdown'
+          ? 512 * 1024
+          : moleculeExt.has(ext)
+            ? 2 * 1024 * 1024
+            : 256 * 1024
+      const byteLimit = mime ? 5 * 1024 * 1024 : ext === '.pdf' ? 10 * 1024 * 1024 : textLimit
+      // 一次 SSH：stat 大小 → 过大只回 SIZE；否则 SIZE\\n + 正文/base64
+      const mode = mime || ext === '.pdf' ? 'b64' : 'text'
+      const script = [
+        `f=${shq(remote)}`,
+        `[ -f "$f" ] || { echo NOTFILE >&2; exit 4; }`,
+        `sz=$(stat -c '%s' -- "$f" 2>/dev/null || stat -f '%z' -- "$f" 2>/dev/null || echo 0)`,
+        `sz=\${sz:-0}`,
+        `if [ "$sz" -gt ${byteLimit} ]; then printf 'BIG|%s\\n' "$sz"; exit 0; fi`,
+        `printf 'OK|%s\\n' "$sz"`,
+        mode === 'b64'
+          ? `base64 < "$f" | tr -d '\\n'; echo`
+          : `LC_ALL=C cat "$f"`,
+      ].join('\n')
+      const body = await sshRun(sshRoot.host, script)
+      if (body.code !== 0) {
+        const msg = body.err.trim()
+        if (msg.includes('NOTFILE') || msg.includes('No such')) throw new Error('Not a file')
+        return unavailable(msg || `远程读取失败（exit ${body.code}）`)
+      }
+      const nl = body.out.indexOf('\n')
+      const head = nl >= 0 ? body.out.slice(0, nl) : body.out
+      const payload = nl >= 0 ? body.out.slice(nl + 1) : ''
+      const [tag, sizeStr] = head.split('|')
+      const size = Number(sizeStr) || 0
+      if (tag === 'BIG') {
+        return unavailable(
+          mime
+            ? '图片超过 5MB，请在编辑器中打开'
+            : ext === '.pdf'
+              ? 'PDF 超过 10MB，请在编辑器中打开'
+              : '文件过大，请在编辑器中打开',
+          size,
+        )
+      }
+      if (tag !== 'OK') return unavailable(body.err.trim() || '远程读取失败', size)
       if (mime) {
-        if (size > 5 * 1024 * 1024) return unavailable('图片超过 5MB，请在编辑器中打开')
-        const b64 = await sshRun(sshRoot.host, `base64 < ${shq(remote)} | tr -d '\\n'`)
-        if (b64.code !== 0) return unavailable(b64.err.trim() || '远程读取图片失败')
-        return { kind: 'image' as const, mime, dataUrl: `data:${mime};base64,${b64.out.trim()}` }
+        return {
+          kind: 'image' as const,
+          mime,
+          dataUrl: `data:${mime};base64,${payload.replace(/\s+/g, '')}`,
+        }
       }
       if (ext === '.pdf') {
-        if (size > 10 * 1024 * 1024) return unavailable('PDF 超过 10MB，请在编辑器中打开')
-        const b64 = await sshRun(sshRoot.host, `base64 < ${shq(remote)} | tr -d '\\n'`)
-        if (b64.code !== 0) return unavailable(b64.err.trim() || '远程读取 PDF 失败')
-        return { kind: 'pdf' as const, dataUrl: `data:application/pdf;base64,${b64.out.trim()}` }
+        return {
+          kind: 'pdf' as const,
+          dataUrl: `data:application/pdf;base64,${payload.replace(/\s+/g, '')}`,
+        }
       }
-      const textLimit =
-        ext === '.html' || ext === '.htm' || ext === '.md' || ext === '.markdown' ? 512 * 1024 : 256 * 1024
-      if (size > textLimit) return unavailable('文件过大，请在编辑器中打开')
-      const body = await sshRun(sshRoot.host, `LC_ALL=C cat ${shq(remote)}`)
-      if (body.code !== 0) return unavailable(body.err.trim() || '远程读取失败')
-      if (body.out.includes('\0')) return unavailable('二进制文件不支持预览')
-      if (ext === '.html' || ext === '.htm') return { kind: 'html' as const, content: body.out }
-      if (ext === '.md' || ext === '.markdown') return { kind: 'markdown' as const, content: body.out }
-      return { kind: 'text' as const, content: body.out }
+      if (payload.includes('\0')) return unavailable('二进制文件不支持预览', size)
+      if (ext === '.html' || ext === '.htm') return { kind: 'html' as const, content: payload }
+      if (ext === '.md' || ext === '.markdown') return { kind: 'markdown' as const, content: payload }
+      if (moleculeExt.has(ext)) {
+        return { kind: 'molecule' as const, format: ext.slice(1), content: payload }
+      }
+      return { kind: 'text' as const, content: payload }
     }
-    const file = await resolveInside(workdir, rel)
+    // 允许工作区内相对路径，或 uploads / 沙箱下的绝对路径（纯 chat 附件预览）
+    const file = await resolveReadable(String(workdir ?? ''), String(rel ?? ''))
     const info = await stat(file)
     if (!info.isFile()) throw new Error('Not a file')
     const ext = path.extname(file).toLowerCase()
@@ -1029,11 +1274,336 @@ void app.whenReady().then(async () => {
         dataUrl: `data:application/pdf;base64,${buf.toString('base64')}`,
       }
     }
+    const moleculeExt = new Set(['.xyz', '.pdb', '.sdf', '.mol', '.mol2', '.cif', '.gro', '.pqr'])
+    if (moleculeExt.has(ext)) {
+      if (info.size > 2 * 1024 * 1024) return unavailable('结构文件超过 2MB，请在编辑器中打开')
+      const text = await readFile(file, 'utf8')
+      if (text.includes('\0')) return unavailable('二进制文件不支持预览')
+      return { kind: 'molecule' as const, format: ext.slice(1), content: text }
+    }
     if (info.size > 256 * 1024) return unavailable('文件超过 256KB，请在编辑器中打开')
     const buf = await readFile(file)
     if (buf.includes(0)) return unavailable('二进制文件不支持预览')
     return { kind: 'text' as const, content: buf.toString('utf8') }
   })
+  /**
+   * 把 workdir+rel 解析成可本地打开的绝对路径。
+   * - 本地：文件或目录均可
+   * - 远程文件：scp 到临时文件
+   * - 远程目录：不能直接给 GUI App，抛错（终端另走 ssh）
+   */
+  async function resolveOpenableLocal(
+    workdir: string,
+    rel: string,
+    opts?: { allowDir?: boolean },
+  ): Promise<{ path: string; isDir: boolean }> {
+    const allowDir = opts?.allowDir !== false
+    const wd = String(workdir ?? '').trim()
+    const r = String(rel ?? '').replace(/\\/g, '/').replace(/^\/+/, '')
+    if (!wd) throw new Error('未绑定工作目录')
+    // rel 为空表示项目根目录
+    if (r.split('/').includes('..')) throw new Error('无效路径')
+    const ssh = parseSshRoot(wd)
+    if (!ssh) {
+      const localPath = r ? await resolveInside(wd, r) : path.resolve(wd)
+      const info = await stat(localPath)
+      if (info.isDirectory()) {
+        if (!allowDir) throw new Error('不是文件')
+        return { path: localPath, isDir: true }
+      }
+      if (!info.isFile()) throw new Error('不是文件')
+      return { path: localPath, isDir: false }
+    }
+    const remote = r ? sshJoin(ssh.path, r) : ssh.path
+    const meta = await sshRun(
+      ssh.host,
+      `if [ -d ${shq(remote)} ]; then echo DIR; elif [ -f ${shq(remote)} ]; then echo FILE; stat -c '%s' -- ${shq(remote)} 2>/dev/null || stat -f '%z' -- ${shq(remote)}; else echo MISSING >&2; exit 4; fi`,
+      undefined,
+      { timeoutMs: 15000, connectTimeout: 10 },
+    )
+    if (meta.code !== 0) {
+      const msg = meta.err.trim()
+      if (msg.includes('MISSING') || /No such/i.test(msg)) throw new Error('路径不存在')
+      throw new Error(msg || '无法读取远程路径')
+    }
+    const lines = meta.out.trim().split('\n')
+    if (lines[0] === 'DIR') {
+      if (!allowDir) throw new Error('不是文件')
+      throw new Error('远程目录请用「在终端中打开目录」')
+    }
+    if (lines[0] !== 'FILE') throw new Error('不是文件')
+    const size = Number(lines[1] || 0) || 0
+    if (size > 80 * 1024 * 1024) throw new Error('文件过大（超过 80MB），请在远程主机打开')
+    const safe = path.basename(r || 'file').replace(/[^\w.\u4e00-\u9fff()-]+/g, '_') || 'file'
+    const tmp = path.join(os.tmpdir(), `yagent-open-${Date.now()}-${safe}`)
+    await new Promise<void>((resolve, reject) => {
+      const child = spawn(
+        'scp',
+        [...sshArgs({ connectTimeout: 20 }), '--', `${ssh.host}:${remote}`, tmp],
+        { stdio: ['ignore', 'pipe', 'pipe'] },
+      )
+      let err = ''
+      const timer = setTimeout(() => {
+        child.kill('SIGKILL')
+        reject(new Error('下载超时'))
+      }, 120_000)
+      child.stderr.setEncoding('utf8').on('data', (c: string) => {
+        err += c
+      })
+      child.once('error', (e: Error) => {
+        clearTimeout(timer)
+        reject(e)
+      })
+      child.once('close', (code: number | null) => {
+        clearTimeout(timer)
+        if (code === 0) resolve()
+        else reject(new Error(err.trim() || `scp 退出码 ${code}`))
+      })
+    })
+    return { path: tmp, isDir: false }
+  }
+
+  function openHandlersBin(): string {
+    // 打包后：resources/bin；dev：apps/desktop/bin
+    const candidates = [
+      path.join(process.resourcesPath || '', 'bin', 'list-open-handlers'),
+      path.join(app.getAppPath(), 'bin', 'list-open-handlers'),
+      path.join(__dirname, '..', 'bin', 'list-open-handlers'),
+    ]
+    for (const c of candidates) {
+      if (c && existsSync(c)) return c
+    }
+    return ''
+  }
+
+  function macAppDisplayName(appPath: string): string {
+    const info = path.join(appPath, 'Contents', 'Info.plist')
+    if (!existsSync(info)) return path.basename(appPath, '.app')
+    for (const key of ['CFBundleDisplayName', 'CFBundleName']) {
+      try {
+        const { stdout } = require('node:child_process').execFileSync('plutil', ['-extract', key, 'raw', info], {
+          encoding: 'utf8',
+          stdio: ['ignore', 'pipe', 'ignore'],
+        })
+        const n = String(stdout || '').trim()
+        if (n && n !== '(null)') return n
+      } catch {
+        /* try next */
+      }
+    }
+    return path.basename(appPath, '.app')
+  }
+
+  async function macSystemOpenIcons(): Promise<{ reveal?: string; terminal?: string }> {
+    const systemIcons: { reveal?: string; terminal?: string } = {}
+    if (process.platform !== 'darwin') return systemIcons
+    const pairs: [keyof typeof systemIcons, string][] = [
+      ['reveal', '/System/Library/CoreServices/Finder.app'],
+      ['terminal', '/System/Applications/Utilities/Terminal.app'],
+    ]
+    for (const [key, p] of pairs) {
+      try {
+        if (!existsSync(p)) continue
+        const img = await app.getFileIcon(p, { size: 'normal' })
+        if (!img.isEmpty()) systemIcons[key] = img.toDataURL()
+      } catch {
+        /* ignore */
+      }
+    }
+    return systemIcons
+  }
+
+  /** 打开菜单数据：可打开的应用列表 + 默认应用（macOS 用 Launch Services） */
+  ipcMain.handle('fs:openMenu', async (_e: any, workdir: string, rel: string) => {
+    try {
+      let localPath = ''
+      let folder = ''
+      let probePath = ''
+      try {
+        const resolved = await resolveOpenableLocal(workdir, rel, { allowDir: true })
+        localPath = resolved.path
+        folder = resolved.isDir ? localPath : path.dirname(localPath)
+        probePath = localPath
+      } catch (e: any) {
+        const msg = String(e?.message ?? e)
+        // 远程目录无法用 GUI App 打开：只回终端入口，不造假本地目录骗出 App 列表
+        if (!/远程目录/.test(msg)) throw e
+        const ssh = parseSshRoot(String(workdir ?? '').trim())
+        if (!ssh) throw e
+        const remoteRel = String(rel ?? '').replace(/\\/g, '/').replace(/^\/+/, '')
+        folder = remoteRel ? sshJoin(ssh.path, remoteRel) : ssh.path
+        const systemIcons = await macSystemOpenIcons()
+        return { ok: true, localPath: '', folder, apps: [], systemIcons, remoteDir: true }
+      }
+      type AppItem = { id: string; name: string; path: string; isDefault: boolean; iconDataUrl?: string }
+      const apps: AppItem[] = []
+      if (process.platform === 'darwin') {
+        const bin = openHandlersBin()
+        if (bin) {
+          const { stdout } = await execFileAsync(bin, [probePath], { timeout: 12000 })
+          const parsed = JSON.parse(String(stdout || '{}')) as {
+            default?: string | null
+            apps?: { path?: string; name?: string; icon?: string }[] | string[]
+            systemIcons?: { reveal?: string; terminal?: string }
+          }
+          const def = parsed.default || ''
+          const list = Array.isArray(parsed.apps) ? parsed.apps : []
+          /** 默认优先，最多 3 个应用（再加访达/终端） */
+          for (const raw of list.slice(0, 3)) {
+            const appPath = typeof raw === 'string' ? raw : String(raw?.path || '')
+            if (!appPath || !existsSync(appPath)) continue
+            const name =
+              typeof raw === 'object' && raw?.name
+                ? String(raw.name)
+                : macAppDisplayName(appPath)
+            let iconDataUrl: string | undefined
+            if (typeof raw === 'object' && typeof raw?.icon === 'string' && raw.icon) {
+              iconDataUrl = `data:image/png;base64,${raw.icon}`
+            } else {
+              try {
+                const img = await app.getFileIcon(appPath, { size: 'normal' })
+                if (!img.isEmpty()) iconDataUrl = img.toDataURL()
+              } catch {
+                /* ignore */
+              }
+            }
+            apps.push({
+              id: appPath,
+              name,
+              path: appPath,
+              isDefault: !!def && appPath === def,
+              iconDataUrl,
+            })
+          }
+          if (def && !apps.some((a) => a.isDefault)) {
+            const hit = apps.find((a) => a.path === def)
+            if (hit) hit.isDefault = true
+          }
+
+          /** 访达 / 终端：与应用列表同用 Swift 压好的 PNG */
+          const systemIcons: { reveal?: string; terminal?: string } = {}
+          const rawSys = parsed.systemIcons || {}
+          if (rawSys.reveal) systemIcons.reveal = `data:image/png;base64,${rawSys.reveal}`
+          if (rawSys.terminal) systemIcons.terminal = `data:image/png;base64,${rawSys.terminal}`
+          if (!apps.length) {
+            apps.push({ id: '', name: '默认应用', path: '', isDefault: true })
+          }
+          return { ok: true, localPath, folder, apps, systemIcons }
+        }
+      }
+      if (!apps.length) {
+        apps.push({ id: '', name: '默认应用', path: '', isDefault: true })
+      }
+
+      /** 非 macOS / 无 helper：尽量用 Electron 兜底 */
+      return { ok: true, localPath, folder, apps, systemIcons: await macSystemOpenIcons() }
+    } catch (e: any) {
+      return { ok: false, error: String(e?.message ?? e), apps: [] as never[], systemIcons: {} }
+    }
+  })
+
+  /** 打开后延迟清掉 scp 下来的临时文件 */
+  function scheduleUnlinkTemp(file: string) {
+    if (!file.includes(`${path.sep}yagent-open-`)) return
+    setTimeout(() => {
+      void rm(file, { force: true }).catch(() => undefined)
+    }, 120_000)
+  }
+
+  /** 用指定应用（macOS appPath）或系统默认打开（文件或目录） */
+  ipcMain.handle(
+    'fs:openWithApp',
+    async (_e: any, workdir: string, rel: string, appPath?: string | null) => {
+      try {
+        const { path: localPath } = await resolveOpenableLocal(workdir, rel, { allowDir: true })
+        const target = typeof appPath === 'string' ? appPath.trim() : ''
+        if (target && process.platform === 'darwin') {
+          await execFileAsync('open', ['-a', target, localPath])
+          scheduleUnlinkTemp(localPath)
+          return { ok: true }
+        }
+        if (target && process.platform === 'win32') {
+          await execFileAsync('cmd', ['/c', 'start', '', target, localPath])
+          scheduleUnlinkTemp(localPath)
+          return { ok: true }
+        }
+        const openErr = await shell.openPath(localPath)
+        if (openErr) return { ok: false, error: openErr }
+        scheduleUnlinkTemp(localPath)
+        return { ok: true }
+      } catch (e: any) {
+        return { ok: false, error: String(e?.message ?? e) }
+      }
+    },
+  )
+
+  ipcMain.handle('fs:revealInFolder', async (_e: any, workdir: string, rel: string) => {
+    try {
+      const wd = String(workdir ?? '').trim()
+      // 远程没有本地 inode，拉到 /tmp 再「显示」会误导；直接提示用终端
+      if (parseSshRoot(wd)) {
+        return { ok: false, error: '远程路径无法在访达中显示，请用「在终端中打开目录」' }
+      }
+      const { path: localPath } = await resolveOpenableLocal(workdir, rel, { allowDir: true })
+      // Electron shell.showItemInFolder 在部分 macOS/Electron 组合下会静默失败；open -R 更稳
+      if (process.platform === 'darwin') {
+        await execFileAsync('open', ['-R', localPath])
+      } else {
+        shell.showItemInFolder(localPath)
+      }
+      return { ok: true }
+    } catch (e: any) {
+      return { ok: false, error: String(e?.message ?? e) }
+    }
+  })
+
+  ipcMain.handle('fs:openParentInTerminal', async (_e: any, workdir: string, rel: string) => {
+    try {
+      const wd = String(workdir ?? '').trim()
+      const r = String(rel ?? '').replace(/\\/g, '/').replace(/^\/+/, '')
+      const ssh = parseSshRoot(wd)
+      if (ssh) {
+        const remote = r ? sshJoin(ssh.path, r) : ssh.path
+        const probe = await sshRun(
+          ssh.host,
+          `if [ -d ${shq(remote)} ]; then echo DIR; elif [ -f ${shq(remote)} ]; then echo FILE; else echo MISSING; fi`,
+          undefined,
+          { timeoutMs: 12000, connectTimeout: 10 },
+        )
+        if (probe.code !== 0 || probe.out.trim() === 'MISSING') {
+          throw new Error(probe.err.trim() || '远程路径不存在')
+        }
+        const remoteDir = probe.out.trim() === 'DIR' ? remote : path.posix.dirname(remote)
+        const script = `ssh -t ${shq(ssh.host)} 'cd ${shq(remoteDir)} && exec $SHELL -l'`
+        if (process.platform === 'darwin') {
+          await execFileAsync('osascript', [
+            '-e',
+            `tell application "Terminal" to do script ${JSON.stringify(script)}`,
+          ])
+        } else {
+          spawn('x-terminal-emulator', ['-e', 'bash', '-lc', script], {
+            detached: true,
+            stdio: 'ignore',
+          })
+        }
+        return { ok: true }
+      }
+
+      const resolved = await resolveOpenableLocal(workdir, rel, { allowDir: true })
+      const dir = resolved.isDir ? resolved.path : path.dirname(resolved.path)
+      if (process.platform === 'darwin') {
+        await execFileAsync('open', ['-a', 'Terminal', dir])
+      } else if (process.platform === 'win32') {
+        spawn('cmd', ['/c', 'start', 'cmd', '/k', `cd /d ${dir}`], { detached: true, stdio: 'ignore' })
+      } else {
+        spawn('x-terminal-emulator', ['--working-directory', dir], { detached: true, stdio: 'ignore' })
+      }
+      return { ok: true }
+    } catch (e: any) {
+      return { ok: false, error: String(e?.message ?? e) }
+    }
+  })
+
   // 工作目录内写文件（仍限制在绑定目录）；上传附件请用 attachments:write，勿直接塞进用户项目
   ipcMain.handle('fs:write', async (_e: any, workdir: string, rel: string, base64: string) => {
     if (typeof base64 !== 'string') throw new Error('content must be base64')
@@ -1080,6 +1650,8 @@ void app.whenReady().then(async () => {
       if (convId.includes('..') || convId.includes('/') || convId.includes('\\')) throw new Error('Invalid convId')
       const dir = uploadsDirFor(convId, workdir)
       await rm(dir, { recursive: true, force: true }).catch(() => undefined)
+      // 纯 chat 进程沙箱一并清掉
+      await rm(localProcessSandboxDir(convId), { recursive: true, force: true }).catch(() => undefined)
       for (const p of Array.isArray(extraPaths) ? extraPaths : []) {
         if (typeof p !== 'string' || !path.isAbsolute(p)) continue
         try {
@@ -1091,6 +1663,58 @@ void app.whenReady().then(async () => {
       }
     },
   )
+
+  /** 纯 chat：确保本机进程隔离沙箱目录存在（mock；后续可换 docker/remote） */
+  ipcMain.handle('sandbox:ensure', async (_e: any, convId: string) => {
+    return ensureLocalProcessSandbox(convId)
+  })
+  ipcMain.handle('sandbox:info', async (_e: any, convId: string) => {
+    const id = String(convId ?? '').trim()
+    if (!id || id.includes('..') || id.includes('/') || id.includes('\\')) {
+      return { backend: 'local-process' as const, root: '', ready: false }
+    }
+    const root = localProcessSandboxDir(id)
+    return { backend: 'local-process' as const, root, ready: existsSync(root) }
+  })
+
+  /**
+   * 导出文件到用户选择的位置（附件绝对路径，或 workdir+rel）。
+   * 纯 chat 产物：workdir=沙箱根，rel=产物相对路径。
+   */
+  ipcMain.handle(
+    'fs:exportFile',
+    async (
+      _e: any,
+      opts: { workdir?: string; rel?: string; absPath?: string; defaultName?: string },
+    ) => {
+      try {
+        const abs =
+          typeof opts?.absPath === 'string' && opts.absPath.trim()
+            ? opts.absPath.trim()
+            : ''
+        const wd = typeof opts?.workdir === 'string' ? opts.workdir.trim() : ''
+        const rel = typeof opts?.rel === 'string' ? opts.rel.trim() : ''
+        const src = abs
+          ? await resolveReadable('', abs)
+          : await resolveReadable(wd, rel)
+        const info = await stat(src)
+        if (!info.isFile()) return { ok: false, error: '不是文件' }
+        const suggested =
+          (typeof opts?.defaultName === 'string' && opts.defaultName.trim()) ||
+          path.basename(src)
+        const focused = BrowserWindow.getFocusedWindow()
+        const result = await dialog.showSaveDialog(focused as any, {
+          title: '保存文件',
+          defaultPath: suggested,
+        })
+        if (result.canceled || !result.filePath) return { ok: false, canceled: true }
+        await cp(src, result.filePath)
+        return { ok: true, path: result.filePath }
+      } catch (e: any) {
+        return { ok: false, error: String(e?.message ?? e) }
+      }
+    },
+  )
   ipcMain.handle('dialog:selectDirectory', async () => {
     const focusedWindow = BrowserWindow.getFocusedWindow()
     const result = await dialog.showOpenDialog(focusedWindow as any, {
@@ -1098,6 +1722,135 @@ void app.whenReady().then(async () => {
       title: '选择工作目录',
     })
     return result.canceled ? null : result.filePaths[0] ?? null
+  })
+
+  /** 用系统默认浏览器打开外链 */
+  ipcMain.handle('shell:openExternal', async (_e: any, url: string) => {
+    const raw = typeof url === 'string' ? url.trim() : ''
+    if (!/^https?:\/\//i.test(raw)) return { ok: false, error: '仅支持 http(s) 链接' }
+    try {
+      await shell.openExternal(raw)
+      return { ok: true }
+    } catch (e: any) {
+      return { ok: false, error: String(e?.message ?? e) }
+    }
+  })
+
+  /** 递归目录体积（字节）；跟随目录，忽略无法读的项 */
+  async function dirBytes(root: string): Promise<number> {
+    let total = 0
+    const stack = [root]
+    while (stack.length) {
+      const cur = stack.pop()!
+      let entries: import('node:fs').Dirent[]
+      try {
+        entries = await readdir(cur, { withFileTypes: true })
+      } catch {
+        continue
+      }
+      for (const ent of entries) {
+        const p = path.join(cur, ent.name)
+        try {
+          if (ent.isDirectory()) stack.push(p)
+          else if (ent.isFile() || ent.isSymbolicLink()) {
+            const st = await stat(p)
+            total += st.size
+          }
+        } catch {
+          /* skip */
+        }
+      }
+    }
+    return total
+  }
+
+  /** 应用数据目录占用：总大小 + 一级子项（目录再带一层子项） */
+  ipcMain.handle('storage:usage', async () => {
+    const root = dataDir()
+    await mkdir(root, { recursive: true })
+    type Entry = {
+      name: string
+      rel: string
+      bytes: number
+      kind: 'dir' | 'file'
+      children?: { name: string; rel: string; bytes: number; kind: 'dir' | 'file' }[]
+    }
+    const entries: Entry[] = []
+    let totalBytes = 0
+    let listing: import('node:fs').Dirent[] = []
+    try {
+      listing = await readdir(root, { withFileTypes: true })
+    } catch (e: any) {
+      return { ok: false, error: String(e?.message ?? e), root, totalBytes: 0, entries: [] }
+    }
+    for (const ent of listing) {
+      if (ent.name.startsWith('.')) continue
+      const abs = path.join(root, ent.name)
+      try {
+        if (ent.isDirectory()) {
+          const children: NonNullable<Entry['children']> = []
+          let bytes = 0
+          const kids = await readdir(abs, { withFileTypes: true })
+          for (const kid of kids) {
+            if (kid.name.startsWith('.')) continue
+            const kidAbs = path.join(abs, kid.name)
+            try {
+              if (kid.isDirectory()) {
+                const b = await dirBytes(kidAbs)
+                children.push({
+                  name: kid.name,
+                  rel: `${ent.name}/${kid.name}`,
+                  bytes: b,
+                  kind: 'dir',
+                })
+                bytes += b
+              } else if (kid.isFile() || kid.isSymbolicLink()) {
+                const st = await stat(kidAbs)
+                children.push({
+                  name: kid.name,
+                  rel: `${ent.name}/${kid.name}`,
+                  bytes: st.size,
+                  kind: 'file',
+                })
+                bytes += st.size
+              }
+            } catch {
+              /* skip */
+            }
+          }
+          children.sort((a, b) => b.bytes - a.bytes)
+          entries.push({
+            name: ent.name,
+            rel: ent.name,
+            bytes,
+            kind: 'dir',
+            children: children.slice(0, 40),
+          })
+          totalBytes += bytes
+        } else if (ent.isFile() || ent.isSymbolicLink()) {
+          const st = await stat(abs)
+          entries.push({
+            name: ent.name,
+            rel: ent.name,
+            bytes: st.size,
+            kind: 'file',
+          })
+          totalBytes += st.size
+        }
+      } catch {
+        /* skip */
+      }
+    }
+    entries.sort((a, b) => b.bytes - a.bytes)
+    return { ok: true, root, totalBytes, entries }
+  })
+
+  ipcMain.handle('storage:reveal', async () => {
+    const root = dataDir()
+    await mkdir(root, { recursive: true })
+    const err = await shell.openPath(root)
+    if (err) return { ok: false, error: err }
+    return { ok: true, root }
   })
 
   // 读取 ~/.ssh/config 的 Host 别名（含可选 HostName/User/Port），供「新建远程任务」选择
@@ -1140,70 +1893,80 @@ void app.whenReady().then(async () => {
     const h = String(host ?? '').trim()
     if (!h) throw new Error('host required')
     const base = String(dir ?? '').trim() || '~'
-    // 仅列目录，逐项一行；~ 由远程 shell 展开
-    const script = `cd ${base} 2>/dev/null && for d in */; do echo "$d"; done`
-    const args = [
-      '-o', 'BatchMode=yes',
-      '-o', 'ConnectTimeout=6',
-      '-o', 'StrictHostKeyChecking=accept-new',
-      h,
-      script,
-    ]
-    return new Promise((resolve) => {
-      const child = spawn('ssh', args, { stdio: ['ignore', 'pipe', 'pipe'] })
-      let out = ''
-      let err = ''
-      const timer = setTimeout(() => {
-        child.kill('SIGKILL')
-        resolve({ ok: false, error: '连接超时', dirs: [], cwd: base })
-      }, 9000)
-      child.stdout.setEncoding('utf8').on('data', (c: string) => { out += c })
-      child.stderr.setEncoding('utf8').on('data', (c: string) => { err += c })
-      child.once('error', (e: any) => {
-        clearTimeout(timer)
-        resolve({ ok: false, error: String(e?.message ?? e), dirs: [], cwd: base })
+    // 仅列目录，逐项一行；~ 由远程 shell 展开（走 ControlMaster）
+    const script = `cd ${shq(base)} 2>/dev/null && for d in */; do echo "$d"; done`
+    try {
+      const { out, err, code } = await sshRun(h, script, undefined, {
+        timeoutMs: 9000,
+        connectTimeout: 6,
       })
-      child.once('close', (code: any) => {
-        clearTimeout(timer)
-        if (code !== 0) {
-          resolve({ ok: false, error: err.trim() || `ssh 退出码 ${code ?? 1}`, dirs: [], cwd: base })
-          return
-        }
-        const dirs = out
-          .split('\n')
-          .map((s) => s.trim().replace(/\/$/, ''))
-          .filter(Boolean)
-          .sort()
-        resolve({ ok: true, dirs, cwd: base })
-      })
-    })
+      if (code !== 0) {
+        return { ok: false, error: err.trim() || `ssh 退出码 ${code}`, dirs: [], cwd: base }
+      }
+      const dirs = out
+        .split('\n')
+        .map((s) => s.trim().replace(/\/$/, ''))
+        .filter(Boolean)
+        .sort()
+      return { ok: true, dirs, cwd: base }
+    } catch (e: any) {
+      const msg = String(e?.message ?? e)
+      return {
+        ok: false,
+        error: /超时/.test(msg) ? '连接超时' : msg,
+        dirs: [],
+        cwd: base,
+      }
+    }
   })
 
-  // 轻量连通性探测：能否 ssh 上主机（短超时，供顶栏状态点着色）
+  // 在远程当前浏览目录下新建子目录
+  ipcMain.handle('ssh:mkdir', async (_e: any, host: string, parent: string, name: string) => {
+    const h = String(host ?? '').trim()
+    if (!h) return { ok: false, error: 'host required' }
+    const base = String(parent ?? '').trim() || '~'
+    const raw = String(name ?? '').trim()
+    if (!raw) return { ok: false, error: '目录名不能为空' }
+    if (raw.includes('/') || raw.includes('\\') || raw === '.' || raw === '..') {
+      return { ok: false, error: '目录名不能包含路径分隔符' }
+    }
+    const dest =
+      base === '~' || base === '/'
+        ? base === '~'
+          ? `~/${raw}`
+          : `/${raw}`
+        : `${base.replace(/\/$/, '')}/${raw}`
+    try {
+      const { err, code } = await sshRun(
+        h,
+        `mkdir ${shq(dest)}`,
+        undefined,
+        { timeoutMs: 9000, connectTimeout: 6 },
+      )
+      if (code !== 0) {
+        return { ok: false, error: err.trim() || `ssh 退出码 ${code}`, path: dest }
+      }
+      return { ok: true, path: dest }
+    } catch (e: any) {
+      const msg = String(e?.message ?? e)
+      return { ok: false, error: /超时/.test(msg) ? '连接超时' : msg, path: dest }
+    }
+  })
+
+  // 轻量连通性探测：顺带预热 ControlMaster，后续列目录可复用
   ipcMain.handle('ssh:ping', async (_e: any, host: string) => {
     const h = String(host ?? '').trim()
     if (!h) return { ok: false, error: 'host required' }
-    return new Promise((resolve) => {
-      const child = spawn(
-        'ssh',
-        ['-o', 'BatchMode=yes', '-o', 'ConnectTimeout=5', '-o', 'StrictHostKeyChecking=accept-new', h, 'true'],
-        { stdio: ['ignore', 'ignore', 'pipe'] },
-      )
-      let err = ''
-      const timer = setTimeout(() => {
-        child.kill('SIGKILL')
-        resolve({ ok: false, error: '连接超时' })
-      }, 8000)
-      child.stderr.setEncoding('utf8').on('data', (c: string) => { err += c })
-      child.once('error', (e: any) => {
-        clearTimeout(timer)
-        resolve({ ok: false, error: String(e?.message ?? e) })
+    try {
+      const { err, code } = await sshRun(h, 'true', undefined, {
+        timeoutMs: 8000,
+        connectTimeout: 5,
       })
-      child.once('close', (code: any) => {
-        clearTimeout(timer)
-        resolve(code === 0 ? { ok: true } : { ok: false, error: err.trim() || `ssh 退出码 ${code ?? 1}` })
-      })
-    })
+      return code === 0 ? { ok: true } : { ok: false, error: err.trim() || `ssh 退出码 ${code}` }
+    } catch (e: any) {
+      const msg = String(e?.message ?? e)
+      return { ok: false, error: /超时/.test(msg) ? '连接超时' : msg }
+    }
   })
 
   // 技能：<dataDir>/skills/<id>/SKILL.md（L1 目录经 list；L2/L3 经 load_skill）

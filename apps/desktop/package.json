@@ -8,7 +8,8 @@
     "@yagent/core": "workspace:*"
   },
   "scripts": {
-    "build": "tsc -p tsconfig.json",
+    "build:open-handlers": "mkdir -p bin && (test \"$(uname)\" = Darwin && swiftc -O -o bin/list-open-handlers scripts/list-open-handlers.swift || true)",
+    "build": "pnpm run build:open-handlers && tsc -p tsconfig.json",
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "dev": "concurrently -k -n web,electron \"pnpm --dir ../web dev\" \"wait-on http://localhost:5173 && pnpm build && VITE_DEV_SERVER_URL=http://localhost:5173 electron . -- --dev\"",
     "start": "electron .",
@@ -20,10 +21,18 @@
     "productName": "yagent",
     "files": [
       "dist/**/*",
+      "bin/**/*",
       "package.json",
       {
         "from": "../web/dist",
         "to": "web-dist"
+      }
+    ],
+    "extraResources": [
+      {
+        "from": "bin",
+        "to": "bin",
+        "filter": ["**/*"]
       }
     ],
     "directories": {

@@ -92,7 +92,7 @@ export function PanelBrowser({ page, onBackToSearch, onClose, onNavigate }: Pane
 
       <iframe key={frameKey} className="search-frame" title={page.title} src={page.url} />
       <div className="search-frame-hint">
-        若页面空白，站点可能禁止内嵌——点右上角图标用系统浏览器打开
+        仍空白时可点右上角图标用系统浏览器打开
       </div>
     </div>
   )

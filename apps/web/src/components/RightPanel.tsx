@@ -1,9 +1,8 @@
 import { useEffect, useMemo, useState } from 'react'
 import { Bookmark, EyeOff, Files, Globe, Lightbulb, PanelRight, Search, Trash2, X } from 'lucide-react'
 import type { Conversation, Insight, InsightMark, Ref } from '@yagent/core'
-import { formatSize } from '../lib/utils'
-import { FileIcon } from './FileIcon'
 import { PanelBrowser, type BrowserPage } from './PanelBrowser'
+import { ChatSandboxFiles } from './ChatSandboxFiles'
 import { ProjectFiles } from './ProjectFiles'
 import { SearchSources } from './SearchSources'
 
@@ -15,9 +14,13 @@ interface RightPanelProps {
   conversation: Conversation
   tab: PanelTab
   activeSrcId: number | null
+  /** 灵感总开关：关闭时隐藏「收获」tab */
+  inspirationEnabled?: boolean
   insights: Insight[]
   /** 收藏库（insights/sight/），可跨会话 */
   sightInsights: Insight[]
+  /** SSH 文件树连通性；本地项目传 null */
+  remoteFs?: 'checking' | 'ok' | 'fail' | null
   onTabChange: (tab: PanelTab) => void
   onSelectSrc: (id: number | null) => void
   onMarkInsight: (id: string, mark: InsightMark | null) => void
@@ -173,8 +176,10 @@ export function RightPanel({
   conversation,
   tab,
   activeSrcId,
+  inspirationEnabled = false,
   insights,
   sightInsights,
+  remoteFs = null,
   onTabChange,
   onSelectSrc,
   onMarkInsight,
@@ -183,6 +188,9 @@ export function RightPanel({
 }: RightPanelProps) {
   const [browserPage, setBrowserPage] = useState<BrowserPage | null>(null)
   const browserOpen = !!browserPage
+  const tabs = inspirationEnabled
+    ? BASE_TABS
+    : BASE_TABS.filter((t) => t.id !== 'insights')
 
   // 切换主区会话时清空浏览器页，避免仍显示上一会话
   useEffect(() => {
@@ -202,6 +210,10 @@ export function RightPanel({
     if (!browserOpen && tab === 'browser') onTabChange('search')
   }, [browserOpen, tab, onTabChange])
 
+  useEffect(() => {
+    if (!inspirationEnabled && tab === 'insights') onTabChange('files')
+  }, [inspirationEnabled, tab, onTabChange])
+
   const openInBrowser = (ref: Ref) => {
     setBrowserPage({ url: ref.url, title: ref.title })
     onTabChange('browser')
@@ -216,7 +228,7 @@ export function RightPanel({
   return (
     <aside className="panel">
       <div className="panel-tabs">
-        {BASE_TABS.map((t) => (
+        {tabs.map((t) => (
           <button
             key={t.id}
             type="button"
@@ -272,52 +284,31 @@ export function RightPanel({
         </button>
       </div>
 
-      <div className={`p-pane pane-insights${tab === 'insights' ? ' active' : ''}`}>
-        <InsightsPane
-          insights={insights}
-          sightInsights={sightInsights}
-          onMark={onMarkInsight}
-          onDelete={onDeleteInsight}
-        />
-      </div>
+      {inspirationEnabled ? (
+        <div className={`p-pane pane-insights${tab === 'insights' ? ' active' : ''}`}>
+          <InsightsPane
+            insights={insights}
+            sightInsights={sightInsights}
+            onMark={onMarkInsight}
+            onDelete={onDeleteInsight}
+          />
+        </div>
+      ) : null}
 
       <div className={`p-pane pane-files${tab === 'files' ? ' active' : ''}`}>
         {conversation.workdir && window.yagentDesktop?.fs ? (
-          <ProjectFiles workdir={conversation.workdir} />
+          <ProjectFiles
+            key={conversation.workdir}
+            workdir={conversation.workdir}
+            remoteFs={remoteFs}
+          />
         ) : (
-          <>
-            <div className="files-half">
-              <div className="sub-label">
-                用户附件 <span style={{ fontWeight: 400 }}>· 你上传的</span>
-              </div>
-              {conversation.attachments.map((f) => (
-                <div className="sfile" key={f.name}>
-                  <FileIcon name={f.name} />
-                  <span className="sf-name">{f.name}</span>
-                  <span className="sf-meta">{formatSize(f.size)}</span>
-                </div>
-              ))}
-            </div>
-
-            <div className="files-divider"></div>
-
-            <div className="files-half">
-              <div className="sub-label">
-                Agent 产物 <span style={{ fontWeight: 400 }}>· 本次任务生成</span>
-              </div>
-              {conversation.outputs.map((f) => (
-                <div className="sfile" key={f.name}>
-                  <FileIcon name={f.name} />
-                  <span className="sf-name">{f.name}</span>
-                  <span className="sf-meta">{formatSize(f.size)}</span>
-                </div>
-              ))}
-            </div>
-
-            <div className="files-note">
-              仅展示你上传的附件和 Agent 产出的文件，不是完整的沙箱文件系统。
-            </div>
-          </>
+          <ChatSandboxFiles
+            key={conversation.id}
+            convId={conversation.id}
+            attachments={conversation.attachments}
+            outputs={conversation.outputs}
+          />
         )}
       </div>
 
