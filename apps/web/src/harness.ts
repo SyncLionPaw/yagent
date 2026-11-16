@@ -265,24 +265,31 @@ export const harness = new Harness({
   system: buildSystem(),
 })
 
-/** 从磁盘扫 skills，把 L1 目录写入 system；无桌面端则清空附录 */
+/** 从磁盘扫 skills，把 L1 目录写入 system；无桌面端则清空附录；附录未变则跳过 configure */
 export async function syncSkillsIntoHarness(): Promise<{ total: number; invocable: number }> {
   if (!skillsAvailable()) {
-    skillsAppendixCache = ''
-    pushSystem()
+    if (skillsAppendixCache) {
+      skillsAppendixCache = ''
+      pushSystem()
+    }
     return { total: 0, invocable: 0 }
   }
   try {
     const skills = await listSkills()
-    skillsAppendixCache = formatSkillsSystemAppendix(skills)
-    pushSystem()
+    const next = formatSkillsSystemAppendix(skills)
+    if (next !== skillsAppendixCache) {
+      skillsAppendixCache = next
+      pushSystem()
+    }
     return {
       total: skills.length,
       invocable: skills.filter((s) => !s.disableModelInvocation).length,
     }
   } catch {
-    skillsAppendixCache = ''
-    pushSystem()
+    if (skillsAppendixCache) {
+      skillsAppendixCache = ''
+      pushSystem()
+    }
     return { total: 0, invocable: 0 }
   }
 }
@@ -292,6 +299,9 @@ export async function syncSkillsIntoHarness(): Promise<{ total: number; invocabl
  *  read_file 默认可；SSH 离线时与 write_file / run_command 一并拿掉；
  *  save_insight 跟随灵感开关；search_web 跟随设置；
  *  write_file / run_command：绑定用户目录，或纯 chat 的进程隔离沙箱。 */
+/** 上次 updateToolsFor 签名，相同则跳过 configure（流式/探测重复调用） */
+let lastToolsSig = ''
+
 export function updateToolsFor(
   convId: string,
   toolFlags?: Settings['tools'],
@@ -303,11 +313,25 @@ export function updateToolsFor(
   const chatSandbox = !workdir
   const remoteOffline = !!opts?.remoteOffline
   const canSkills = skillsAvailable()
+  const webSearch = toolFlags?.webSearch ?? true
+  const kwKey = insightKeywords.join('\0')
+  const sig = [
+    convId,
+    workdir,
+    chatSandbox ? '1' : '0',
+    remoteOffline ? '1' : '0',
+    canSkills ? '1' : '0',
+    insightEnabled ? '1' : '0',
+    webSearch ? '1' : '0',
+    kwKey,
+  ].join('|')
   const nextChatReminder = chatSandbox ? `\n\n${CHAT_SANDBOX_SYSTEM}` : ''
   if (nextChatReminder !== chatSandboxReminder) {
     chatSandboxReminder = nextChatReminder
     pushSystem()
   }
+  if (sig === lastToolsSig) return
+  lastToolsSig = sig
   const tools = DEFAULT_TOOLS.filter((t) => {
     if (remoteOffline && REMOTE_DEP_TOOLS.has(t.name)) return false
     if (t.name === 'load_skill') return canSkills
@@ -319,7 +343,7 @@ export function updateToolsFor(
     ) {
       return true
     }
-    if (t.name === 'search_web') return toolFlags?.webSearch ?? true
+    if (t.name === 'search_web') return webSearch
     // 用户项目 或 纯 chat 沙箱
     if (t.name === 'write_file' || t.name === 'run_command') return chatSandbox || !!workdir
     return !!workdir

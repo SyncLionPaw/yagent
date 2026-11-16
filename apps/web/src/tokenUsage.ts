@@ -20,11 +20,14 @@ export type TokenUsageStore = {
 
 export type TokenRangeId = '1h' | '12h' | '3d' | '7d'
 
+const HOUR = 60 * 60_000
+
+/** 各范围统一 1 小时一柱 */
 export const TOKEN_RANGES: { id: TokenRangeId; label: string; ms: number; bucketMs: number }[] = [
-  { id: '1h', label: '1 小时内', ms: 3_600_000, bucketMs: 5 * 60_000 },
-  { id: '12h', label: '12 小时内', ms: 12 * 3_600_000, bucketMs: 60 * 60_000 },
-  { id: '3d', label: '3 天', ms: 3 * 86_400_000, bucketMs: 6 * 3_600_000 },
-  { id: '7d', label: '7 天', ms: 7 * 86_400_000, bucketMs: 12 * 3_600_000 },
+  { id: '1h', label: '1 小时内', ms: 3_600_000, bucketMs: HOUR },
+  { id: '12h', label: '12 小时内', ms: 12 * 3_600_000, bucketMs: HOUR },
+  { id: '3d', label: '3 天', ms: 3 * 86_400_000, bucketMs: HOUR },
+  { id: '7d', label: '7 天', ms: 7 * 86_400_000, bucketMs: HOUR },
 ]
 
 const LS_KEY = 'yagent-token-usage'
@@ -191,7 +194,7 @@ export function sumEvents(events: UsageEvent[]): TokenBucket {
   return sumBuckets(events)
 }
 
-/** 把事件聚合成等距时间桶（用于面积图） */
+/** 把事件聚合成等距时间桶（用于柱状图） */
 export function bucketEvents(
   events: UsageEvent[],
   range: (typeof TOKEN_RANGES)[number],
@@ -223,7 +226,7 @@ export function formatTok(n: number): string {
   return `${Math.round(n / 1_000_000)}M`
 }
 
-/** 轴 / tip 时间标签 */
+/** 轴 / tip 时间标签（桶宽 1 小时，短窗显时分，长窗显日期+时分） */
 export function formatBucketLabel(t: number, rangeId: TokenRangeId): string {
   const d = new Date(t)
   const hh = String(d.getHours()).padStart(2, '0')
@@ -231,6 +234,6 @@ export function formatBucketLabel(t: number, rangeId: TokenRangeId): string {
   if (rangeId === '1h' || rangeId === '12h') return `${hh}:${mm}`
   const mon = d.getMonth() + 1
   const day = d.getDate()
-  if (rangeId === '3d') return `${mon}/${day} ${hh}:00`
-  return `${mon}/${day}`
+  if (rangeId === '3d') return `${mon}/${day} ${hh}:${mm}`
+  return `${mon}/${day} ${hh}:${mm}`
 }

@@ -197,15 +197,15 @@ export class ContextManager {
     return this.limit
   }
 
-  /** 记录一轮 stream 的 usage；累加 totals */
-  recordUsage(convId: string, usage: TokenUsage): ContextSnapshot {
+  /** 记录一轮 stream 的 usage；累加 totals。limit 可传入该次运行的配置快照 */
+  recordUsage(convId: string, usage: TokenUsage, limit = this.limit): ContextSnapshot {
     const st = this.state(convId)
     st.lastUsage = usage
     st.totals.input += usage.input
     st.totals.output += usage.output
     st.totals.cacheRead += usage.cacheRead ?? 0
     st.totals.cacheWrite += usage.cacheWrite ?? 0
-    return this.buildSnapshot(st, st.lastBreakdown)
+    return this.buildSnapshot(st, st.lastBreakdown, limit)
   }
 
   clear(convId: string): void {
@@ -234,8 +234,10 @@ export class ContextManager {
     convId: string,
     messages: ChatMessage[],
     input: ContextEstimateInput = {},
+    options: { limit?: number } = {},
   ): PrepareResult {
-    const budget = Math.floor(this.limit * this.softRatio)
+    const limit = Math.max(1, options.limit ?? this.limit)
+    const budget = Math.floor(limit * this.softRatio)
     const rawEstimate = estimateTokens(messages, input.system, input.tools)
     let out = cloneMessages(messages)
     let trimmed = false
@@ -256,7 +258,7 @@ export class ContextManager {
     st.lastTrimmed = trimmed
     st.lastTrimmedTokens = Math.max(0, rawEstimate - estimated)
     st.lastBreakdown = breakdown
-    return { messages: out, snapshot: this.buildSnapshot(st, breakdown) }
+    return { messages: out, snapshot: this.buildSnapshot(st, breakdown, limit) }
   }
 
   private state(convId: string): ConvState {
@@ -273,7 +275,11 @@ export class ContextManager {
     return st
   }
 
-  private buildSnapshot(st: ConvState, breakdown: ContextBreakdown): ContextSnapshot {
+  private buildSnapshot(
+    st: ConvState,
+    breakdown: ContextBreakdown,
+    limit = this.limit,
+  ): ContextSnapshot {
     const estimated = breakdown.system + breakdown.tools + breakdown.messages
     const last = st.lastUsage
     const cacheHitRatio =
@@ -282,8 +288,8 @@ export class ContextManager {
         : null
     return {
       estimated,
-      limit: this.limit,
-      ratio: estimated / this.limit,
+      limit,
+      ratio: estimated / limit,
       softRatio: this.softRatio,
       breakdown: { ...breakdown },
       ...(last ? { lastUsage: last } : {}),

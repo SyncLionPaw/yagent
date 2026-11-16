@@ -1,22 +1,14 @@
 import { useCallback, useState } from 'react'
 import { ArrowLeft, Code2, Download, Eye } from 'lucide-react'
-import Markdown from 'react-markdown'
-import remarkGfm from 'remark-gfm'
 import type { SandboxFile } from '@yagent/core'
-import { HTML_PREVIEW_SANDBOX, htmlWithBase } from '../lib/htmlPreview'
 import { formatSize } from '../lib/utils'
-import { CodePreview } from './CodePreview'
 import { FileIcon } from './FileIcon'
-import { MoleculeViewer } from './MoleculeViewer'
-
-type FilePreview =
-  | { name: string; kind: 'text'; content: string }
-  | { name: string; kind: 'html'; content: string; baseHref?: string }
-  | { name: string; kind: 'markdown'; content: string }
-  | { name: string; kind: 'molecule'; format: string; content: string }
-  | { name: string; kind: 'image'; mime: string; dataUrl: string }
-  | { name: string; kind: 'pdf'; dataUrl: string }
-  | { name: string; kind: 'unavailable'; reason: string; size: number }
+import {
+  canToggleSource,
+  FilePreviewView,
+  type FilePreview,
+  type FileViewMode,
+} from './FilePreviewView'
 
 function displayName(stored: string): string {
   const s = stored.trim()
@@ -42,7 +34,7 @@ export function ChatSandboxFiles({
   const [preview, setPreview] = useState<FilePreview | null>(null)
   const [opening, setOpening] = useState<string | null>(null)
   const [previewSource, setPreviewSource] = useState<'attach' | 'output' | null>(null)
-  const [viewMode, setViewMode] = useState<'preview' | 'source'>('preview')
+  const [viewMode, setViewMode] = useState<FileViewMode>('preview')
   const [error, setError] = useState('')
   const [busyDl, setBusyDl] = useState<string | null>(null)
 
@@ -131,14 +123,7 @@ export function ChatSandboxFiles({
   }
 
   const fileName = preview ? displayName(preview.name) : opening ? displayName(opening) : null
-  const canToggleSource =
-    !!preview &&
-    (preview.kind === 'html' || preview.kind === 'markdown' || preview.kind === 'molecule')
-  const showingCode =
-    !!preview &&
-    (preview.kind === 'text' ||
-      ((preview.kind === 'html' || preview.kind === 'markdown' || preview.kind === 'molecule') &&
-        viewMode === 'source'))
+  const toggleSource = canToggleSource(preview)
 
   if (preview || opening) {
     return (
@@ -153,7 +138,7 @@ export function ChatSandboxFiles({
             </span>
           </div>
           <div className="file-view-tabs" role="group" aria-label="预览工具">
-            {canToggleSource ? (
+            {toggleSource ? (
               <>
                 <button
                   type="button"
@@ -189,37 +174,13 @@ export function ChatSandboxFiles({
           </div>
         </div>
         {error ? <div className="files-note">{error}</div> : null}
-        {opening && !preview ? (
-          <div className="file-view file-view-loading">加载预览…</div>
-        ) : preview?.kind === 'image' ? (
-          <div className="file-view file-view-image">
-            <img src={preview.dataUrl} alt={fileName ?? ''} />
-          </div>
-        ) : preview?.kind === 'pdf' ? (
-          <iframe className="file-view file-view-pdf" title={fileName ?? 'pdf'} src={preview.dataUrl} />
-        ) : preview?.kind === 'html' && viewMode === 'preview' ? (
-          <iframe
-            className="file-view file-view-html"
-            title={fileName ?? 'html'}
-            sandbox={HTML_PREVIEW_SANDBOX}
-            srcDoc={htmlWithBase(preview.content, preview.baseHref)}
-          />
-        ) : preview?.kind === 'markdown' && viewMode === 'preview' ? (
-          <div className="file-view file-view-md md">
-            <Markdown remarkPlugins={[remarkGfm]}>{preview.content}</Markdown>
-          </div>
-        ) : preview?.kind === 'molecule' && viewMode === 'preview' ? (
-          <MoleculeViewer content={preview.content} format={preview.format} />
-        ) : preview?.kind === 'unavailable' ? (
-          <div className="file-view file-view-empty">
-            <p className="file-view-empty-desc">
-              {preview.reason}
-              {preview.size ? ` · ${formatSize(preview.size)}` : ''}
-            </p>
-          </div>
-        ) : showingCode && preview && 'content' in preview ? (
-          <CodePreview content={preview.content} filename={fileName ?? 'file'} wrap={false} />
-        ) : null}
+        <FilePreviewView
+          preview={preview}
+          opening={!!opening}
+          viewMode={viewMode}
+          wrap={false}
+          fileName={fileName}
+        />
       </div>
     )
   }

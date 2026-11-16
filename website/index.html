@@ -3,1355 +3,151 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>yagent</title>
+    <title>yagent — 做完事，还多懂一点</title>
+    <meta name="description" content="yagent 是一个能调用真实工具、展示执行过程，并把有用收获留下来的 AI Agent。">
+    <meta name="theme-color" content="#f3f4f5">
+    <meta property="og:title" content="yagent — 做完事，还多懂一点">
+    <meta property="og:description" content="真实工具，透明过程，带走每一次任务里的收获。">
+    <meta property="og:type" content="website">
+    <meta property="og:url" content="https://synclionpaw.github.io/yagent/">
+    <meta property="og:image" content="https://synclionpaw.github.io/yagent/assets/showcase/1.webp">
+    <link rel="canonical" href="https://synclionpaw.github.io/yagent/">
+    <link rel="icon" href="favicon.svg" type="image/svg+xml">
+    <link rel="alternate" type="text/plain" href="agents.txt" title="Agent instructions">
+    <link rel="alternate" type="text/plain" href="llms.txt" title="LLM site index">
     <script src="theme-boot.js"></script>
     <link rel="stylesheet" href="theme.css">
+    <link rel="stylesheet" href="home.css">
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-    <link href="https://fonts.googleapis.com/css2?family=Instrument+Serif:ital@0;1&family=JetBrains+Mono:wght@500&family=Noto+Serif+JP:wght@500&family=Noto+Serif+SC:wght@500&family=Space+Grotesk:wght@400;500&display=swap" rel="stylesheet">
-    <style>
-        :root {
-            --cell: clamp(16px, 5.4vw, 25px);
-        }
-
-        * { box-sizing: border-box; }
-
-        body {
-            margin: 0;
-            background-color: var(--bg);
-            color: var(--ink);
-            font-family: 'Space Grotesk', 'Hiragino Sans', 'PingFang SC', 'Noto Sans JP', 'Microsoft YaHei', system-ui, sans-serif;
-            -webkit-font-smoothing: antialiased;
-            transition: background-color 0.25s ease, color 0.25s ease;
-        }
-
-        /* ---------- 顶栏 ---------- */
-        .topbar {
-            position: fixed;
-            top: 0;
-            left: 0;
-            right: 0;
-            display: flex;
-            justify-content: space-between;
-            align-items: center;
-            padding: 22px 32px;
-            z-index: 10;
-        }
-
-        .wordmark {
-            display: inline-flex;
-            align-items: center;
-            gap: 1px;
-            font-family: 'JetBrains Mono', ui-monospace, monospace;
-            font-size: 17px;
-            font-weight: 500;
-            letter-spacing: -0.02em;
-            color: var(--ink);
-        }
-
-        .wordmark canvas {
-            display: block;
-        }
-
-        .topnav {
-            display: flex;
-            align-items: center;
-            gap: 22px;
-        }
-
-        .topnav a {
-            font-size: 13px;
-            color: var(--faint);
-            text-decoration: none;
-            transition: color 0.2s ease;
-        }
-
-        .topnav a:hover {
-            color: var(--ink);
-        }
-
-        /* ---------- 语言选择 ---------- */
-        .lang {
-            position: relative;
-        }
-
-        .lang-btn {
-            display: inline-flex;
-            align-items: center;
-            gap: 8px;
-            background: transparent;
-            color: var(--faint);
-            border: 1px solid var(--hairline);
-            border-radius: 999px;
-            padding: 6px 12px;
-            font-size: 13px;
-            font-family: inherit;
-            line-height: 1.2;
-            cursor: pointer;
-            transition: color 0.2s ease, border-color 0.2s ease;
-        }
-
-        .lang-btn:hover,
-        .lang.open .lang-btn {
-            color: var(--ink);
-            border-color: var(--control-hover-border);
-        }
-
-        .lang-caret {
-            opacity: 0.7;
-            transition: transform 0.2s ease;
-        }
-
-        .lang.open .lang-caret {
-            transform: rotate(180deg);
-        }
-
-        .lang-btn:focus-visible,
-        a:focus-visible {
-            outline: 2px solid var(--accent);
-            outline-offset: 3px;
-        }
-
-        /* ---------- 首屏（网格只出现在这里，向下淡出） ---------- */
-        .hero {
-            min-height: 100vh;
-            display: flex;
-            flex-direction: column;
-            justify-content: center;
-            align-items: center;
-            text-align: center;
-            padding: 96px 24px 64px;
-            position: relative;
-            /* 底层网格；顶层遮罩把下沿淡进纯色，features 不再带格 */
-            background-color: var(--bg);
-            background-image:
-                linear-gradient(to bottom, transparent 58%, var(--bg) 92%),
-                linear-gradient(to right, var(--grid-faint) 1px, transparent 1px),
-                linear-gradient(to bottom, var(--grid-faint) 1px, transparent 1px);
-            background-size:
-                auto,
-                var(--cell) var(--cell),
-                var(--cell) var(--cell);
-            background-repeat: no-repeat, repeat, repeat;
-            transition: background-color 0.25s ease;
-        }
-
-        .main-grid {
-            display: inline-grid;
-            grid-template-columns: repeat(4, auto);
-            grid-template-rows: repeat(4, auto);
-            gap: 0;
-            /* 透明：落在 hero 网格上，不另起一块 */
-            background: transparent;
-        }
-
-        .big-cell {
-            display: grid;
-            grid-template-columns: repeat(4, var(--cell));
-            grid-template-rows: repeat(4, var(--cell));
-            gap: 0;
-        }
-
-        .small-cell {
-            width: var(--cell);
-            height: var(--cell);
-            background: transparent;
-            box-sizing: border-box;
-            position: relative;
-            transition: transform 0.4s cubic-bezier(0.22, 1, 0.36, 1);
-        }
-
-        /* 选中：内嵌圆形，与方块边界留出 1px */
-        .small-cell::after {
-            content: '';
-            position: absolute;
-            inset: 2px; /* 1px 边框 + 1px 留白 */
-            border-radius: 50%;
-            background: var(--dot-color, #ffffff);
-            box-shadow: 0 0 6px var(--dot-color, #ffffff);
-            opacity: var(--fo, 0);
-            transform: scale(0.4);
-            transition: opacity 0.18s ease, transform 0.18s ease;
-        }
-
-        .small-cell.selected::after {
-            opacity: 1;
-            transform: scale(1);
-        }
-
-        /* 右下角笔画：半透明淡出 */
-        .small-cell.selected.ghost::after {
-            opacity: 0.10;
-        }
-
-        .tagline {
-            font-size: clamp(26px, 4vw, 40px);
-            font-weight: 500;
-            letter-spacing: -0.02em;
-            line-height: 1.3;
-            margin: 56px 0 0;
-            max-width: 22em;
-        }
-
-        .subline {
-            font-size: 15px;
-            line-height: 1.9;
-            color: var(--muted);
-            margin: 18px 0 0;
-            max-width: 34em;
-        }
-
-        .cta-row {
-            margin-top: 36px;
-            display: flex;
-            align-items: center;
-            gap: 24px;
-        }
-
-        .cta {
-            display: inline-block;
-            padding: 11px 28px;
-            font-size: 14px;
-            color: var(--bg);
-            background: var(--ink);
-            border-radius: 999px;
-            text-decoration: none;
-            transition: background 0.2s ease, transform 0.2s ease;
-        }
-
-        .cta:hover {
-            background: var(--accent);
-            color: var(--cta-hover-ink);
-            transform: translateY(-1px);
-        }
-
-        .ghost-link {
-            font-size: 14px;
-            color: var(--muted);
-            text-decoration: none;
-            border-bottom: 1px solid transparent;
-            transition: color 0.2s ease;
-        }
-
-        .ghost-link:hover {
-            color: var(--ink);
-        }
-
-        /* 加载时的一次性入场 */
-        .tagline, .subline, .cta-row {
-            opacity: 0;
-            transform: translateY(10px);
-            transition: opacity 0.7s ease, transform 0.7s ease;
-        }
-
-        .hero.ready .tagline { opacity: 1; transform: none; transition-delay: 0.15s; }
-        .hero.ready .subline { opacity: 1; transform: none; transition-delay: 0.35s; }
-        .hero.ready .cta-row { opacity: 1; transform: none; transition-delay: 0.55s; }
-
-        /* ---------- 产品一览（左右交替） ---------- */
-        .showcase {
-            max-width: 1040px;
-            margin: 0 auto;
-            padding: 48px 24px 96px;
-        }
-
-        .showcase-head {
-            margin-bottom: 48px;
-            padding-bottom: 20px;
-            border-bottom: 1px solid var(--hairline);
-        }
-
-        .showcase-title {
-            margin: 0;
-            font-family: 'JetBrains Mono', ui-monospace, monospace;
-            font-size: 13px;
-            font-weight: 500;
-            letter-spacing: 0.04em;
-            color: var(--faint);
-        }
-
-        .showcase-list {
-            display: flex;
-            flex-direction: column;
-            gap: 0;
-        }
-
-        .showcase-item {
-            margin: 0;
-            padding: 44px 0;
-            border-bottom: 1px solid var(--hairline);
-            display: grid;
-            grid-template-columns: minmax(11rem, 0.38fr) 1fr;
-            gap: 28px 40px;
-            align-items: center;
-        }
-
-        .showcase-item:first-child {
-            padding-top: 0;
-        }
-
-        .showcase-item:last-child {
-            border-bottom: none;
-            padding-bottom: 0;
-        }
-
-        .showcase-item:nth-child(even) {
-            grid-template-columns: 1fr minmax(11rem, 0.38fr);
-        }
-
-        .showcase-item:nth-child(even) .showcase-text {
-            order: 2;
-        }
-
-        .showcase-item:nth-child(even) img {
-            order: 1;
-        }
-
-        .showcase-text {
-            min-width: 0;
-            display: grid;
-            grid-template-columns: 2.75rem 1fr;
-            gap: 6px 14px;
-            align-items: start;
-        }
-
-        .showcase-idx {
-            font-family: 'JetBrains Mono', ui-monospace, monospace;
-            font-size: 13px;
-            font-weight: 500;
-            letter-spacing: 0.02em;
-            color: var(--faint);
-            line-height: 1.4;
-            padding-top: 4px;
-        }
-
-        .showcase-copy {
-            min-width: 0;
-        }
-
-        .showcase-name {
-            margin: 0 0 12px;
-            font-family: 'Instrument Serif', 'Noto Serif SC', 'Noto Serif JP', 'Songti SC', 'Hiragino Mincho ProN', serif;
-            font-size: clamp(28px, 3.2vw, 40px);
-            font-weight: 500;
-            letter-spacing: -0.03em;
-            line-height: 1.15;
-        }
-
-        .showcase-desc {
-            margin: 0;
-            font-size: 15px;
-            line-height: 1.75;
-            color: var(--muted);
-        }
-
-        .showcase-item img {
-            display: block;
-            width: 100%;
-            height: auto;
-            border-radius: 12px;
-            border: 1px solid var(--hairline);
-            background: color-mix(in srgb, var(--ink) 3%, var(--bg));
-        }
-
-        /* ---------- 特性 ---------- */
-        .features {
-            max-width: 720px;
-            margin: 0 auto;
-            padding: 40px 24px 80px;
-        }
-
-        .feature {
-            display: grid;
-            grid-template-columns: 180px 1fr;
-            gap: 24px;
-            padding: 32px 0;
-            border-top: 1px solid var(--hairline);
-        }
-
-        .feature h2 {
-            font-size: 16px;
-            font-weight: 500;
-            margin: 0;
-            letter-spacing: -0.01em;
-        }
-
-        .feature p {
-            font-size: 14px;
-            line-height: 1.9;
-            color: var(--muted);
-            margin: 0;
-            max-width: 34em;
-        }
-
-        /* ---------- 评价（双行相向跑马灯） ---------- */
-        .voices {
-            padding: 24px 0 120px;
-            overflow: hidden;
-        }
-
-        .voices-head {
-            text-align: center;
-            margin-bottom: 36px;
-            padding: 0 24px;
-        }
-
-        .voices-title {
-            margin: 0;
-            font-size: 13px;
-            font-weight: 500;
-            letter-spacing: 0.08em;
-            text-transform: uppercase;
-            color: var(--faint);
-        }
-
-        .marquee-stack {
-            --marquee-gap: 18px;
-            display: flex;
-            flex-direction: column;
-            gap: 18px;
-        }
-
-        .marquee {
-            position: relative;
-            overflow: hidden;
-            mask-image: linear-gradient(
-                to right,
-                transparent,
-                #000 5%,
-                #000 95%,
-                transparent
-            );
-            -webkit-mask-image: linear-gradient(
-                to right,
-                transparent,
-                #000 5%,
-                #000 95%,
-                transparent
-            );
-        }
-
-        .marquee-track {
-            display: flex;
-            width: max-content;
-        }
-
-        .marquee-track.left {
-            animation: marquee-left 88s linear infinite;
-        }
-
-        .marquee-track.right {
-            animation: marquee-right 96s linear infinite;
-        }
-
-        .marquee-stack:hover .marquee-track {
-            animation-play-state: paused;
-        }
-
-        .marquee-group {
-            display: flex;
-            flex-shrink: 0;
-            gap: var(--marquee-gap);
-            padding-right: var(--marquee-gap);
-        }
-
-        .voice {
-            flex: 0 0 min(360px, 78vw);
-            display: flex;
-            flex-direction: column;
-            justify-content: space-between;
-            gap: 18px;
-            min-height: 156px;
-            padding: 22px 24px;
-            border: 1px solid var(--hairline);
-            border-radius: 14px;
-            background: color-mix(in srgb, var(--ink) 3%, var(--bg));
-        }
-
-        .voice blockquote {
-            margin: 0;
-            font-size: 14px;
-            font-weight: 500;
-            letter-spacing: -0.01em;
-            line-height: 1.7;
-        }
-
-        .voice .who {
-            display: flex;
-            align-items: center;
-            gap: 12px;
-            font-size: 13px;
-            color: var(--ink);
-        }
-
-        .voice .avatar {
-            flex: 0 0 auto;
-            width: 40px;
-            height: 40px;
-            border-radius: 50%;
-            overflow: hidden;
-            background: var(--avatar-bg, #c4b5a0);
-        }
-
-        .voice .avatar img {
-            display: block;
-            width: 100%;
-            height: 100%;
-            object-fit: cover;
-        }
-
-        .voice .meta {
-            display: flex;
-            flex-direction: column;
-            gap: 2px;
-            min-width: 0;
-        }
-
-        .voice .name {
-            font-weight: 500;
-            line-height: 1.3;
-        }
-
-        .voice .role {
-            color: var(--faint);
-            font-size: 12px;
-            line-height: 1.3;
-        }
-
-        @keyframes marquee-left {
-            from { transform: translateX(0); }
-            to { transform: translateX(calc(-1 * var(--marquee-shift, 50%))); }
-        }
-
-        @keyframes marquee-right {
-            from { transform: translateX(calc(-1 * var(--marquee-shift, 50%))); }
-            to { transform: translateX(0); }
-        }
-
-        /* ---------- 页脚 ---------- */
-        footer {
-            padding: 32px;
-            text-align: center;
-            font-size: 12px;
-            color: var(--faint);
-            border-top: 1px solid var(--hairline);
-        }
-
-        @media (max-width: 600px) {
-            .feature {
-                grid-template-columns: 1fr;
-                gap: 10px;
-            }
-
-            .topbar {
-                padding: 18px 20px;
-            }
-
-            .hero {
-                padding-left: 16px;
-                padding-right: 16px;
-            }
-
-            .topnav {
-                gap: 14px;
-            }
-
-            .lang-btn {
-                padding: 6px 10px;
-                gap: 6px;
-            }
-
-            .showcase {
-                padding: 32px 16px 72px;
-            }
-
-            .showcase-item,
-            .showcase-item:nth-child(even) {
-                grid-template-columns: 1fr;
-                gap: 16px;
-                padding: 32px 0;
-            }
-
-            .showcase-item:nth-child(even) .showcase-text,
-            .showcase-item:nth-child(even) img {
-                order: unset;
-            }
-
-            .showcase-text {
-                grid-template-columns: 2.25rem 1fr;
-                gap: 4px 12px;
-            }
-
-            .showcase-name {
-                font-size: 26px;
-            }
-
-            .showcase-item img {
-                border-radius: 10px;
-            }
-
-            .voices {
-                padding: 8px 0 96px;
-            }
-
-            .marquee-stack {
-                gap: 14px;
-            }
-
-            .voice {
-                min-height: 140px;
-                padding: 18px 20px;
-            }
-        }
-
-        @media (prefers-reduced-motion: reduce) {
-            .small-cell,
-            .small-cell::after,
-            .tagline, .subline, .cta-row {
-                transition: none;
-            }
-
-            .tagline, .subline, .cta-row {
-                opacity: 1;
-                transform: none;
-            }
-
-            .marquee-track {
-                animation: none !important;
-                transform: none !important;
-            }
-
-            .marquee {
-                overflow-x: auto;
-                mask-image: none;
-                -webkit-mask-image: none;
-                padding: 0 16px;
-            }
-
-            .marquee-group[aria-hidden="true"] {
-                display: none;
-            }
-        }
-    </style>
+    <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500&family=Space+Grotesk:wght@400;500;600&display=swap" rel="stylesheet">
 </head>
 <body>
-    <header class="topbar">
-        <span class="wordmark"><canvas id="logoY" aria-label="x"></canvas><span>agent</span></span>
-        <div class="topnav">
-            <a href="docs.html" data-i18n="navDocs">文档</a>
-            <a href="gallery.html" data-i18n="navGallery">标志</a>
-            <a href="pricing.html" data-i18n="navPricing">价格</a>
-            <div class="theme" id="theme">
-                <button class="theme-btn" type="button" aria-haspopup="listbox" aria-expanded="false" aria-label="Theme">
-                    <svg class="icon-system" width="14" height="14" viewBox="0 0 14 14" aria-hidden="true"><circle cx="7" cy="7" r="5.25" fill="none" stroke="currentColor" stroke-width="1.2"/><path d="M7 1.75v10.5A5.25 5.25 0 0 0 7 1.75z" fill="currentColor"/></svg>
-                    <svg class="icon-sun" width="14" height="14" viewBox="0 0 14 14" aria-hidden="true"><circle cx="7" cy="7" r="2.4" fill="none" stroke="currentColor" stroke-width="1.2"/><path d="M7 1.4v1.5M7 11.1v1.5M1.4 7h1.5M11.1 7h1.5M3.05 3.05l1.06 1.06M9.89 9.89l1.06 1.06M10.95 3.05l-1.06 1.06M4.11 9.89l-1.06 1.06" fill="none" stroke="currentColor" stroke-width="1.2" stroke-linecap="round"/></svg>
-                    <svg class="icon-moon" width="14" height="14" viewBox="0 0 14 14" aria-hidden="true"><path d="M11.2 8.55A4.75 4.75 0 0 1 5.45 2.8 4.9 4.9 0 1 0 11.2 8.55z" fill="none" stroke="currentColor" stroke-width="1.2" stroke-linejoin="round"/></svg>
-                </button>
-                <ul class="menu-panel" role="listbox" aria-label="Theme">
-                    <li role="option" data-theme-pref="system" aria-selected="true" tabindex="-1" data-i18n="themeSystem">跟随系统</li>
-                    <li role="option" data-theme-pref="light" aria-selected="false" tabindex="-1" data-i18n="themeLight">浅色</li>
-                    <li role="option" data-theme-pref="dark" aria-selected="false" tabindex="-1" data-i18n="themeDark">深色</li>
-                </ul>
-            </div>
-            <div class="lang" id="lang">
-                <button class="lang-btn" type="button" aria-haspopup="listbox" aria-expanded="false" aria-label="Language">
-                    <span class="lang-label">中文</span>
-                    <svg class="lang-caret" width="10" height="6" viewBox="0 0 10 6" aria-hidden="true"><path d="M1 1l4 4 4-4" fill="none" stroke="currentColor" stroke-width="1.2" stroke-linecap="round" stroke-linejoin="round"/></svg>
-                </button>
-                <ul class="menu-panel" role="listbox" aria-label="Language">
-                    <li role="option" data-lang="zh" aria-selected="true" tabindex="-1">中文</li>
-                    <li role="option" data-lang="ja" aria-selected="false" tabindex="-1">日本語</li>
-                    <li role="option" data-lang="en" aria-selected="false" tabindex="-1">English</li>
-                </ul>
-            </div>
+    <svg class="svg-defs" aria-hidden="true">
+        <defs>
+            <symbol id="i-arrow" viewBox="0 0 24 24"><path d="M5 12h14M13 6l6 6-6 6"/></symbol>
+            <symbol id="i-copy" viewBox="0 0 24 24"><rect x="8" y="8" width="11" height="11" rx="2"/><path d="M16 8V6a2 2 0 0 0-2-2H6a2 2 0 0 0-2 2v8a2 2 0 0 0 2 2h2"/></symbol>
+            <symbol id="i-check" viewBox="0 0 24 24"><path d="m5 12 4 4L19 6"/></symbol>
+            <symbol id="i-spark" viewBox="0 0 24 24"><rect x="4" y="4" width="6" height="6"/><rect x="14" y="4" width="6" height="6"/><rect x="4" y="14" width="6" height="6"/><path d="M14 17h6M17 14v6"/></symbol>
+            <symbol id="i-folder" viewBox="0 0 24 24"><path d="M3 7a2 2 0 0 1 2-2h5l2 3h7a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V7Z"/></symbol>
+            <symbol id="i-terminal" viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="16" rx="2"/><path d="m7 9 3 3-3 3M13 15h4"/></symbol>
+            <symbol id="i-message" viewBox="0 0 24 24"><path d="M20 15a3 3 0 0 1-3 3H9l-5 3v-6a3 3 0 0 1-1-2V7a3 3 0 0 1 3-3h11a3 3 0 0 1 3 3v8Z"/><path d="M8 9h8M8 13h5"/></symbol>
+            <symbol id="i-eye" viewBox="0 0 24 24"><path d="M2 12s3.5-6 10-6 10 6 10 6-3.5 6-10 6S2 12 2 12Z"/><circle cx="12" cy="12" r="2.5"/></symbol>
+            <symbol id="i-book" viewBox="0 0 24 24"><path d="M4 5a2 2 0 0 1 2-2h5v17H6a2 2 0 0 0-2 2V5ZM20 5a2 2 0 0 0-2-2h-5v17h5a2 2 0 0 1 2 2V5Z"/></symbol>
+            <symbol id="i-agent" viewBox="0 0 24 24"><rect x="4" y="7" width="16" height="13" rx="3"/><path d="M12 3v4M8 12h.01M16 12h.01M8 16h8"/></symbol>
+            <symbol id="i-github" viewBox="0 0 24 24"><path d="M15 22v-4c.1-1-.4-2-1-2.5 3 0 6-1.5 6-6a4.7 4.7 0 0 0-1.3-3.5A4.4 4.4 0 0 0 18.6 2S17.4 1.6 15 3.5a12 12 0 0 0-6 0C6.6 1.6 5.4 2 5.4 2a4.4 4.4 0 0 0-.1 4A4.7 4.7 0 0 0 4 9.5c0 4.5 3 6 6 6-.5.4-.9 1-.9 1.8V22"/><path d="M9 18c-3 .9-3-1.5-4-2"/></symbol>
+        </defs>
+    </svg>
+
+    <a class="skip-link" href="#main" data-i18n="skip">跳到主要内容</a>
+    <header class="site-header">
+        <div class="header-inner">
+            <a class="wordmark" href="index.html" aria-label="yagent home">
+                <span class="brand-x" aria-hidden="true">×</span><span>agent</span>
+            </a>
+            <nav class="topnav" aria-label="Main navigation">
+                <a class="nav-optional" href="#product" data-i18n="navProduct">产品</a>
+                <a class="nav-optional" href="#agents" data-i18n="navAgents">给 Agent</a>
+                <a href="docs.html" data-i18n="navDocs">文档</a>
+                <a class="nav-optional" href="pricing.html" data-i18n="navPricing">价格</a>
+                <div class="theme" id="theme">
+                    <button class="theme-btn" type="button" aria-haspopup="listbox" aria-expanded="false" aria-label="Theme">
+                        <svg class="icon-system" width="17" height="17" viewBox="0 0 14 14" aria-hidden="true"><circle cx="7" cy="7" r="5.25" fill="none" stroke="currentColor" stroke-width="1.2"/><path d="M7 1.75v10.5A5.25 5.25 0 0 0 7 1.75z" fill="currentColor"/></svg>
+                        <svg class="icon-sun" width="17" height="17" viewBox="0 0 14 14" aria-hidden="true"><circle cx="7" cy="7" r="2.4" fill="none" stroke="currentColor" stroke-width="1.2"/><path d="M7 1.4v1.5M7 11.1v1.5M1.4 7h1.5M11.1 7h1.5M3.05 3.05l1.06 1.06M9.89 9.89l1.06 1.06M10.95 3.05l-1.06 1.06M4.11 9.89l-1.06 1.06" fill="none" stroke="currentColor" stroke-width="1.2" stroke-linecap="round"/></svg>
+                        <svg class="icon-moon" width="17" height="17" viewBox="0 0 14 14" aria-hidden="true"><path d="M11.2 8.55A4.75 4.75 0 0 1 5.45 2.8 4.9 4.9 0 1 0 11.2 8.55z" fill="none" stroke="currentColor" stroke-width="1.2" stroke-linejoin="round"/></svg>
+                    </button>
+                    <ul class="menu-panel" role="listbox" aria-label="Theme">
+                        <li role="option" data-theme-pref="system" aria-selected="true" tabindex="-1" data-i18n="themeSystem">跟随系统</li>
+                        <li role="option" data-theme-pref="light" aria-selected="false" tabindex="-1" data-i18n="themeLight">浅色</li>
+                        <li role="option" data-theme-pref="dark" aria-selected="false" tabindex="-1" data-i18n="themeDark">深色</li>
+                    </ul>
+                </div>
+                <div class="lang" id="lang">
+                    <button class="lang-btn" type="button" aria-haspopup="listbox" aria-expanded="false" aria-label="Language">
+                        <span class="lang-label">中文</span>
+                        <svg class="lang-caret" width="10" height="6" viewBox="0 0 10 6" aria-hidden="true"><path d="M1 1l4 4 4-4" fill="none" stroke="currentColor" stroke-width="1.2" stroke-linecap="round" stroke-linejoin="round"/></svg>
+                    </button>
+                    <ul class="menu-panel" role="listbox" aria-label="Language">
+                        <li role="option" data-lang="zh" aria-selected="true" tabindex="-1">中文</li>
+                        <li role="option" data-lang="ja" aria-selected="false" tabindex="-1">日本語</li>
+                        <li role="option" data-lang="en" aria-selected="false" tabindex="-1">English</li>
+                    </ul>
+                </div>
+            </nav>
         </div>
     </header>
 
-    <main>
+    <main id="main">
         <section class="hero" id="hero">
-            <div class="main-grid" id="mainGrid"></div>
-            <h1 class="tagline" data-i18n="tagline"></h1>
-            <p class="subline" data-i18n="subline"></p>
-            <div class="cta-row">
-                <a class="cta" href="#" data-i18n="cta"></a>
-                <a class="ghost-link" href="docs.html" data-i18n="docs"></a>
+            <div class="hero-inner">
+                <div class="hero-copy">
+                    <h1><span data-i18n="heroLine1">做完事，</span><span data-i18n="heroLine2">还多懂一点。</span></h1>
+                    <p class="hero-subline" data-i18n="heroSubline">调用真实工具，展示每一步过程，再把值得知道的东西留下来。</p>
+                    <div class="hero-actions">
+                        <a class="button button-primary" href="docs.html"><span data-i18n="cta">开始使用</span><svg class="icon"><use href="#i-arrow"/></svg></a>
+                        <a class="hero-text-link" href="#product"><span data-i18n="seeProduct">看看产品</span><span aria-hidden="true">↘</span></a>
+                    </div>
+                </div>
+                <figure class="hero-product">
+                    <div class="workbench"><img src="assets/showcase/1.webp" alt="yagent 对话与收获面板的真实产品界面" data-i18n-alt="heroImageAlt" width="1800" height="1251" fetchpriority="high"></div>
+                </figure>
             </div>
         </section>
 
-        <section class="showcase" aria-labelledby="showcaseTitle">
-            <div class="showcase-head">
-                <h2 class="showcase-title" id="showcaseTitle" data-i18n="showcaseTitle"></h2>
+        <section class="proof" aria-label="Product principles">
+            <div class="proof-item"><svg class="icon"><use href="#i-terminal"/></svg><h2 data-i18n="proof1t">真实工具</h2></div>
+            <div class="proof-item"><svg class="icon"><use href="#i-eye"/></svg><h2 data-i18n="proof2t">过程透明</h2></div>
+            <div class="proof-item"><svg class="icon"><use href="#i-spark"/></svg><h2 data-i18n="proof3t">收获沉淀</h2></div>
+        </section>
+
+        <section class="product section" id="product">
+            <div class="section-heading">
+                <h2 data-i18n="productTitle">不只是一句「已完成」。</h2>
+                <p data-i18n="productIntro">从工作目录到关键决策，每个细节都有位置。选择下面四项，看看 yagent 实际如何工作。</p>
             </div>
-            <div class="showcase-list">
-                <article class="showcase-item">
-                    <div class="showcase-text">
-                        <span class="showcase-idx" aria-hidden="true">01</span>
-                        <div class="showcase-copy">
-                            <h3 class="showcase-name" data-i18n="shot1t"></h3>
-                            <p class="showcase-desc" data-i18n="shot1c"></p>
-                        </div>
-                    </div>
-                    <img src="assets/showcase/1.png" alt="" data-i18n-alt="shot1a" width="2624" height="1824" loading="lazy" decoding="async">
-                </article>
-                <article class="showcase-item">
-                    <div class="showcase-text">
-                        <span class="showcase-idx" aria-hidden="true">02</span>
-                        <div class="showcase-copy">
-                            <h3 class="showcase-name" data-i18n="shot2t"></h3>
-                            <p class="showcase-desc" data-i18n="shot2c"></p>
-                        </div>
-                    </div>
-                    <img src="assets/showcase/2.png" alt="" data-i18n-alt="shot2a" width="2624" height="1824" loading="lazy" decoding="async">
-                </article>
-                <article class="showcase-item">
-                    <div class="showcase-text">
-                        <span class="showcase-idx" aria-hidden="true">03</span>
-                        <div class="showcase-copy">
-                            <h3 class="showcase-name" data-i18n="shot3t"></h3>
-                            <p class="showcase-desc" data-i18n="shot3c"></p>
-                        </div>
-                    </div>
-                    <img src="assets/showcase/3.png" alt="" data-i18n-alt="shot3a" width="2624" height="1824" loading="lazy" decoding="async">
-                </article>
-                <article class="showcase-item">
-                    <div class="showcase-text">
-                        <span class="showcase-idx" aria-hidden="true">04</span>
-                        <div class="showcase-copy">
-                            <h3 class="showcase-name" data-i18n="shot4t"></h3>
-                            <p class="showcase-desc" data-i18n="shot4c"></p>
-                        </div>
-                    </div>
-                    <img src="assets/showcase/4.png" alt="" data-i18n-alt="shot4a" width="2624" height="1824" loading="lazy" decoding="async">
-                </article>
+            <div class="product-explorer">
+                <div class="product-tabs" role="tablist" aria-label="Product details" data-i18n-aria-label="productTabsLabel">
+                    <button class="product-tab" id="shotTab0" type="button" role="tab" aria-selected="true" aria-controls="productPanel" data-shot="0"><svg class="icon"><use href="#i-spark"/></svg><strong data-i18n="shot1t">收获</strong></button>
+                    <button class="product-tab" id="shotTab1" type="button" role="tab" aria-selected="false" aria-controls="productPanel" tabindex="-1" data-shot="1"><svg class="icon"><use href="#i-folder"/></svg><strong data-i18n="shot2t">项目文件</strong></button>
+                    <button class="product-tab" id="shotTab2" type="button" role="tab" aria-selected="false" aria-controls="productPanel" tabindex="-1" data-shot="2"><svg class="icon"><use href="#i-terminal"/></svg><strong data-i18n="shot3t">执行过程</strong></button>
+                    <button class="product-tab" id="shotTab3" type="button" role="tab" aria-selected="false" aria-controls="productPanel" tabindex="-1" data-shot="3"><svg class="icon"><use href="#i-message"/></svg><strong data-i18n="shot4t">向你提问</strong></button>
+                </div>
+                <div class="product-panel" id="productPanel" role="tabpanel" aria-labelledby="shotTab0">
+                    <div class="product-image-wrap"><img id="productImage" src="assets/showcase/1.webp" alt="yagent 对话与收获面板" width="1800" height="1251"></div>
+                    <div class="product-panel-copy"><h3 id="productTitle">收获，而不是信息堆积。</h3><p id="productDescription">从当前任务里提炼少量、真正有用的知识点，留在右侧，想看时再看。</p></div>
+                </div>
             </div>
         </section>
 
-        <section class="features">
-            <div class="feature">
-                <h2 data-i18n="f1t"></h2>
-                <p data-i18n="f1d"></p>
+        <section class="agent-section section" id="agents">
+            <div class="agent-copy">
+                <h2 data-i18n="agentTitle">也为 Agent，留一个入口。</h2>
+                <p data-i18n="agentDescription">把下面这段指令发给你常用的 Agent。它会读取安装步骤、能力边界和文档入口，再决定如何继续。</p>
+                <div class="agent-file-list" aria-label="Machine-readable files">
+                    <a href="agents.txt" target="_blank" rel="noopener"><span>agents.txt</span><svg class="icon"><use href="#i-arrow"/></svg></a>
+                    <a href="llms.txt"><span>llms.txt</span><svg class="icon"><use href="#i-arrow"/></svg></a>
+                </div>
             </div>
-            <div class="feature">
-                <h2 data-i18n="f2t"></h2>
-                <p data-i18n="f2d"></p>
-            </div>
-            <div class="feature">
-                <h2 data-i18n="f3t"></h2>
-                <p data-i18n="f3d"></p>
+            <div class="instruction-block">
+                <div class="instruction-head"><button class="copy-button" id="copyAgentInstruction" type="button" aria-label="Copy agent instruction"><svg class="icon copy-icon"><use href="#i-copy"/></svg><svg class="icon check-icon"><use href="#i-check"/></svg><span id="copyLabel" data-i18n="copy">复制指令</span></button></div>
+                <div class="instruction-body"><code id="agentInstruction">Read https://synclionpaw.github.io/yagent/agents.txt to evaluate and set up yagent.</code></div>
+                <div class="instruction-foot"><p class="copy-status" id="copyStatus" role="status" aria-live="polite"></p></div>
             </div>
         </section>
 
-        <section class="voices" aria-labelledby="voicesTitle">
-            <div class="voices-head">
-                <h2 class="voices-title" id="voicesTitle" data-i18n="voicesTitle"></h2>
-            </div>
-            <div class="marquee-stack" id="voiceMarquee"></div>
+        <section class="closing section">
+            <h2 data-i18n="closingTitle">把下一个任务，做成下一次积累。</h2>
+            <a class="button button-primary" href="docs.html"><span data-i18n="closingCta">打开文档，开始使用</span><svg class="icon"><use href="#i-arrow"/></svg></a>
         </section>
     </main>
 
-    <footer>
-        <span data-i18n="footer"></span>
+    <footer class="site-footer">
+        <a class="wordmark footer-brand" href="index.html" aria-label="yagent home"><span class="footer-x">×</span><span>agent</span></a>
+        <p>© 2026 yagent</p>
+        <nav aria-label="Footer navigation"><a href="docs.html" data-i18n="navDocs">文档</a><a href="pricing.html" data-i18n="navPricing">价格</a><a href="llms.txt">llms.txt</a><a href="https://github.com/synclionpaw/yagent" target="_blank" rel="noopener" aria-label="GitHub"><svg class="icon"><use href="#i-github"/></svg></a></nav>
     </footer>
 
     <script src="theme.js"></script>
-    <script>
-        const mainGrid = document.getElementById('mainGrid');
-        const selected = new Set();
-        const allCells = [];
-        const reducedMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
-
-        function cellSize() {
-            return allCells.length ? allCells[0].offsetWidth : 25;
-        }
-
-        // ---------- 动效：常驻细微扰动 + 光标力场 ----------
-        const FORCE_RADIUS = 90;  // 力场半径（px）
-        const MAX_SHIFT = 9;      // 力场最大偏移（px）
-        const DRIFT = 1.3;        // 常驻扰动幅度（px）
-        let mouse = null;
-
-        mainGrid.addEventListener('mousemove', e => {
-            mouse = { x: e.clientX, y: e.clientY };
-        });
-        mainGrid.addEventListener('mouseleave', () => {
-            mouse = null;
-        });
-        // 触摸设备：手指滑动同样触发力场
-        mainGrid.addEventListener('touchmove', e => {
-            const t = e.touches[0];
-            mouse = { x: t.clientX, y: t.clientY };
-        }, { passive: true });
-        mainGrid.addEventListener('touchend', () => {
-            mouse = null;
-        });
-
-        function tick(t) {
-            const time = t / 1000;
-            const rect = mainGrid.getBoundingClientRect();
-            const cs = cellSize();
-            allCells.forEach(cell => {
-                // 每个粒子按自己的相位和频率轻微漂移
-                let ox = Math.sin(time * cell._w1 + cell._p1) * DRIFT;
-                let oy = Math.cos(time * cell._w2 + cell._p2) * DRIFT;
-                let faint = 0;
-                if (mouse) {
-                    const cx = rect.left + (+cell.dataset.col) * cs + cs / 2;
-                    const cy = rect.top + (+cell.dataset.row) * cs + cs / 2;
-                    const dx = cx - mouse.x, dy = cy - mouse.y;
-                    const d = Math.hypot(dx, dy);
-                    if (d < FORCE_RADIUS && d > 0.01) {
-                        const strength = Math.pow(1 - d / FORCE_RADIUS, 2);
-                        ox += (dx / d) * strength * MAX_SHIFT;
-                        oy += (dy / d) * strength * MAX_SHIFT;
-                        faint = 0.25 * (1 - d / FORCE_RADIUS);
-                    }
-                }
-                cell.style.transform = `translate(${ox.toFixed(2)}px, ${oy.toFixed(2)}px)`;
-                if (!cell.classList.contains('selected')) {
-                    if (faint > 0.01) cell.style.setProperty('--fo', faint.toFixed(3));
-                    else cell.style.removeProperty('--fo');
-                }
-            });
-            requestAnimationFrame(tick);
-        }
-        if (!reducedMotion) requestAnimationFrame(tick);
-
-        // 让首屏网格线与 logo 小格对齐（相对 hero 定位）
-        const hero = document.getElementById('hero');
-        function alignBackgroundGrid() {
-            const gridRect = mainGrid.getBoundingClientRect();
-            const heroRect = hero.getBoundingClientRect();
-            const x = Math.round(gridRect.left - heroRect.left);
-            const y = Math.round(gridRect.top - heroRect.top);
-            // 第 1 层是淡出遮罩（固定 0 0）；第 2/3 层是网格
-            hero.style.backgroundPosition = `0 0, ${x}px ${y}px, ${x}px ${y}px`;
-        }
-        window.addEventListener('resize', alignBackgroundGrid);
-
-        // 创建 4×4 的大格子，每个大格子内含 4×4 的小格子
-        for (let bigRow = 0; bigRow < 4; bigRow++) {
-            for (let bigCol = 0; bigCol < 4; bigCol++) {
-                const bigCell = document.createElement('div');
-                bigCell.className = 'big-cell';
-
-                for (let smallRow = 0; smallRow < 4; smallRow++) {
-                    for (let smallCol = 0; smallCol < 4; smallCol++) {
-                        const cell = document.createElement('div');
-                        cell.className = 'small-cell';
-                        const cellId = `${bigRow}-${bigCol}-${smallRow}-${smallCol}`;
-                        cell.dataset.id = cellId;
-                        cell.dataset.row = bigRow * 4 + smallRow;
-                        cell.dataset.col = bigCol * 4 + smallCol;
-
-                        allCells.push(cell);
-                        bigCell.appendChild(cell);
-                    }
-                }
-
-                mainGrid.appendChild(bigCell);
-            }
-        }
-
-        // 为每个粒子生成随机相位和频率，用于常驻扰动
-        allCells.forEach(cell => {
-            cell._p1 = Math.random() * Math.PI * 2;
-            cell._p2 = Math.random() * Math.PI * 2;
-            cell._w1 = 0.4 + Math.random() * 0.6;
-            cell._w2 = 0.4 + Math.random() * 0.6;
-        });
-
-        // 内置预设（无法连接服务器时的回退图案）
-        // 数学斜体 𝑥（STIX Two Math 字形采样，保留衬线与曲线细节）
-        const presetPattern = [
-            // 第 3 行
-            '0-1-3-0', '0-1-3-1', '0-1-3-2', '0-1-3-3', '0-2-3-3', '0-3-3-0',
-            // 第 4 行
-            '1-1-0-2', '1-1-0-3', '1-2-0-2', '1-2-0-3', '1-3-0-0',
-            // 第 5 行
-            '1-1-1-3', '1-2-1-1',
-            // 第 6 行
-            '1-1-2-3', '1-2-2-0', '1-2-2-1',
-            // 第 7 行（交叉处）
-            '1-1-3-3', '1-2-3-0',
-            // 第 8 行（交叉处）
-            '2-1-0-3', '2-2-0-0',
-            // 第 9 行
-            '2-1-1-2', '2-2-1-0', '2-2-1-1',
-            // 第 10 行
-            '2-1-2-2', '2-2-2-0', '2-2-2-1',
-            // 第 11 行
-            '2-0-3-3', '2-1-3-0', '2-1-3-1', '2-2-3-0', '2-2-3-1', '2-2-3-2', '2-2-3-3',
-            // 第 12 行
-            '3-0-0-3', '3-1-0-0', '3-2-0-1', '3-2-0-2',
-        ];
-
-        // 右下角笔画设为半透明
-        const ghostIds = new Set([
-            '2-2-1-0', '2-2-1-1',
-            '2-2-2-0', '2-2-2-1',
-            '2-2-3-0', '2-2-3-1', '2-2-3-2', '2-2-3-3',
-            '3-2-0-1', '3-2-0-2',
-        ]);
-
-        // 用与图标完全相同的坐标，把 wordmark 画成迷你粒子
-        function drawWordmark() {
-            const cvs = document.getElementById('logoY');
-            const size = 15;
-            const dpr = window.devicePixelRatio || 1;
-            cvs.width = size * dpr;
-            cvs.height = size * dpr;
-            cvs.style.width = size + 'px';
-            cvs.style.height = size + 'px';
-            const ctx = cvs.getContext('2d');
-            ctx.setTransform(1, 0, 0, 1, 0, 0);
-            ctx.clearRect(0, 0, cvs.width, cvs.height);
-            ctx.scale(dpr, dpr);
-            // 固定浅色墨水；浅色主题用 CSS invert 过渡，与背景换色同步
-            ctx.fillStyle = '#f2f2f0';
-            const cell = size / 16;
-            const r = cell * 0.42;
-            presetPattern.forEach(id => {
-                const [br, bc, sr, sc] = id.split('-').map(Number);
-                const x = (bc * 4 + sc + 0.5) * cell;
-                const y = (br * 4 + sr + 0.5) * cell;
-                ctx.globalAlpha = ghostIds.has(id) ? 0.10 : 1;
-                ctx.beginPath();
-                ctx.arc(x, y, r, 0, Math.PI * 2);
-                ctx.fill();
-            });
-            ctx.globalAlpha = 1;
-        }
-        drawWordmark();
-
-        // ---------- 颜色主题（默认值即当前主题；服务器 theme.json 在线时覆盖） ----------
-        const theme = { mode: 'gradient', solid: '#ffffff', from: '#ff8a5c', to: '#5c8aff' };
-
-        async function loadTheme() {
-            try {
-                const resp = await fetch('/api/theme');
-                if (resp.ok) {
-                    Object.assign(theme, await resp.json());
-                }
-            } catch (e) {
-                // 直接以 file:// 打开时走这里
-            }
-        }
-
-        function hexToRgb(hex) {
-            const n = parseInt(hex.slice(1), 16);
-            return [n >> 16 & 255, n >> 8 & 255, n & 255];
-        }
-
-        function lerpColor(a, b, t) {
-            const c1 = hexToRgb(a), c2 = hexToRgb(b);
-            const mix = c1.map((v, i) => Math.round(v + (c2[i] - v) * t));
-            return `rgb(${mix[0]}, ${mix[1]}, ${mix[2]})`;
-        }
-
-        // 渐变固定为从中心向外
-        function dotColor(row, col) {
-            if (theme.mode === 'solid') return theme.solid;
-            const t = Math.hypot(row - 7.5, col - 7.5) / Math.hypot(7.5, 7.5);
-            return lerpColor(theme.from, theme.to, t);
-        }
-
-        function applyDotColor(cell) {
-            cell.style.setProperty('--dot-color', dotColor(+cell.dataset.row, +cell.dataset.col));
-        }
-
-        function refreshColors() {
-            document.querySelectorAll('.small-cell.selected').forEach(applyDotColor);
-        }
-
-        // ---------- 坐标的读取 ----------
-        async function loadSelection() {
-            await loadTheme();
-            let ids = presetPattern;
-            try {
-                const resp = await fetch('/api/selection');
-                if (resp.ok) {
-                    ids = await resp.json();
-                }
-            } catch (e) {
-                // 直接以 file:// 打开时走这里
-            }
-            applySelection(ids);
-            document.getElementById('hero').classList.add('ready');
-        }
-
-        function applySelection(ids) {
-            selected.clear();
-            document.querySelectorAll('.small-cell').forEach(cell => {
-                cell.classList.remove('selected');
-            });
-            ids.forEach(cellId => {
-                const cell = document.querySelector(`[data-id="${cellId}"]`);
-                if (cell) {
-                    selected.add(cellId);
-                    cell.classList.add('selected');
-                    cell.classList.toggle('ghost', ghostIds.has(cellId));
-                }
-            });
-            refreshColors();
-        }
-
-        loadSelection();
-        alignBackgroundGrid();
-
-        // ---------- 三语言 ----------
-        const I18N = {
-            zh: {
-                navDocs: '文档',
-                navGallery: '标志',
-                navPricing: '价格',
-                themeSystem: '跟随系统',
-                themeLight: '浅色',
-                themeDark: '深色',
-                tagline: '做完事，还多懂一点。',
-                subline: '别的 agent 做完就走；yagent 帮你抵抗未知。',
-                cta: '开始使用',
-                docs: '查看文档',
-                f1t: '目标驱动',
-                f1d: '告诉它要完成什么，而不是怎么做。yagent 自己规划步骤，逐项执行。',
-                f2t: '调用真实工具',
-                f2d: '浏览器、终端、文件、API——它直接操作你日常在用的工具，而不是只给建议。',
-                f3t: '带走一点',
-                f3d: '做完不是终点。过程里对你有用、你可能还不知道的东西，会记进右侧「收获」，可看可不看。',
-                showcaseTitle: '产品一览',
-                shot1t: '收获',
-                shot1c: '右侧「收获」：本会话带走的小知识点，可看可不看。',
-                shot1a: 'yagent 界面：对话与收获侧栏',
-                shot2t: '项目文件',
-                shot2c: '绑定工作目录后，右栏直接浏览项目文件。',
-                shot2a: 'yagent 界面：项目文件面板',
-                shot3t: '看得见的过程',
-                shot3c: '跑命令、改代码、产出物，过程都看得见。',
-                shot3a: 'yagent 界面：任务完成与产物',
-                shot4t: '向你提问',
-                shot4c: '需要你拍板时，结构化提问，而不是一长段闲聊。',
-                shot4a: 'yagent 界面：向用户提问',
-                voicesTitle: '别人怎么说',
-                q1: '别的工具交完活就散了。yagent 会在右侧留几条我其实不懂、但马上用得上的点。第二天写文档时，我翻的是那些「收获」。',
-                q1n: '火鸡味锅巴',
-                q1r: '独立开发者',
-                q2: '它不问一长串闲聊，而是把选项摊开让我拍板。我少解释了半小时，也少被带偏。',
-                q2n: '不吃香菜',
-                q2r: '产品经理',
-                q3: '绑上项目目录后，命令、改动、产物都在眼前。我终于知道 agent「刚才干了什么」，而不只是信它一句「已完成」。',
-                q3n: '下周一定早睡',
-                q3r: '后端工程师',
-                q4: '我用它查一段冷门史料，任务结束了，金印出土细节还在侧栏。那才是我真正想带走的。',
-                q4n: '地铁上的耳机',
-                q4r: '研究生',
-                q5: '以前总担心模型偷偷改文件。现在每一步都看得见，我敢把真实仓库交给它了。',
-                q5n: '神里绫华的狗（上岸版）',
-                q5r: '技术负责人',
-                q6: '技能上传之后，它按我的习惯做事。像是多了一个记得我规矩的搭档，而不是每次从零教。',
-                q6n: '外卖备注少冰',
-                q6r: '设计师',
-                q7: 'Token 花到哪，图表一眼能看见。我终于敢让它多跑几轮，而不是一边用一边心虚。',
-                q7n: '早八人机',
-                q7r: '前端工程师',
-                q8: '回归用例一长串，它先问我「先测哪条」。我勾了三个优先级，半小时就有结果，没被全量拖死。',
-                q8n: '只点招牌菜',
-                q8r: '测试工程师',
-                q9: '夜里跑批处理，早上打开能看到每一步命令和产物。出问题不用猜是哪一环断了。',
-                q9n: '电梯里的猫',
-                q9r: 'SRE',
-                q10: '新人入职第一周，我让他们用 yagent 摸仓库。侧栏的「收获」比我写的 onboarding 文档还管用。',
-                q10n: '周五才回消息',
-                q10r: '创业者',
-                q11: '绑上数据仓库脚本目录之后，改哪份 SQL、跑出什么表，全在面板里。交接再也不是口头传说。',
-                q11n: '咖啡续杯券',
-                q11r: '数据分析',
-                q12: '我把写稿的规矩做成技能丢进去。它会按栏目语气改，而不是每次都写成「AI 味」通稿。',
-                q12n: '空调二十六度',
-                q12r: '内容运营',
-                footer: '© 2026 yagent',
-            },
-            ja: {
-                navDocs: 'ドキュメント',
-                navGallery: 'ロゴ',
-                navPricing: '料金',
-                themeSystem: 'システム',
-                themeLight: 'ライト',
-                themeDark: 'ダーク',
-                tagline: 'やり遂げるだけじゃない。少し賢くなる。',
-                subline: '他のエージェントは完了で終わる。yagent は未知に抗う味方になる。',
-                cta: 'はじめる',
-                docs: 'ドキュメント',
-                f1t: '目標ドリブン',
-                f1d: '「どうやるか」ではなく「何をしたいか」を伝えるだけ。yagent が手順を計画し、順に実行します。',
-                f2t: '実際のツールを操作',
-                f2d: 'ブラウザ、ターミナル、ファイル、API。助言ではなく、普段使いのツールを直接操作して完了させます。',
-                f3t: '持ち帰る学び',
-                f3d: '完了が終点ではない。役に立ちそうで、まだ知らなかったことだけを右パネルの「收获」に残す。見ても見なくてもいい。',
-                showcaseTitle: 'プロダクト',
-                shot1t: '收获',
-                shot1c: '右の「收获」：この会話で持ち帰った小さな学び。見ても見なくてもいい。',
-                shot1a: 'yagent：会話と收获サイドバー',
-                shot2t: 'プロジェクト',
-                shot2c: '作業ディレクトリを結ぶと、右パネルでプロジェクトファイルを直接見られる。',
-                shot2a: 'yagent：プロジェクトファイル',
-                shot3t: '見える過程',
-                shot3c: 'コマンド実行・コード変更・成果物まで、過程が見える。',
-                shot3a: 'yagent：完了と成果物',
-                shot4t: '確認を取る',
-                shot4c: '判断が必要なときは、長い雑談ではなく構造化された質問。',
-                shot4a: 'yagent：ユーザーへの質問',
-                voicesTitle: '使っている人の声',
-                q1: '他のツールは納品で終わる。yagent は右側に、知らなかったけどすぐ使える点を残してくれる。翌日ドキュメントを書くとき、見返すのはその「收获」だ。',
-                q1n: 'ターキー味スナック',
-                q1r: 'インディー開発者',
-                q2: '長い雑談じゃなく、選択肢を並べて判断を求めてくる。説明が半時間減り、話も逸れにくくなった。',
-                q2n: 'パクチー抜き',
-                q2r: 'プロダクトマネージャー',
-                q3: '作業ディレクトリを結ぶと、コマンド・差分・成果物が全部見える。agent が「さっき何をしたか」が分かり、完了の一言を信じるだけじゃなくなった。',
-                q3n: '来週こそ早寝',
-                q3r: 'バックエンドエンジニア',
-                q4: '地味な史料を調べた。タスクは終わっても、金印出土の細部がサイドに残っていた。それが本当に持ち帰りたかったものだった。',
-                q4n: '地下鉄のイヤホン',
-                q4r: '大学院生',
-                q5: 'モデルが勝手にファイルをいじる不安があった。今は過程が見えるので、本物のリポジトリを渡せる。',
-                q5n: '神里綾華の犬（上岸版）',
-                q5r: 'テックリード',
-                q6: 'スキルを上げたら、私の流儀で動く。毎回ゼロから教える相手じゃなく、ルールを覚えている相棒になった。',
-                q6n: '配達は氷少なめ',
-                q6r: 'デザイナー',
-                q7: 'トークンがどこに使われたか、グラフで一目。だから何周か回すのも怖くなくなった。',
-                q7n: '朝イチ社畜',
-                q7r: 'フロントエンド',
-                q8: '回帰が長いとき、先に「どれから？」と聞いてくる。優先を三つ選んだら半時間で結果。全量地獄を避けた。',
-                q8n: '名物だけ注文',
-                q8r: 'QAエンジニア',
-                q9: '夜間バッチのあと、朝にコマンドと成果物の流れが見える。どこで切れたか当て勘しなくていい。',
-                q9n: 'エレベータの猫',
-                q9r: 'SRE',
-                q10: '入社一週目にリポを触らせた。「收获」サイドのメモのほうが、私のオンボーディング資料より役に立った。',
-                q10n: '金曜しか返信しない',
-                q10r: '起業家',
-                q11: 'データ倉庫のスクリプトを結ぶと、どの SQL を直し、どの表が出たかがパネルに残る。引き継ぎが口伝じゃなくなった。',
-                q11n: 'コーヒーおかわり券',
-                q11r: 'データ分析',
-                q12: '執筆ルールをスキルにした。欄のトーンで直してくれる。「AI っぽい」原稿に毎回戻らない。',
-                q12n: 'エアコン26度',
-                q12r: 'コンテンツ',
-                footer: '© 2026 yagent',
-            },
-            en: {
-                navDocs: 'Docs',
-                navGallery: 'Gallery',
-                navPricing: 'Pricing',
-                themeSystem: 'System',
-                themeLight: 'Light',
-                themeDark: 'Dark',
-                tagline: 'Finish the job. Keep a little wisdom.',
-                subline: 'Other agents leave when the task is done. yagent helps you resist the unknown.',
-                cta: 'Get started',
-                docs: 'Read the docs',
-                f1t: 'Goal-driven',
-                f1d: 'Describe what you want done, not how to do it. yagent plans the steps and executes them one by one.',
-                f2t: 'Works with real tools',
-                f2d: 'Browser, terminal, files, APIs — it operates the tools you already use instead of just giving advice.',
-                f3t: 'Take something with you',
-                f3d: 'Done is not the end. Useful things you may not have known land in Insights on the right—look or ignore, but they stay.',
-                showcaseTitle: 'Product',
-                shot1t: 'Insights',
-                shot1c: 'Insights on the right: small takeaways from this session—look or ignore.',
-                shot1a: 'yagent UI: chat with Insights sidebar',
-                shot2t: 'Project files',
-                shot2c: 'Bind a working directory and browse project files in the side panel.',
-                shot2a: 'yagent UI: project files panel',
-                shot3t: 'Visible process',
-                shot3c: 'Commands, code changes, and artifacts—every step stays visible.',
-                shot3a: 'yagent UI: completed task and artifacts',
-                shot4t: 'Ask you',
-                shot4c: 'When a decision is needed, structured questions—not a long chat.',
-                shot4a: 'yagent UI: ask the user',
-                voicesTitle: 'What people say',
-                q1: 'Other tools vanish when the job ships. yagent leaves a few points on the right that I didn’t know but could use right away. Next day, writing docs, I opened Insights.',
-                q1n: 'TurkeyChips',
-                q1r: 'Indie developer',
-                q2: 'It doesn’t drown me in chat—it lays out options and asks me to decide. I spent half an hour less explaining, and drifted less.',
-                q2n: 'NoCilantro',
-                q2r: 'Product manager',
-                q3: 'With the project folder bound, every command, change, and artifact is visible. I finally see what the agent just did—not only a “done.”',
-                q3n: 'SleepEarlyMaybe',
-                q3r: 'Backend engineer',
-                q4: 'I used it on an obscure bit of history. The task ended; the excavation detail stayed in the side panel. That was what I actually wanted to keep.',
-                q4n: 'MetroHeadphones',
-                q4r: 'Graduate student',
-                q5: 'I used to worry the model would quietly rewrite files. Now every step is visible, so I trust it with real repos.',
-                q5n: 'Ayaka\'s Dog (Landed)',
-                q5r: 'Tech lead',
-                q6: 'After uploading my skills, it works the way I do. Less teaching from scratch—more like a partner that remembers the rules.',
-                q6n: 'LessIcePlease',
-                q6r: 'Designer',
-                q7: 'I can see where tokens went in the chart. I’m finally okay letting it run a few more rounds without that quiet guilt.',
-                q7n: 'EarlyShiftBot',
-                q7r: 'Frontend engineer',
-                q8: 'Long regression suites—it asks which cases first. I picked three priorities and had results in half an hour, not a full-suite death march.',
-                q8n: 'SignatureOnly',
-                q8r: 'QA engineer',
-                q9: 'After overnight batch jobs, morning shows every command and artifact. I don’t guess which step broke.',
-                q9n: 'ElevatorCat',
-                q9r: 'SRE',
-                q10: 'Week one, I had new hires poke the repo with yagent. The Insights panel beat the onboarding doc I wrote.',
-                q10n: 'FridayReplies',
-                q10r: 'Founder',
-                q11: 'Bound the warehouse scripts folder—which SQL changed, which tables landed, all in the panel. Handoffs stopped being folklore.',
-                q11n: 'RefillCoupon',
-                q11r: 'Data analyst',
-                q12: 'I uploaded my writing rules as a skill. It edits in the column’s voice instead of defaulting to that generic AI tone.',
-                q12n: 'AC26C',
-                q12r: 'Content ops',
-                footer: '© 2026 yagent',
-            },
-        };
-
-        const VOICE_ROWS = [
-            [1, 2, 3, 4, 5, 6],
-            [7, 8, 9, 10, 11, 12],
-        ];
-
-        function voiceCard(dict, id) {
-            const avatar = `assets/avatars/${id}.png`;
-            return (
-                `<article class="voice">` +
-                `<blockquote>${dict['q' + id]}</blockquote>` +
-                `<div class="who">` +
-                `<span class="avatar"><img src="${avatar}" alt="" width="40" height="40" decoding="async"></span>` +
-                `<div class="meta"><span class="name">${dict['q' + id + 'n']}</span>` +
-                `<span class="role">${dict['q' + id + 'r']}</span></div>` +
-                `</div></article>`
-            );
-        }
-
-        function fillMarqueeTracks() {
-            document.querySelectorAll('#voiceMarquee .marquee').forEach(marquee => {
-                const track = marquee.querySelector('.marquee-track');
-                const first = track && track.querySelector('.marquee-group');
-                if (!track || !first) return;
-
-                while (track.children.length > 1) track.lastElementChild.remove();
-
-                const viewport = marquee.clientWidth || window.innerWidth;
-                const groupWidth = first.getBoundingClientRect().width;
-                if (groupWidth < 1) return;
-
-                // 至少 2 组；总长要超过两屏，循环时视口里始终有卡片
-                const copies = Math.max(2, Math.ceil((viewport * 2) / groupWidth) + 1);
-                for (let i = 1; i < copies; i++) {
-                    const clone = first.cloneNode(true);
-                    clone.setAttribute('aria-hidden', 'true');
-                    track.appendChild(clone);
-                }
-                track.style.setProperty('--marquee-shift', `${groupWidth}px`);
-            });
-        }
-
-        function renderVoiceMarquee(lang) {
-            const root = document.getElementById('voiceMarquee');
-            if (!root) return;
-            const dict = I18N[lang];
-            const dirs = ['left', 'right'];
-            root.innerHTML = VOICE_ROWS.map((ids, i) => {
-                const cards = ids.map(id => voiceCard(dict, id)).join('');
-                return (
-                    `<div class="marquee">` +
-                    `<div class="marquee-track ${dirs[i]}">` +
-                    `<div class="marquee-group">${cards}</div>` +
-                    `</div></div>`
-                );
-            }).join('');
-            requestAnimationFrame(fillMarqueeTracks);
-        }
-
-        let marqueeResizeTimer = 0;
-        window.addEventListener('resize', () => {
-            clearTimeout(marqueeResizeTimer);
-            marqueeResizeTimer = setTimeout(fillMarqueeTracks, 120);
-        });
-
-        const LANG_TAGS = { zh: 'zh-CN', ja: 'ja', en: 'en' };
-
-        function detectLang() {
-            const saved = localStorage.getItem('yagent-lang');
-            if (saved && I18N[saved]) return saved;
-            const nav = (navigator.language || 'en').toLowerCase();
-            if (nav.startsWith('zh')) return 'zh';
-            if (nav.startsWith('ja')) return 'ja';
-            return 'en';
-        }
-
-        const langRoot = document.getElementById('lang');
-        const langBtn = langRoot.querySelector('.lang-btn');
-        const langMenu = langRoot.querySelector('.menu-panel');
-
-        function setLang(lang) {
-            const dict = I18N[lang];
-            document.documentElement.lang = LANG_TAGS[lang];
-            document.querySelectorAll('[data-i18n]').forEach(el => {
-                el.textContent = dict[el.dataset.i18n] || '';
-            });
-            document.querySelectorAll('[data-i18n-alt]').forEach(el => {
-                el.setAttribute('alt', dict[el.dataset.i18nAlt] || '');
-            });
-            langMenu.querySelectorAll('[data-lang]').forEach(item => {
-                const on = item.dataset.lang === lang;
-                item.setAttribute('aria-selected', on ? 'true' : 'false');
-                if (on) langRoot.querySelector('.lang-label').textContent = item.textContent.trim();
-            });
-            renderVoiceMarquee(lang);
-            localStorage.setItem('yagent-lang', lang);
-        }
-
-        function openLangMenu() {
-            YagentTheme.closeTheme();
-            langRoot.classList.add('open');
-            langBtn.setAttribute('aria-expanded', 'true');
-            const current = langMenu.querySelector('[aria-selected="true"]');
-            (current || langMenu.firstElementChild).focus();
-        }
-
-        function closeLangMenu() {
-            langRoot.classList.remove('open');
-            langBtn.setAttribute('aria-expanded', 'false');
-        }
-
-        langBtn.addEventListener('click', () => {
-            if (langRoot.classList.contains('open')) closeLangMenu();
-            else openLangMenu();
-        });
-
-        langMenu.addEventListener('click', e => {
-            const item = e.target.closest('[data-lang]');
-            if (!item) return;
-            setLang(item.dataset.lang);
-            closeLangMenu();
-            langBtn.focus();
-        });
-
-        document.addEventListener('click', e => {
-            if (!langRoot.contains(e.target)) closeLangMenu();
-        });
-
-        document.addEventListener('keydown', e => {
-            if (e.key === 'Escape') {
-                closeLangMenu();
-                return;
-            }
-            if (!langRoot.classList.contains('open')) return;
-            if (e.key !== 'ArrowDown' && e.key !== 'ArrowUp') return;
-            e.preventDefault();
-            const items = [...langMenu.querySelectorAll('[data-lang]')];
-            const at = items.indexOf(document.activeElement);
-            const step = e.key === 'ArrowDown' ? 1 : -1;
-            items[(at + step + items.length) % items.length].focus();
-        });
-
-        YagentTheme.mount();
-        setLang(detectLang());
-    </script>
+    <script src="home.js"></script>
 </body>
 </html>

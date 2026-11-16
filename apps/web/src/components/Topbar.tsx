@@ -1,3 +1,4 @@
+import { memo } from 'react'
 import {
   Archive,
   ArchiveRestore,
@@ -37,7 +38,7 @@ interface TopbarProps {
   sshStatus?: 'checking' | 'ok' | 'fail' | null
 }
 
-export function Topbar({
+export const Topbar = memo(function Topbar({
   conversation,
   models,
   currentModelId,
@@ -157,4 +158,28 @@ export function Topbar({
       </div>
     </div>
   )
-}
+}, (prev, next) => {
+  const a = prev.conversation
+  const b = next.conversation
+  return (
+    a.id === b.id &&
+    a.title === b.title &&
+    a.workdir === b.workdir &&
+    a.activeNodeId === b.activeNodeId &&
+    !!a.archived === !!b.archived &&
+    prev.currentModelId === next.currentModelId &&
+    prev.contentWidth === next.contentWidth &&
+    prev.popover === next.popover &&
+    prev.sshStatus === next.sshStatus &&
+    prev.models === next.models &&
+    prev.onPopover === next.onPopover &&
+    prev.onToggleSidebar === next.onToggleSidebar &&
+    prev.onTogglePanel === next.onTogglePanel &&
+    prev.onRename === next.onRename &&
+    prev.onSelectModel === next.onSelectModel &&
+    prev.onContentWidth === next.onContentWidth &&
+    prev.onBindWorkdir === next.onBindWorkdir &&
+    prev.onToggleArchive === next.onToggleArchive &&
+    prev.onDelete === next.onDelete
+  )
+})

@@ -35,7 +35,7 @@ assert.ok(defaultSettingsPath().endsWith(path.join('.yagent', 'settings.json')),
   const content = fs.readFileSync(file, 'utf8')
   assert.equal(content, JSON.stringify(defaults, null, 2) + '\n', '保存格式：2 空格缩进 + 结尾换行')
   const store2 = createFileSettingsStore(defaults, file)
-  assert.deepEqual(await store2.load(), defaults, '再次 load deep equal')
+  assert.deepEqual(await store2.load(), mergeSettings(defaults, defaults), '再次 load 合并新增默认字段')
 }
 
 /* ---- 场景 3：部分字段 → mergeSettings 合并（models 迁移：缺省条目补上、用户条目保留）；

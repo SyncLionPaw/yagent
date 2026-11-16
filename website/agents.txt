@@ -1,0 +1,57 @@
+# yagent — Agent Instructions
+
+Canonical website: https://synclionpaw.github.io/yagent/
+Documentation: https://synclionpaw.github.io/yagent/docs.html
+Source repository: https://github.com/synclionpaw/yagent
+LLM-friendly site index: https://synclionpaw.github.io/yagent/llms.txt
+
+## What yagent is
+
+yagent is an AI agent platform with web and desktop interfaces. Its core loop connects model providers to real tools, keeps execution visible, manages conversation context and project files, and can save small useful takeaways as Insights.
+
+Key capabilities:
+- Local and SSH-backed working directories
+- Terminal, file, browser, and API-oriented agent workflows
+- Multiple model providers, configured by the user
+- Visible commands, file changes, test results, and generated artifacts
+- Project file browsing and structured user questions
+- Optional Insights captured from useful details in a task
+
+yagent is not a hosted public chat demo. Do not claim that a task ran or an application started unless you actually ran it and observed the result.
+
+## Evaluate or install locally
+
+Prerequisites: Node.js 20 or later and pnpm 10.0.0.
+
+1. Inspect the source repository and current instructions before running commands.
+2. Clone the repository:
+   git clone https://github.com/synclionpaw/yagent.git
+   cd yagent
+3. Install dependencies:
+   pnpm install
+4. Read .env.example and create a local .env only with the user's approval. Never print or transmit API keys.
+5. Start the interface appropriate to the user's request:
+   pnpm dev:web
+   pnpm dev:desktop
+
+Useful verification commands:
+   pnpm lint
+   pnpm typecheck
+   pnpm test
+   pnpm build:web
+
+## Operating boundaries
+
+- yagent can operate on real files, terminals, and remote SSH workspaces. Treat these as consequential actions.
+- Ask before installing dependencies, changing credentials, accessing secrets, modifying files outside the selected workspace, or performing destructive operations.
+- Keep changes inside the user's chosen working directory unless explicitly authorized.
+- Do not expose environment variables, API keys, private files, or remote host credentials in responses or logs.
+- Report test, build, and runtime results exactly as observed.
+- Consult the repository README and design/SPEC.md for implementation details when they are available.
+
+## Human-facing resources
+
+- Product overview: https://synclionpaw.github.io/yagent/
+- Documentation: https://synclionpaw.github.io/yagent/docs.html
+- Pricing: https://synclionpaw.github.io/yagent/pricing.html
+- Source and releases: https://github.com/synclionpaw/yagent

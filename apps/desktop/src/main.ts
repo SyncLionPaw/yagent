@@ -12,6 +12,12 @@ const {
   pickDeepSeekKeyFromSettings,
   resolveWebContentProvider,
 } = require('./web-content/resolve')
+const {
+  resolveInside,
+  shq,
+  sshJoin,
+  sshCanonicalBoundaryPrelude,
+} = require('./path-boundary')
 
 /**
  * Electron 在 IPC handler reject 时会 console.error → 写 stderr。
@@ -383,21 +389,6 @@ async function readFilePaged(file: string, offset: number, limit: number): Promi
   return `${head}\n${out.join('\n')}`
 }
 
-async function resolveInside(root: string, relativePath: string, allowMissing = false): Promise<string> {
-  const base = await realpath(root)
-  const target = path.resolve(base, relativePath)
-  if (target !== base && !target.startsWith(`${base}${path.sep}`)) throw new Error('Path is outside the bound working directory')
-  let actual: string
-  try {
-    actual = await realpath(target)
-  } catch (error: any) {
-    if (!allowMissing || error.code !== 'ENOENT') throw error
-    actual = target
-  }
-  if (actual !== base && !actual.startsWith(`${base}${path.sep}`)) throw new Error('Path is outside the bound working directory')
-  return actual
-}
-
 /** 与 conversationKey / slugifyWorkdir 对齐：/Users/gyl/yagent → Users-gyl-yagent */
 function slugifyWorkdir(workdir: string): string {
   const s = workdir
@@ -504,25 +495,6 @@ function parseSshRoot(root: string): { host: string; path: string } | null {
   if (raw === '/~') return { host, path: '~' }
   if (raw.startsWith('/~/')) return { host, path: `~/${raw.slice(3)}` }
   return { host, path: raw }
-}
-
-/** 供远程 shell 安全内嵌的路径引用；~ / ~/ 前缀用双引号让 $HOME 展开，其余单引号 */
-function shq(s: string): string {
-  if (s === '~') return '"$HOME"'
-  if (s.startsWith('~/')) return `"$HOME/${s.slice(2).replace(/"/g, '\\"')}"`
-  return `'${s.replace(/'/g, `'\\''`)}'`
-}
-
-/** 远程 cwd + 相对路径拼接；禁止 .. 逃逸 */
-function sshJoin(cwd: string, rel: string): string {
-  const r = String(rel ?? '')
-    .replace(/\\/g, '/')
-    .replace(/^\/+/, '')
-    .replace(/\/+$/, '')
-  if (!r || r === '.') return cwd
-  if (r.split('/').includes('..')) throw new Error('Path escapes working directory')
-  const base = cwd === '~' ? '~' : cwd.replace(/\/$/, '')
-  return `${base}/${r}`
 }
 
 /**
@@ -676,9 +648,9 @@ async function sshReadFilePaged(host: string, cwd: string, relPath: string, offs
   const off = Math.max(1, offset)
   const lim = Math.max(1, limit)
   const script = [
-    `cd ${shq(cwd)} 2>/dev/null || { echo "无法进入目录 ${cwd}" >&2; exit 3; }`,
-    `f=${shq(relPath)}`,
-    `[ -f "$f" ] || { echo "File not found: ${relPath}" >&2; exit 4; }`,
+    sshCanonicalBoundaryPrelude(cwd, relPath),
+    `f="$target"`,
+    `[ -f "$f" ] || { echo "File not found" >&2; exit 4; }`,
     `awk -v off=${off} -v lim=${lim} -v f="$f" '`,
     `{ total++ }`,
     `NR>=off && NR<off+lim { buf = buf "L" NR ": " $0 "\\n"; last=NR }`,
@@ -689,7 +661,7 @@ async function sshReadFilePaged(host: string, cwd: string, relPath: string, offs
     `  else printf "[OK] %s: lines %d-%d of %d\\n", f, off, last, total`,
     `  printf "%s", buf`,
     `}' "$f"`,
-  ].join(' && ')
+  ].join('\n')
   const { out, err, code } = await sshRun(host, script)
   if (code !== 0) throw new Error(err.trim() || `远程读取失败（exit ${code}）`)
   return out
@@ -742,7 +714,10 @@ async function executeTool(_event: any, request: { name: string; input: Record<s
       case 'write_file': {
         const file = requiredString(request.input, 'path')
         const content = requiredString(request.input, 'content')
-        const script = `cd ${shq(ssh.path)} && mkdir -p "$(dirname ${shq(file)})" && cat > ${shq(file)}`
+        const script = [
+          sshCanonicalBoundaryPrelude(ssh.path, file),
+          `mkdir -p -- "$(dirname -- "$target")" && cat > "$target"`,
+        ].join('\n')
         const w = await sshRun(ssh.host, script, content)
         if (w.code !== 0) throw new Error(w.err.trim() || `远程写入失败（exit ${w.code}）`)
         return `Wrote ${file} (ssh: ${ssh.host})`

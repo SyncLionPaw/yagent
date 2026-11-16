@@ -1,4 +1,5 @@
 import {
+  memo,
   useEffect,
   useLayoutEffect,
   useMemo,
@@ -99,9 +100,11 @@ export function ChatView({
 
   // 新消息 / 流式更新时滚到底部（text/thinking 长度变化也算更新）
   const lastBlockCount = last?.blocks.length ?? 0
-  const lastBlockKey = JSON.stringify(
-    last?.blocks.map((b) => b.type + ('status' in b ? b.status : '')) ?? [],
-  )
+  // 轻量指纹，避免每帧 JSON.stringify 整段 blocks
+  const lastBlockKey =
+    last?.blocks
+      .map((b) => b.type + ('status' in b ? String(b.status) : ''))
+      .join('|') ?? ''
   const lastTextLen =
     last?.blocks.reduce(
       (n, b) => n + (b.type === 'text' || b.type === 'thinking' ? b.text.length : 0),
@@ -228,7 +231,15 @@ async function downloadSandboxArtifact(convId: string, rel: string): Promise<voi
   if (!res.ok && !res.canceled) throw new Error(res.error || '下载失败')
 }
 
-function Message({
+function nodeStreamSig(node: ConversationNode): string {
+  const last = node.blocks[node.blocks.length - 1]
+  const lastLen =
+    last && (last.type === 'text' || last.type === 'thinking') ? last.text.length : 0
+  const lastStatus = last && 'status' in last ? String(last.status) : ''
+  return `${node.blocks.length}:${last?.type ?? ''}:${lastStatus}:${lastLen}`
+}
+
+const Message = memo(function Message({
   node,
   refs,
   streaming,
@@ -360,7 +371,22 @@ function Message({
       />
     </div>
   )
-}
+}, (prev, next) => {
+  // 流式中的末条必须每帧更新；历史消息用内容指纹跳过
+  if (prev.streaming || next.streaming) return false
+  return (
+    prev.node.id === next.node.id &&
+    nodeStreamSig(prev.node) === nodeStreamSig(next.node) &&
+    prev.editing === next.editing &&
+    prev.canEdit === next.canEdit &&
+    prev.showArtifacts === next.showArtifacts &&
+    prev.convId === next.convId &&
+    prev.refs === next.refs &&
+    prev.onStartEditUserMessage === next.onStartEditUserMessage &&
+    prev.onRefClick === next.onRefClick &&
+    prev.onToggleFiles === next.onToggleFiles
+  )
+})
 
 /** agent 回复：右上角可一键折叠思考/工具过程为单行摘要 */
 function AgentReply({

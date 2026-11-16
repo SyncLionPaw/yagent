@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react'
+import { memo, useEffect, useMemo, useState } from 'react'
 import { Bookmark, EyeOff, Files, Globe, Lightbulb, PanelRight, Search, Trash2, X } from 'lucide-react'
 import type { Conversation, Insight, InsightMark, Ref } from '@yagent/core'
 import { PanelBrowser, type BrowserPage } from './PanelBrowser'
@@ -172,7 +172,7 @@ function InsightsPane({
   )
 }
 
-export function RightPanel({
+export const RightPanel = memo(function RightPanel({
   conversation,
   tab,
   activeSrcId,
@@ -333,4 +333,25 @@ export function RightPanel({
       )}
     </aside>
   )
-}
+}, (prev, next) => {
+  const a = prev.conversation
+  const b = next.conversation
+  return (
+    a.id === b.id &&
+    a.workdir === b.workdir &&
+    a.refs === b.refs &&
+    a.attachments === b.attachments &&
+    a.outputs === b.outputs &&
+    prev.tab === next.tab &&
+    prev.activeSrcId === next.activeSrcId &&
+    prev.inspirationEnabled === next.inspirationEnabled &&
+    prev.insights === next.insights &&
+    prev.sightInsights === next.sightInsights &&
+    prev.remoteFs === next.remoteFs &&
+    prev.onTabChange === next.onTabChange &&
+    prev.onSelectSrc === next.onSelectSrc &&
+    prev.onMarkInsight === next.onMarkInsight &&
+    prev.onDeleteInsight === next.onDeleteInsight &&
+    prev.onTogglePanel === next.onTogglePanel
+  )
+})

@@ -4,7 +4,6 @@ import {
   useRef,
   useState,
   type CSSProperties,
-  type DragEvent,
   type PointerEvent as ReactPointerEvent,
   type TransitionEvent,
 } from 'react'
@@ -15,19 +14,13 @@ import {
   ChevronDown,
   ChevronLeft,
   ChevronRight,
-  Code2,
   FolderOpen,
   Globe,
   HardDrive,
-  Hash,
   Layers,
-  PenTool,
-  Download,
   Pencil,
   Plus,
-  RefreshCw,
   Trash2,
-  Upload,
   X,
   Zap,
 } from 'lucide-react'
@@ -49,23 +42,8 @@ import {
   devDeepseekKey,
   keyHasBadChars,
   maskKey,
-  syncSkillsIntoHarness,
   testConnection,
 } from '../harness'
-import {
-  deleteSkill,
-  importDroppedSkillFiles,
-  importExternalSkill,
-  listSkills,
-  pickAndImportSkills,
-  readSkill,
-  scanExternalSkills,
-  skillsAvailable,
-  skillsRoot,
-  writeSkill,
-  type ExternalSkillSource,
-  type SkillSummary,
-} from '../skills'
 import {
   TOKEN_RANGES,
   bucketEvents,
@@ -78,16 +56,16 @@ import {
   type UsageEvent,
 } from '../tokenUsage'
 
-export type SettingsPaneId =
-  | 'user'
-  | 'models'
-  | 'appearance'
-  | 'skills'
-  | 'inspiration'
-  | 'knowledge'
-  | 'tools'
-  | 'connectors'
-  | 'storage'
+import {
+  userAvatarLetter,
+  type SettingsPaneId,
+} from '../settingsMeta'
+import { ConnectorsPane } from './settings/ConnectorsPane'
+import { StoragePane } from './settings/StoragePane'
+import { SkillsPane } from './settings/SkillsPane'
+
+export type { SettingsPaneId } from '../settingsMeta'
+export { userNickname, userAvatarLetter } from '../settingsMeta'
 
 interface SettingsPanelProps {
   pane: SettingsPaneId
@@ -107,16 +85,6 @@ const PANE_META: Record<SettingsPaneId, [string, string]> = {
   tools: ['工具', '配置 Agent 的默认工具与沙箱'],
   connectors: ['连接器', '连接外部服务，让 Agent 读写你的工具和数据'],
   storage: ['存储空间', '查看应用数据目录占用，以及各子目录体积'],
-}
-
-export function userNickname(settings: Settings): string {
-  const n = settings.user?.nickname?.trim()
-  return n || '用户'
-}
-
-export function userAvatarLetter(settings: Settings): string {
-  const n = userNickname(settings)
-  return Array.from(n)[0]?.toUpperCase() ?? 'U'
 }
 
 const ACCENT_OPTIONS: { id: AccentId; label: string; desc: string; swatch: string }[] = [
@@ -156,6 +124,7 @@ export function SettingsPanel({
       </div>
 
       <div className="settings-content">
+        {/* 仍用 CSS .active 显隐：保证翻面瞬间内容已在树里，避免卸载/lazy 首帧空白 */}
         <div className={`s-pane${pane === 'user' ? ' active' : ''}`}>
           <UserPane settings={settings} conversations={conversations} onChange={onChange} />
         </div>
@@ -366,33 +335,6 @@ function ActivityHeatmap({ conversations }: { conversations: Conversation[] }) {
   )
 }
 
-/** 平滑折线（Catmull-Rom → 三次贝塞尔） */
-function smoothLine(points: { x: number; y: number }[]): string {
-  if (points.length === 0) return ''
-  if (points.length === 1) return `M ${points[0]!.x} ${points[0]!.y}`
-  let d = `M ${points[0]!.x} ${points[0]!.y}`
-  for (let i = 0; i < points.length - 1; i++) {
-    const p0 = points[i - 1] ?? points[i]!
-    const p1 = points[i]!
-    const p2 = points[i + 1]!
-    const p3 = points[i + 2] ?? p2
-    const cp1x = p1.x + (p2.x - p0.x) / 6
-    const cp1y = p1.y + (p2.y - p0.y) / 6
-    const cp2x = p2.x - (p3.x - p1.x) / 6
-    const cp2y = p2.y - (p3.y - p1.y) / 6
-    d += ` C ${cp1x} ${cp1y}, ${cp2x} ${cp2y}, ${p2.x} ${p2.y}`
-  }
-  return d
-}
-
-function areaPath(points: { x: number; y: number }[], baselineY: number): string {
-  if (!points.length) return ''
-  const line = smoothLine(points)
-  const first = points[0]!
-  const last = points[points.length - 1]!
-  return `${line} L ${last.x} ${baselineY} L ${first.x} ${baselineY} Z`
-}
-
 function TokenRangeMenu({
   value,
   onChange,
@@ -485,26 +427,33 @@ function TokenUsageCharts({ conversations }: { conversations: Conversation[] }) 
 
   const W = 640
   const H = 200
-  const pad = { t: 16, r: 8, b: 8, l: 8 }
+  const pad = { t: 12, r: 4, b: 8, l: 4 }
   const plotW = W - pad.l - pad.r
   const plotH = H - pad.t - pad.b
-  const maxY = Math.max(1, ...series.map((d) => Math.max(d.input, d.output)))
-  const n = Math.max(1, series.length - 1)
-  const ptsIn = series.map((d, i) => ({
-    x: pad.l + (i / n) * plotW,
-    y: pad.t + plotH - (d.input / maxY) * plotH,
-  }))
-  const ptsOut = series.map((d, i) => ({
-    x: pad.l + (i / n) * plotW,
-    y: pad.t + plotH - (d.output / maxY) * plotH,
-  }))
   const baseline = pad.t + plotH
+  const maxY = Math.max(
+    1,
+    ...series.map((d) => d.input + d.output),
+  )
+  const barCount = Math.max(1, series.length)
+  // 1 小时桶在 7 天约 168 根：缝隙随密度收紧
+  const gap = barCount > 200 ? 0.25 : barCount > 80 ? 0.5 : barCount > 24 ? 1 : 1.5
+  const slot = plotW / barCount
+  const barW = Math.max(1, slot - gap)
+  const bars = series.map((d, i) => {
+    const x = pad.l + i * slot + (slot - barW) / 2
+    const hIn = (d.input / maxY) * plotH
+    const hOut = (d.output / maxY) * plotH
+    const yOut = baseline - hIn - hOut
+    const yIn = baseline - hIn
+    return { ...d, i, x, barW, hIn, hOut, yIn, yOut }
+  })
   const xLabels = useMemo(() => {
     const want = rangeId === '1h' ? 5 : rangeId === '12h' ? 6 : 7
     const step = Math.max(1, Math.floor((series.length - 1) / Math.max(1, want - 1)))
     const idxs = new Set<number>()
     for (let i = 0; i < series.length; i += step) idxs.add(i)
-    idxs.add(series.length - 1)
+    if (series.length) idxs.add(series.length - 1)
     return [...idxs].sort((a, b) => a - b)
   }, [series, rangeId])
 
@@ -539,52 +488,56 @@ function TokenUsageCharts({ conversations }: { conversations: Conversation[] }) 
         <div
           className="token-area-wrap"
           role="img"
-          aria-label={`${range.label}输入与输出 token 面积图`}
+          aria-label={`${range.label}输入与输出 token 柱状图`}
         >
           <svg
             className="token-area-svg"
             viewBox={`0 0 ${W} ${H}`}
             preserveAspectRatio="none"
             onMouseLeave={() => setHover(null)}
-            onMouseMove={(e) => {
-              const rect = e.currentTarget.getBoundingClientRect()
-              const x = ((e.clientX - rect.left) / rect.width) * W
-              const i = Math.round(((x - pad.l) / plotW) * n)
-              setHover(Math.max(0, Math.min(series.length - 1, i)))
-            }}
           >
-            <defs>
-              <linearGradient id="tokGradIn" x1="0" y1="0" x2="0" y2="1">
-                <stop offset="0%" stopColor="var(--accent)" stopOpacity="0.35" />
-                <stop offset="100%" stopColor="var(--accent)" stopOpacity="0.02" />
-              </linearGradient>
-              <linearGradient id="tokGradOut" x1="0" y1="0" x2="0" y2="1">
-                <stop offset="0%" stopColor="var(--accent)" stopOpacity="0.7" />
-                <stop offset="100%" stopColor="var(--accent)" stopOpacity="0.05" />
-              </linearGradient>
-            </defs>
-            <path className="token-area-fill is-in" d={areaPath(ptsIn, baseline)} fill="url(#tokGradIn)" />
-            <path className="token-area-fill is-out" d={areaPath(ptsOut, baseline)} fill="url(#tokGradOut)" />
-            <path className="token-area-line is-in" d={smoothLine(ptsIn)} />
-            <path className="token-area-line is-out" d={smoothLine(ptsOut)} />
-            {hover != null && ptsIn[hover] && ptsOut[hover] && (
-              <g className="token-area-hover">
-                <line
-                  x1={ptsIn[hover].x}
-                  x2={ptsIn[hover].x}
-                  y1={pad.t}
-                  y2={baseline}
+            {bars.map((b) => (
+              <g
+                key={b.key}
+                className={`token-bar${hover === b.i ? ' is-hot' : ''}${hover != null && hover !== b.i ? ' is-dim' : ''}`}
+                onMouseEnter={() => setHover(b.i)}
+              >
+                {/* 透明热区，空柱也可悬停 */}
+                <rect
+                  className="token-bar-hit"
+                  x={b.x}
+                  y={pad.t}
+                  width={b.barW}
+                  height={plotH}
                 />
-                <circle cx={ptsIn[hover].x} cy={ptsIn[hover].y} r="3.5" className="is-in" />
-                <circle cx={ptsOut[hover].x} cy={ptsOut[hover].y} r="3.5" className="is-out" />
+                {b.hIn > 0 ? (
+                  <rect
+                    className="token-bar-seg is-in"
+                    x={b.x}
+                    y={b.yIn}
+                    width={b.barW}
+                    height={Math.max(b.hIn, 0.5)}
+                    rx={Math.min(1.5, b.barW / 2)}
+                  />
+                ) : null}
+                {b.hOut > 0 ? (
+                  <rect
+                    className="token-bar-seg is-out"
+                    x={b.x}
+                    y={b.yOut}
+                    width={b.barW}
+                    height={Math.max(b.hOut, 0.5)}
+                    rx={Math.min(1.5, b.barW / 2)}
+                  />
+                ) : null}
               </g>
-            )}
+            ))}
           </svg>
           <div className="token-area-xlabels" aria-hidden="true">
             {xLabels.map((i) => {
               const d = series[i]
               if (!d) return null
-              const left = ((pad.l + (i / n) * plotW) / W) * 100
+              const left = ((pad.l + (i + 0.5) * slot) / W) * 100
               return (
                 <span key={d.key} style={{ left: `${left}%` }}>
                   {formatBucketLabel(d.t, rangeId)}
@@ -597,6 +550,7 @@ function TokenUsageCharts({ conversations }: { conversations: Conversation[] }) 
               <strong>{formatBucketLabel(hovered.t, rangeId)}</strong>
               <span>输入 {formatTok(hovered.input)}</span>
               <span>输出 {formatTok(hovered.output)}</span>
+              <span>合计 {formatTok(hovered.input + hovered.output)}</span>
             </div>
           )}
         </div>
@@ -1185,457 +1139,6 @@ function AppearancePane({
 
 /* ---------- 3. 技能 ---------- */
 
-function SkillsPane({ active }: { active: boolean }) {
-  const [items, setItems] = useState<SkillSummary[]>([])
-  const [root, setRoot] = useState<string | null>(null)
-  const [loading, setLoading] = useState(false)
-  const [error, setError] = useState<string | null>(null)
-  const [editingId, setEditingId] = useState<string | null>(null)
-  const [draft, setDraft] = useState('')
-  const [saving, setSaving] = useState(false)
-  const [external, setExternal] = useState<ExternalSkillSource[] | null>(null)
-  const [scanning, setScanning] = useState(false)
-  const [importingKey, setImportingKey] = useState<string | null>(null)
-  const [scanHint, setScanHint] = useState<string | null>(null)
-  const [uploading, setUploading] = useState(false)
-  const [dragOver, setDragOver] = useState(false)
-  const [openSources, setOpenSources] = useState<Record<string, boolean>>({})
-  const available = skillsAvailable()
-
-  const toggleSource = (id: string) => {
-    setOpenSources((prev) => ({ ...prev, [id]: !(prev[id] ?? true) }))
-  }
-
-  const isSourceOpen = (id: string) => openSources[id] ?? true
-
-  const reload = async () => {
-    if (!available) return
-    setLoading(true)
-    setError(null)
-    try {
-      const [list, r] = await Promise.all([listSkills(), skillsRoot()])
-      setItems(list)
-      setRoot(r)
-    } catch (err) {
-      setError(err instanceof Error ? err.message : String(err))
-    } finally {
-      setLoading(false)
-    }
-  }
-
-  const onScan = async () => {
-    if (!available) return
-    setScanning(true)
-    setError(null)
-    setScanHint(null)
-    try {
-      const sources = await scanExternalSkills()
-      setExternal(sources)
-      const found = sources.reduce((n, s) => n + s.skills.length, 0)
-      const ready = sources.reduce((n, s) => n + s.skills.filter((x) => !x.installed).length, 0)
-      setScanHint(
-        found === 0
-          ? '未在常见 Agent 目录发现技能'
-          : `发现 ${found} 个技能，其中 ${ready} 个可迁移`,
-      )
-    } catch (err) {
-      setError(err instanceof Error ? err.message : String(err))
-    } finally {
-      setScanning(false)
-    }
-  }
-
-  const onImportOne = async (sourcePath: string, id: string, overwrite: boolean) => {
-    const key = `${sourcePath}::${overwrite ? 'ow' : 'new'}`
-    setImportingKey(key)
-    setError(null)
-    try {
-      await importExternalSkill({ sourcePath, id, overwrite })
-      await reload()
-      const sources = await scanExternalSkills()
-      setExternal(sources)
-      void syncSkillsIntoHarness()
-      setScanHint(overwrite ? `已覆盖更新「${id}」` : `已导入「${id}」`)
-    } catch (err) {
-      setError(err instanceof Error ? err.message : String(err))
-    } finally {
-      setImportingKey(null)
-    }
-  }
-
-  const onImportSource = async (src: ExternalSkillSource) => {
-    const pending = src.skills.filter((s) => !s.installed)
-    if (pending.length === 0) return
-    setImportingKey(`src:${src.id}`)
-    setError(null)
-    let ok = 0
-    let fail = 0
-    try {
-      for (const s of pending) {
-        try {
-          await importExternalSkill({ sourcePath: s.path, id: s.id })
-          ok++
-        } catch {
-          fail++
-        }
-      }
-      await reload()
-      const sources = await scanExternalSkills()
-      setExternal(sources)
-      void syncSkillsIntoHarness()
-      setScanHint(
-        fail === 0
-          ? `已从 ${src.label} 导入 ${ok} 个技能`
-          : `从 ${src.label} 导入 ${ok} 个，失败 ${fail} 个`,
-      )
-    } catch (err) {
-      setError(err instanceof Error ? err.message : String(err))
-    } finally {
-      setImportingKey(null)
-    }
-  }
-
-  const finishUpload = async (imported: SkillSummary[], errors: string[]) => {
-    await reload()
-    if (imported.length) void syncSkillsIntoHarness()
-    if (errors.length) setError(errors.join('\n'))
-    if (imported.length) {
-      setScanHint(
-        imported.length === 1
-          ? `已上传「${imported[0]!.name || imported[0]!.id}」`
-          : `已上传 ${imported.length} 个技能`,
-      )
-    } else if (!errors.length) {
-      setScanHint('未导入任何技能')
-    }
-  }
-
-  const onPickUpload = async () => {
-    if (uploading) return
-    setUploading(true)
-    setError(null)
-    try {
-      const { imported, canceled, errors } = await pickAndImportSkills()
-      if (canceled) return
-      await finishUpload(imported, errors || [])
-    } catch (err) {
-      setError(err instanceof Error ? err.message : String(err))
-    } finally {
-      setUploading(false)
-    }
-  }
-
-  const onDropUpload = async (e: DragEvent) => {
-    e.preventDefault()
-    e.stopPropagation()
-    setDragOver(false)
-    if (uploading) return
-    const files = Array.from(e.dataTransfer.files || [])
-    if (!files.length) return
-    setUploading(true)
-    setError(null)
-    try {
-      const { imported, errors } = await importDroppedSkillFiles(files)
-      await finishUpload(imported, errors)
-    } catch (err) {
-      setError(err instanceof Error ? err.message : String(err))
-    } finally {
-      setUploading(false)
-    }
-  }
-
-  useEffect(() => {
-    if (active) void reload()
-  }, [active, available])
-
-  const startEdit = async (id: string) => {
-    setError(null)
-    try {
-      const detail = await readSkill(id)
-      if (!detail) return
-      setEditingId(id)
-      setDraft(detail.content)
-    } catch (err) {
-      setError(err instanceof Error ? err.message : String(err))
-    }
-  }
-
-  const saveEdit = async () => {
-    if (!editingId) return
-    setSaving(true)
-    setError(null)
-    try {
-      await writeSkill(editingId, draft)
-      setEditingId(null)
-      setDraft('')
-      await reload()
-      void syncSkillsIntoHarness()
-    } catch (err) {
-      setError(err instanceof Error ? err.message : String(err))
-    } finally {
-      setSaving(false)
-    }
-  }
-
-  const onDelete = async (id: string) => {
-    if (!confirm(`删除技能「${id}」？此操作不可恢复。`)) return
-    setError(null)
-    try {
-      await deleteSkill(id)
-      if (editingId === id) {
-        setEditingId(null)
-        setDraft('')
-      }
-      await reload()
-      void syncSkillsIntoHarness()
-    } catch (err) {
-      setError(err instanceof Error ? err.message : String(err))
-    }
-  }
-
-  if (!available) {
-    return (
-      <>
-        <div className="sub-label">本地技能</div>
-        <p className="user-profile-hint">技能目录需要桌面端（默认 `.yagent/skills/`）。浏览器环境暂不可用。</p>
-      </>
-    )
-  }
-
-  return (
-    <>
-      <div className="sub-label">存储位置</div>
-      <div className="skill-root">{root ?? '…'}</div>
-
-      <div className="skill-scan-block">
-        <div className="skill-scan-head">
-          <div className="sub-label">扫描与同步</div>
-          <button type="button" className="btn btn-sm" disabled={scanning} onClick={() => void onScan()}>
-            <RefreshCw className={`ic ic-sm${scanning ? ' spin' : ''}`} />
-            {scanning ? '扫描中…' : '扫描其他 Agent'}
-          </button>
-        </div>
-        <p className="user-profile-hint">
-          扫描 Cursor / Claude / Codex / Agents 等目录下的技能，迁移到本机 yagent skills。
-        </p>
-        {scanHint && <div className="skill-scan-hint">{scanHint}</div>}
-        {external &&
-          external.map((src) => {
-            const open = isSourceOpen(src.id)
-            return (
-              <div className={`skill-source${open ? ' is-open' : ''}`} key={src.id}>
-                <div className="skill-source-head">
-                  <button
-                    type="button"
-                    className="skill-source-toggle"
-                    aria-expanded={open}
-                    onClick={() => toggleSource(src.id)}
-                  >
-                    <ChevronDown className={`ic ic-sm skill-source-chevron${open ? '' : ' is-collapsed'}`} />
-                    <span className="skill-source-title">
-                      {src.label}
-                      <span className="skill-badge">{src.exists ? `${src.skills.length}` : '未找到'}</span>
-                    </span>
-                  </button>
-                  {src.exists && src.skills.some((s) => !s.installed) ? (
-                    <button
-                      type="button"
-                      className="btn btn-sm"
-                      disabled={importingKey === `src:${src.id}`}
-                      onClick={() => void onImportSource(src)}
-                    >
-                      全部迁移
-                    </button>
-                  ) : null}
-                </div>
-                {open && (
-                  <>
-                    <div className="skill-source-path">{src.root}</div>
-                    {!src.exists && <div className="skill-empty">目录不存在</div>}
-                    {src.exists && src.skills.length === 0 && (
-                      <div className="skill-empty">该目录下没有 SKILL.md</div>
-                    )}
-                    {src.skills.map((s) => (
-                      <div className="skill-card skill-card-ext" key={`${src.id}:${s.id}`}>
-                        <div className="skill-card-main">
-                          <div className="skill-card-title">
-                            {s.name}
-                            {s.installed ? (
-                              <span className="skill-badge skill-badge-ok">已安装</span>
-                            ) : null}
-                          </div>
-                          <div className="skill-card-desc">{s.description || s.id}</div>
-                        </div>
-                        <div className="skill-card-actions">
-                          {s.installed ? (
-                            <button
-                              type="button"
-                              className="icon-btn"
-                              title="覆盖更新"
-                              disabled={!!importingKey}
-                              onClick={() => {
-                                if (!confirm(`用 ${src.label} 的「${s.id}」覆盖本地副本？`)) return
-                                void onImportOne(s.path, s.id, true)
-                              }}
-                            >
-                              <RefreshCw className="ic ic-sm" />
-                            </button>
-                          ) : (
-                            <button
-                              type="button"
-                              className="icon-btn"
-                              title="迁移到 yagent"
-                              disabled={!!importingKey}
-                              onClick={() => void onImportOne(s.path, s.id, false)}
-                            >
-                              <Download className="ic ic-sm" />
-                            </button>
-                          )}
-                        </div>
-                      </div>
-                    ))}
-                  </>
-                )}
-              </div>
-            )
-          })}
-      </div>
-
-      <div className="sub-label">已安装</div>
-      {loading && <div className="skill-empty">加载中…</div>}
-      {!loading && items.length === 0 && (
-        <div className="skill-empty">还没有技能。每个技能是一个含 SKILL.md 的文件夹。</div>
-      )}
-      {items.map((s) => (
-        <div className="skill-card" key={s.id}>
-          <div className="skill-card-main">
-            <div className="skill-card-title">
-              {s.name}
-              {s.disableModelInvocation ? (
-                <span className="skill-badge" title="仅显式调用；不进模型自动目录">
-                  手动
-                </span>
-              ) : null}
-            </div>
-            <div className="skill-card-desc">{s.description || s.id}</div>
-          </div>
-          <div className="skill-card-actions">
-            <button
-              type="button"
-              className="icon-btn"
-              title="编辑"
-              onClick={() => void startEdit(s.id)}
-            >
-              <Pencil className="ic ic-sm" />
-            </button>
-            <button
-              type="button"
-              className="icon-btn"
-              title="删除"
-              onClick={() => void onDelete(s.id)}
-            >
-              <Trash2 className="ic ic-sm" />
-            </button>
-          </div>
-        </div>
-      ))}
-
-      {editingId && (
-        <>
-          <div className="sub-label">编辑 {editingId}/SKILL.md</div>
-          <textarea
-            className="skill-editor"
-            value={draft}
-            onChange={(e) => setDraft(e.target.value)}
-            spellCheck={false}
-          />
-          <div className="byok-row">
-            <button type="button" className="btn btn-primary" disabled={saving} onClick={() => void saveEdit()}>
-              保存
-            </button>
-            <button
-              type="button"
-              className="btn"
-              onClick={() => {
-                setEditingId(null)
-                setDraft('')
-              }}
-            >
-              取消
-            </button>
-          </div>
-        </>
-      )}
-
-      <div className="sub-label">上传技能</div>
-      <button
-        type="button"
-        className={`skill-upload-zone${dragOver ? ' is-dragover' : ''}${uploading ? ' is-busy' : ''}`}
-        disabled={uploading}
-        onClick={() => void onPickUpload()}
-        onDragEnter={(e) => {
-          e.preventDefault()
-          e.stopPropagation()
-          setDragOver(true)
-        }}
-        onDragOver={(e) => {
-          e.preventDefault()
-          e.stopPropagation()
-          setDragOver(true)
-        }}
-        onDragLeave={(e) => {
-          e.preventDefault()
-          e.stopPropagation()
-          if (e.currentTarget.contains(e.relatedTarget as Node)) return
-          setDragOver(false)
-        }}
-        onDrop={(e) => void onDropUpload(e)}
-      >
-        <Upload className={`ic${uploading ? ' spin' : ''}`} />
-        <div className="skill-upload-title">
-          {uploading ? '正在导入…' : '点击选择，或拖入 .zip / 技能文件夹'}
-        </div>
-        <div className="skill-upload-hint">需包含 SKILL.md；zip 可含一个或多个技能目录</div>
-      </button>
-
-      {error && <div className="field-warn">{error}</div>}
-    </>
-  )
-}
-
-/* ---------- 4. 知识库 ---------- */
-
-const KB_PROVIDERS: {
-  kind: Exclude<KnowledgeSourceKind, 'local'>
-  name: string
-  desc: string
-  icon: typeof BookOpen
-  color: string
-}[] = [
-  { kind: 'notion', name: 'Notion', desc: '页面与数据库作检索源', icon: BookOpen, color: '#000000' },
-  {
-    kind: 'gdrive',
-    name: 'Google Drive',
-    desc: '云盘文档与表格',
-    icon: HardDrive,
-    color: '#1fa463',
-  },
-  { kind: 'feishu', name: '飞书文档', desc: '知识库与云文档', icon: Layers, color: '#3370ff' },
-  {
-    kind: 'confluence',
-    name: 'Confluence',
-    desc: '团队 Wiki 空间',
-    icon: BookOpen,
-    color: '#172b4d',
-  },
-  { kind: 'web', name: '网站 / Sitemap', desc: '按 URL 抓取并索引', icon: Globe, color: '#6c5ce7' },
-]
-
-/* ---------- 灵感：关键词 + 其下收藏卡片 ---------- */
-
-const INSP_PAGE = 4
-
-/** 关键词 → 固定色调 1..6，与轮播位置无关 */
 function keywordTone(k: string): number {
   let h = 2166136261
   for (let i = 0; i < k.length; i++) {
@@ -1645,6 +1148,8 @@ function keywordTone(k: string): number {
   return (Math.abs(h) % 6) + 1
 }
 
+/** 灵感关键词轮播：视口内同时展示的卡片数 */
+const INSP_PAGE = 4
 const INSP_WHEEL_THRESHOLD = 48
 const INSP_DRAG_THRESHOLD = 56
 
@@ -2078,6 +1583,32 @@ function InspirationPane({
   )
 }
 
+const KB_PROVIDERS: {
+  kind: Exclude<KnowledgeSourceKind, 'local'>
+  name: string
+  desc: string
+  icon: typeof BookOpen
+  color: string
+}[] = [
+  { kind: 'notion', name: 'Notion', desc: '页面与数据库作检索源', icon: BookOpen, color: '#000000' },
+  {
+    kind: 'gdrive',
+    name: 'Google Drive',
+    desc: '云盘文档与表格',
+    icon: HardDrive,
+    color: '#1fa463',
+  },
+  { kind: 'feishu', name: '飞书文档', desc: '知识库与云文档', icon: Layers, color: '#3370ff' },
+  {
+    kind: 'confluence',
+    name: 'Confluence',
+    desc: '团队 Wiki 空间',
+    icon: BookOpen,
+    color: '#172b4d',
+  },
+  { kind: 'web', name: '网站 / Sitemap', desc: '按 URL 抓取并索引', icon: Globe, color: '#6c5ce7' },
+]
+
 function KnowledgePane({
   settings,
   onChange,
@@ -2353,456 +1884,3 @@ function ToolsPane({
   )
 }
 
-
-/* ---------- 3. 连接器（外部服务，Claude Connectors 风格） ---------- */
-
-interface ConnectorDef {
-  id: string
-  name: string
-  desc: string
-  icon: typeof Code2
-  color: string // 品牌色徽章
-}
-
-const CONNECTORS: ConnectorDef[] = [
-  { id: 'github', name: 'GitHub', desc: '读写仓库、Issue 与 Pull Request', icon: Code2, color: '#24292f' },
-  { id: 'notion', name: 'Notion', desc: '检索和更新文档、知识库', icon: BookOpen, color: '#000000' },
-  { id: 'gdrive', name: 'Google Drive', desc: '读取云盘文件与表格', icon: HardDrive, color: '#1fa463' },
-  { id: 'figma', name: 'Figma', desc: '读取设计稿与组件信息', icon: PenTool, color: '#a259ff' },
-  { id: 'slack', name: 'Slack', desc: '检索消息、发送通知', icon: Hash, color: '#e01e5a' },
-  { id: 'linear', name: 'Linear', desc: '查询和更新问题单', icon: Layers, color: '#5e6ad2' },
-]
-
-/** 连接器：本期仅 UI 演示，连接状态存本地 state，未接真实 OAuth/MCP */
-function ConnectorsPane() {
-  const [connected, setConnected] = useState<Set<string>>(new Set())
-  const toggle = (id: string) =>
-    setConnected((s) => {
-      const next = new Set(s)
-      if (next.has(id)) next.delete(id)
-      else next.add(id)
-      return next
-    })
-
-  return (
-    <>
-      <div className="sub-label">可用服务</div>
-      {CONNECTORS.map((c) => {
-        const Icon = c.icon
-        const on = connected.has(c.id)
-        return (
-          <div className="row-card" key={c.id}>
-            <span className="file-badge" style={{ background: c.color, color: '#fff' }}>
-              <Icon className="ic ic-sm" />
-            </span>
-            <div className="rc-main">
-              <div className="rc-title">
-                {c.name} {on && <span className="tag-ok">已连接</span>}
-              </div>
-              <div className="rc-sub">{c.desc}</div>
-            </div>
-            <div className="rc-actions">
-              <button className="btn" onClick={() => toggle(c.id)}>
-                {on ? '断开' : '连接'}
-              </button>
-            </div>
-          </div>
-        )
-      })}
-
-      <div className="sub-label">自定义 MCP 服务器</div>
-      <div className="field">
-        <div className="field-label">
-          服务器地址 <span className="hint">stdio / SSE / HTTP</span>
-        </div>
-        <input type="text" placeholder="https://mcp.example.com/sse" disabled />
-      </div>
-      <button className="btn" disabled>
-        <Plus className="ic ic-sm" />
-        添加（即将支持）
-      </button>
-
-      <div className="files-note" style={{ marginTop: 16 }}>
-        连接器为预览功能：连接状态仅本地演示，真实授权（OAuth）与 MCP 接入尚未实现。
-      </div>
-    </>
-  )
-}
-
-/* ---------- 存储空间 ---------- */
-
-const STORAGE_LABELS: Record<string, string> = {
-  chats: '对话',
-  projects: '任务项目',
-  insights: '灵感收获',
-  skills: '技能',
-  'settings.json': '设置',
-  'token-usage.json': 'Token 用量',
-}
-
-const STORAGE_COLORS = [
-  'var(--accent)',
-  '#3d8fd1',
-  '#1faa6e',
-  '#e07a3a',
-  '#e08aa4',
-  '#d63b3b',
-  '#8b7cf6',
-  '#94a3b8',
-]
-
-function formatBytes(n: number): string {
-  if (!Number.isFinite(n) || n <= 0) return '0 B'
-  if (n < 1024) return `${n} B`
-  if (n < 1024 * 1024) return `${(n / 1024).toFixed(n < 10 * 1024 ? 1 : 0)} KB`
-  if (n < 1024 * 1024 * 1024) return `${(n / (1024 * 1024)).toFixed(n < 10 * 1024 * 1024 ? 1 : 0)} MB`
-  return `${(n / (1024 * 1024 * 1024)).toFixed(2)} GB`
-}
-
-type StorageEntry = {
-  name: string
-  rel: string
-  bytes: number
-  kind: 'dir' | 'file'
-  children?: { name: string; rel: string; bytes: number; kind: 'dir' | 'file' }[]
-}
-
-function polar(cx: number, cy: number, r: number, angle: number): [number, number] {
-  return [cx + r * Math.cos(angle), cy + r * Math.sin(angle)]
-}
-
-/** 圆环扇区：angle 从正右逆时针，调用方从 -π/2 起算 */
-function donutSlice(
-  cx: number,
-  cy: number,
-  rOut: number,
-  rIn: number,
-  start: number,
-  end: number,
-): string {
-  const sweep = end - start
-  if (sweep <= 0.0001) return ''
-  // 满圆用两段弧，避免起终点重合画不出来
-  if (sweep >= Math.PI * 2 - 0.0001) {
-    const mid = start + Math.PI
-    const [ox0, oy0] = polar(cx, cy, rOut, start)
-    const [ox1, oy1] = polar(cx, cy, rOut, mid)
-    const [ox2, oy2] = polar(cx, cy, rOut, start + Math.PI * 2)
-    const [ix0, iy0] = polar(cx, cy, rIn, start + Math.PI * 2)
-    const [ix1, iy1] = polar(cx, cy, rIn, mid)
-    const [ix2, iy2] = polar(cx, cy, rIn, start)
-    return [
-      `M ${ox0} ${oy0}`,
-      `A ${rOut} ${rOut} 0 1 1 ${ox1} ${oy1}`,
-      `A ${rOut} ${rOut} 0 1 1 ${ox2} ${oy2}`,
-      `L ${ix0} ${iy0}`,
-      `A ${rIn} ${rIn} 0 1 0 ${ix1} ${iy1}`,
-      `A ${rIn} ${rIn} 0 1 0 ${ix2} ${iy2}`,
-      'Z',
-    ].join(' ')
-  }
-  const large = sweep > Math.PI ? 1 : 0
-  const [x0, y0] = polar(cx, cy, rOut, start)
-  const [x1, y1] = polar(cx, cy, rOut, end)
-  const [x2, y2] = polar(cx, cy, rIn, end)
-  const [x3, y3] = polar(cx, cy, rIn, start)
-  return [
-    `M ${x0} ${y0}`,
-    `A ${rOut} ${rOut} 0 ${large} 1 ${x1} ${y1}`,
-    `L ${x2} ${y2}`,
-    `A ${rIn} ${rIn} 0 ${large} 0 ${x3} ${y3}`,
-    'Z',
-  ].join(' ')
-}
-
-function StoragePie({
-  entries,
-  totalBytes,
-  hoverRel,
-  onHover,
-}: {
-  entries: StorageEntry[]
-  totalBytes: number
-  hoverRel: string | null
-  onHover: (rel: string | null) => void
-}) {
-  const slices = useMemo(() => {
-    const total = Math.max(0, totalBytes)
-    if (total <= 0 || !entries.length) return [] as {
-      rel: string
-      label: string
-      bytes: number
-      color: string
-      start: number
-      end: number
-      d: string
-    }[]
-    const CX = 80
-    const CY = 80
-    const R_OUT = 68
-    const R_IN = 42
-    let angle = -Math.PI / 2
-    return entries
-      .filter((e) => e.bytes > 0)
-      .map((e, i) => {
-        const sweep = (e.bytes / total) * Math.PI * 2
-        const start = angle
-        const end = angle + sweep
-        angle = end
-        return {
-          rel: e.rel,
-          label: STORAGE_LABELS[e.name] || e.name,
-          bytes: e.bytes,
-          color: STORAGE_COLORS[i % STORAGE_COLORS.length]!,
-          start,
-          end,
-          d: donutSlice(CX, CY, R_OUT, R_IN, start, end),
-        }
-      })
-  }, [entries, totalBytes])
-
-  const hover = hoverRel ? slices.find((s) => s.rel === hoverRel) : null
-  const centerLabel = hover ? hover.label : '合计'
-  const centerValue = hover ? formatBytes(hover.bytes) : formatBytes(totalBytes)
-  const centerPct =
-    hover && totalBytes > 0 ? `${Math.round((hover.bytes / totalBytes) * 100)}%` : null
-
-  return (
-    <div className="storage-pie-wrap" role="img" aria-label="各分类磁盘占用占比">
-      <svg className="storage-pie" viewBox="0 0 160 160" aria-hidden="true">
-        <circle className="storage-pie-track" cx="80" cy="80" r="68" />
-        {slices.map((s) => (
-          <path
-            key={s.rel}
-            className={`storage-pie-slice${hoverRel === s.rel ? ' is-hot' : ''}${hoverRel && hoverRel !== s.rel ? ' is-dim' : ''}`}
-            d={s.d}
-            fill={s.color}
-            onMouseEnter={() => onHover(s.rel)}
-            onMouseLeave={() => onHover(null)}
-          />
-        ))}
-        <text className="storage-pie-value" x="80" y={centerPct ? 74 : 78} textAnchor="middle">
-          {centerValue}
-        </text>
-        <text className="storage-pie-sub" x="80" y={centerPct ? 92 : 96} textAnchor="middle">
-          {centerLabel}
-        </text>
-        {centerPct ? (
-          <text className="storage-pie-pct" x="80" y="108" textAnchor="middle">
-            {centerPct}
-          </text>
-        ) : null}
-      </svg>
-      <div className="storage-pie-legend">
-        {slices.map((s) => {
-          const pct = totalBytes > 0 ? Math.round((s.bytes / totalBytes) * 100) : 0
-          return (
-            <button
-              type="button"
-              key={s.rel}
-              className={`storage-legend-item${hoverRel === s.rel ? ' is-hot' : ''}`}
-              onMouseEnter={() => onHover(s.rel)}
-              onMouseLeave={() => onHover(null)}
-            >
-              <i className="storage-swatch" style={{ background: s.color }} />
-              <span>{s.label}</span>
-              <strong>{formatBytes(s.bytes)}</strong>
-              <em>{pct}%</em>
-            </button>
-          )
-        })}
-      </div>
-    </div>
-  )
-}
-
-function StoragePane({ active }: { active: boolean }) {
-  const [loading, setLoading] = useState(false)
-  const [error, setError] = useState('')
-  const [root, setRoot] = useState('')
-  const [totalBytes, setTotalBytes] = useState(0)
-  const [entries, setEntries] = useState<StorageEntry[]>([])
-  const [openRels, setOpenRels] = useState<Set<string>>(() => new Set())
-  const [hoverRel, setHoverRel] = useState<string | null>(null)
-
-  const colorByRel = useMemo(() => {
-    const map = new Map<string, string>()
-    entries.forEach((e, i) => {
-      map.set(e.rel, STORAGE_COLORS[i % STORAGE_COLORS.length]!)
-    })
-    return map
-  }, [entries])
-
-  const reload = async () => {
-    const api = window.yagentDesktop?.storage?.usage
-    if (!api) {
-      setError('当前环境无法读取本地存储（需桌面端）')
-      setEntries([])
-      setTotalBytes(0)
-      setRoot('')
-      return
-    }
-    setLoading(true)
-    setError('')
-    try {
-      const res = await api()
-      if (!res.ok) {
-        setError(res.error || '统计失败')
-        setEntries([])
-        setTotalBytes(0)
-        setRoot(res.root || '')
-        return
-      }
-      setRoot(res.root)
-      setTotalBytes(res.totalBytes)
-      setEntries(res.entries || [])
-    } catch (e) {
-      setError(e instanceof Error ? e.message : String(e))
-    } finally {
-      setLoading(false)
-    }
-  }
-
-  useEffect(() => {
-    if (!active) return
-    void reload()
-  }, [active])
-
-  const maxBytes = Math.max(1, ...entries.map((e) => e.bytes), totalBytes)
-
-  return (
-    <>
-      <div className="storage-summary">
-        <div className="storage-summary-main">
-          <div className="storage-summary-label">应用数据合计</div>
-          <div className="storage-summary-size">{formatBytes(totalBytes)}</div>
-          {root ? (
-            <div className="storage-summary-path" title={root}>
-              {root}
-            </div>
-          ) : null}
-        </div>
-        <div className="storage-summary-actions">
-          <button
-            type="button"
-            className="btn"
-            disabled={loading}
-            onClick={() => void reload()}
-            title="重新统计"
-          >
-            <RefreshCw className={`ic ic-sm${loading ? ' spin' : ''}`} />
-            刷新
-          </button>
-          <button
-            type="button"
-            className="btn"
-            disabled={!window.yagentDesktop?.storage?.reveal}
-            onClick={() => void window.yagentDesktop?.storage?.reveal()}
-            title="在访达中打开数据目录"
-          >
-            <FolderOpen className="ic ic-sm" />
-            打开目录
-          </button>
-        </div>
-      </div>
-
-      {entries.some((e) => e.bytes > 0) ? (
-        <>
-          <div className="sub-label">占用构成</div>
-          <div className="storage-pie-card">
-            <StoragePie
-              entries={entries}
-              totalBytes={totalBytes}
-              hoverRel={hoverRel}
-              onHover={setHoverRel}
-            />
-          </div>
-        </>
-      ) : null}
-
-      <div className="sub-label">分类占用</div>
-      {error ? <div className="files-note">{error}</div> : null}
-      {loading && !entries.length ? <div className="files-note">正在统计…</div> : null}
-      {!loading && !error && !entries.length ? (
-        <div className="files-note">数据目录为空</div>
-      ) : null}
-
-      <div className="storage-list">
-        {entries.map((e) => {
-          const label = STORAGE_LABELS[e.name] || e.name
-          const open = openRels.has(e.rel)
-          const kids = e.children || []
-          const pct = Math.max(2, Math.round((e.bytes / maxBytes) * 100))
-          const color = colorByRel.get(e.rel) || STORAGE_COLORS[0]!
-          return (
-            <div
-              className={`storage-row${hoverRel === e.rel ? ' is-hot' : ''}`}
-              key={e.rel}
-              onMouseEnter={() => setHoverRel(e.rel)}
-              onMouseLeave={() => setHoverRel(null)}
-            >
-              <button
-                type="button"
-                className={`storage-item${kids.length ? '' : ' is-leaf'}`}
-                onClick={() => {
-                  if (!kids.length) return
-                  setOpenRels((prev) => {
-                    const next = new Set(prev)
-                    if (next.has(e.rel)) next.delete(e.rel)
-                    else next.add(e.rel)
-                    return next
-                  })
-                }}
-              >
-                {kids.length ? (
-                  <ChevronDown className={`ic ic-sm storage-caret${open ? '' : ' is-collapsed'}`} />
-                ) : (
-                  <span className="storage-caret-gap" />
-                )}
-                <span className="storage-name">
-                  <i className="storage-swatch" style={{ background: color }} />
-                  {label}
-                  {label !== e.name ? <span className="storage-name-raw">{e.name}</span> : null}
-                </span>
-                <span className="storage-bytes">{formatBytes(e.bytes)}</span>
-                <span className="storage-bar" aria-hidden>
-                  <span
-                    className="storage-bar-fill"
-                    style={{ width: `${pct}%`, background: color }}
-                  />
-                </span>
-              </button>
-              {open && kids.length ? (
-                <div className="storage-children">
-                  {kids.map((c) => {
-                    const childPct = Math.max(
-                      2,
-                      Math.round((c.bytes / Math.max(1, e.bytes)) * 100),
-                    )
-                    return (
-                      <div className="storage-item storage-child" key={c.rel}>
-                        <span className="storage-caret-gap" />
-                        <span className="storage-name">{c.name}</span>
-                        <span className="storage-bytes">{formatBytes(c.bytes)}</span>
-                        <span className="storage-bar" aria-hidden>
-                          <span
-                            className="storage-bar-fill is-child"
-                            style={{ width: `${childPct}%`, background: color }}
-                          />
-                        </span>
-                      </div>
-                    )
-                  })}
-                </div>
-              ) : null}
-            </div>
-          )
-        })}
-      </div>
-
-      <div className="files-note" style={{ marginTop: 8 }}>
-        统计范围为应用数据目录（对话、项目附件、技能等），不含应用本体安装体积。
-      </div>
-    </>
-  )
-}

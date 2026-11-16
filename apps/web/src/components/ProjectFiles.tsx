@@ -11,15 +11,17 @@ import {
   Terminal,
   WrapText,
 } from 'lucide-react'
-import Markdown from 'react-markdown'
-import remarkGfm from 'remark-gfm'
 import { isSshWorkdir } from '@yagent/core'
 import { filesFromDataTransfer } from './Composer'
-import { HTML_PREVIEW_SANDBOX, htmlWithBase } from '../lib/htmlPreview'
 import { formatSize } from '../lib/utils'
-import { CodePreview } from './CodePreview'
 import { FileIcon } from './FileIcon'
-import { MoleculeViewer } from './MoleculeViewer'
+import {
+  canToggleSource as previewCanToggleSource,
+  FilePreviewView,
+  isShowingCode,
+  type FilePreview,
+  type FileViewMode,
+} from './FilePreviewView'
 
 const DROP_MAX_BYTES = 20 * 1024 * 1024
 
@@ -62,15 +64,6 @@ interface DirEntry {
   size: number
 }
 
-type FilePreview =
-  | { name: string; kind: 'text'; content: string }
-  | { name: string; kind: 'html'; content: string; baseHref?: string }
-  | { name: string; kind: 'markdown'; content: string }
-  | { name: string; kind: 'molecule'; format: string; content: string }
-  | { name: string; kind: 'image'; mime: string; dataUrl: string }
-  | { name: string; kind: 'pdf'; dataUrl: string }
-  | { name: string; kind: 'unavailable'; reason: string; size: number }
-
 type DirCache = Record<string, DirEntry[] | 'loading' | string>
 
 /** 项目文件：树形展开/折叠；点文件预览；可拖入复制到目录 */
@@ -85,7 +78,7 @@ export function ProjectFiles({
   const [file, setFile] = useState<FilePreview | null>(null)
   /** 正在打开的相对路径：立刻切到预览壳，避免干等 IPC */
   const [opening, setOpening] = useState<string | null>(null)
-  const [viewMode, setViewMode] = useState<'preview' | 'source'>('preview')
+  const [viewMode, setViewMode] = useState<FileViewMode>('preview')
   const [wrap, setWrap] = useState(false)
   const [expanded, setExpanded] = useState<Set<string>>(() => new Set(['']))
   const [cache, setCache] = useState<DirCache>({})
@@ -371,77 +364,21 @@ export function ProjectFiles({
 
   const activeRel = file?.name ?? opening
   const fileName = activeRel ? (activeRel.split('/').pop() ?? activeRel) : null
-  const canToggleSource =
-    !!file && (file.kind === 'html' || file.kind === 'markdown' || file.kind === 'molecule')
-  const showingCode =
-    !!file &&
-    (file.kind === 'text' ||
-      ((file.kind === 'html' || file.kind === 'markdown' || file.kind === 'molecule') &&
-        viewMode === 'source'))
+  const canToggleSource = previewCanToggleSource(file)
+  const showingCode = isShowingCode(file, viewMode)
   const root = cache['']
   const dropHintDir = dropRel || '根目录'
   const showPreview = !!file || !!opening
 
-  const fileView = (() => {
-    if (opening && !file) {
-      return <div className="file-view file-view-loading file-view-fade">加载预览…</div>
-    }
-    if (!file) return null
-    if (file.kind === 'image') {
-      return (
-        <div className="file-view file-view-image file-view-fade">
-          <img src={file.dataUrl} alt={fileName ?? ''} />
-        </div>
-      )
-    }
-    if (file.kind === 'pdf') {
-      return (
-        <iframe
-          className="file-view file-view-pdf file-view-fade"
-          title={fileName ?? 'pdf'}
-          src={file.dataUrl}
-        />
-      )
-    }
-    if (file.kind === 'html' && viewMode === 'preview') {
-      return (
-        <iframe
-          className="file-view file-view-html file-view-fade"
-          title={fileName ?? 'html'}
-          sandbox={HTML_PREVIEW_SANDBOX}
-          srcDoc={htmlWithBase(file.content, file.baseHref)}
-        />
-      )
-    }
-    if (file.kind === 'markdown' && viewMode === 'preview') {
-      return (
-        <div className="file-view file-view-md file-view-fade md">
-          <Markdown remarkPlugins={[remarkGfm]}>{file.content}</Markdown>
-        </div>
-      )
-    }
-    if (file.kind === 'molecule' && viewMode === 'preview') {
-      return (
-        <div className="file-view-fade">
-          <MoleculeViewer content={file.content} format={file.format} />
-        </div>
-      )
-    }
-    if (file.kind === 'unavailable') {
-      return (
-        <div className="file-view file-view-meta file-view-empty file-view-fade">
-          <p className="file-view-empty-title">无法预览这种文件</p>
-          <p className="file-view-empty-desc">
-            暂不支持这种文件的格式、编码或大小。请使用其他应用打开。
-          </p>
-        </div>
-      )
-    }
-    if ('content' in file) {
-      return <CodePreview content={file.content} filename={file.name} wrap={wrap} />
-    }
-    return null
-  })()
+  const fileView = (
+    <FilePreviewView
+      preview={file}
+      opening={!!opening}
+      viewMode={viewMode}
+      wrap={wrap}
+      fileName={fileName}
+    />
+  )
 
   return (
     <div className="project-files">

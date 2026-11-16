@@ -1,0 +1,376 @@
+/* ================= 主题变量 ================= */
+:root,
+[data-theme='light'] {
+  --bg-app: #eef0f4;
+  --bg-surface: #ffffff;
+  --bg-hover: rgba(0, 0, 0, 0.04);
+  --bg-active: rgba(0, 0, 0, 0.055);
+  --bg-bubble: #eef0f4;
+  --bg-code: #f4f5f8;
+
+  --border: rgba(0, 0, 0, 0.06);
+  --border-strong: rgba(0, 0, 0, 0.11);
+
+  --text-0: #1c1c21;
+  --text-1: #5b5b66;
+  --text-2: #9a9aa5;
+
+  /* 默认强调色：紫罗兰（可被 data-accent 覆盖） */
+  --accent: #6c5ce7;
+  --accent-text: #5a4bd1;
+  --accent-soft: rgba(108, 92, 231, 0.09);
+  --accent-bright: color-mix(in srgb, var(--accent) 42%, #fff);
+  --accent-glow: color-mix(in srgb, var(--accent) 40%, transparent);
+
+  --green: #0e9f6e;
+  --green-soft: rgba(14, 159, 110, 0.1);
+  --yellow: #b07d2b;
+  --red: #d64545;
+  --blue: #2f7de1;
+
+  --shadow-stage: 0 1px 2px rgba(16, 18, 28, 0.05), 0 8px 32px rgba(16, 18, 28, 0.07);
+  --shadow-pop: 0 2px 8px rgba(16, 18, 28, 0.06), 0 12px 32px rgba(16, 18, 28, 0.08);
+
+  /* 对话 / 输入框内容列宽（可由 data-content-width 覆盖） */
+  --content-max: 700px;
+  /* 主区左右内边距（chat / composer 的 padding，不是 margin） */
+  --content-gutter: 32px;
+}
+
+[data-content-width='wide'] {
+  --content-max: 960px;
+}
+[data-content-width='full'] {
+  --content-max: 100%;
+  --content-gutter: 56px;
+}
+
+[data-theme='dark'] {
+  --bg-app: #1a1b26;
+  --bg-surface: #24252f;
+  --bg-hover: rgba(255, 255, 255, 0.05);
+  --bg-active: rgba(255, 255, 255, 0.08);
+  --bg-bubble: #30313d;
+  --bg-code: #2a2b36;
+
+  --border: rgba(255, 255, 255, 0.06);
+  --border-strong: rgba(255, 255, 255, 0.12);
+
+  --text-0: #ececf1;
+  --text-1: #a0a0ac;
+  --text-2: #63636e;
+
+  --accent: #8b7cf6;
+  --accent-text: #9d8ffb;
+  --accent-soft: rgba(139, 124, 246, 0.13);
+  --accent-bright: color-mix(in srgb, var(--accent) 38%, #fff);
+  --accent-glow: color-mix(in srgb, var(--accent) 40%, transparent);
+
+  --green: #34c68a;
+  --green-soft: rgba(52, 198, 138, 0.13);
+  --yellow: #d4a24e;
+  --red: #e06c6c;
+  --blue: #6aa5f8;
+
+  --shadow-stage: 0 1px 2px rgba(0, 0, 0, 0.3), 0 8px 32px rgba(0, 0, 0, 0.3);
+  --shadow-pop: 0 2px 8px rgba(0, 0, 0, 0.3), 0 12px 32px rgba(0, 0, 0, 0.4);
+}
+
+/* 主题强调色：磨砂绿 → 高饱和青调抹茶 */
+[data-theme='light'][data-accent='frost-green'],
+:root[data-accent='frost-green'] {
+  --accent: #1faa6e;
+  --accent-text: #0f7a4d;
+  --accent-soft: rgba(31, 170, 110, 0.14);
+}
+[data-theme='dark'][data-accent='frost-green'] {
+  --accent: #3dca88;
+  --accent-text: #7ee0b0;
+  --accent-soft: rgba(61, 202, 136, 0.2);
+}
+
+/* 主题强调色：盛夏橙 */
+[data-theme='light'][data-accent='summer-orange'],
+:root[data-accent='summer-orange'] {
+  --accent: #e07a3a;
+  --accent-text: #c45f22;
+  --accent-soft: rgba(224, 122, 58, 0.14);
+}
+[data-theme='dark'][data-accent='summer-orange'] {
+  --accent: #f08a4a;
+  --accent-text: #ffb07a;
+  --accent-soft: rgba(240, 138, 74, 0.2);
+}
+
+/* 主题强调色：冰晶蓝 */
+[data-theme='light'][data-accent='ice-blue'],
+:root[data-accent='ice-blue'] {
+  --accent: #3d8fd1;
+  --accent-text: #2a6fa8;
+  --accent-soft: rgba(61, 143, 209, 0.13);
+}
+[data-theme='dark'][data-accent='ice-blue'] {
+  --accent: #5ba6e0;
+  --accent-text: #9cccf0;
+  --accent-soft: rgba(91, 166, 224, 0.18);
+}
+
+/* 主题强调色：初樱粉 */
+[data-theme='light'][data-accent='sakura-pink'],
+:root[data-accent='sakura-pink'] {
+  --accent: #e08aa4;
+  --accent-text: #c45f7c;
+  --accent-soft: rgba(224, 138, 164, 0.14);
+}
+[data-theme='dark'][data-accent='sakura-pink'] {
+  --accent: #e9a0b6;
+  --accent-text: #f5c4d2;
+  --accent-soft: rgba(233, 160, 182, 0.18);
+}
+
+/* 主题强调色：枫红（偏正红，秋叶鲜红） */
+[data-theme='light'][data-accent='maple-red'],
+:root[data-accent='maple-red'] {
+  --accent: #d63b3b;
+  --accent-text: #b02828;
+  --accent-soft: rgba(214, 59, 59, 0.13);
+}
+[data-theme='dark'][data-accent='maple-red'] {
+  --accent: #ef5555;
+  --accent-text: #ff9a9a;
+  --accent-soft: rgba(239, 85, 85, 0.2);
+}
+
+/* ================= 液态玻璃测试皮肤 ================= */
+[data-skin='liquid-glass'] {
+  --glass-blur: 28px;
+  --glass-sat: 1.55;
+  --glass-fill: color-mix(in srgb, var(--bg-surface) 42%, transparent);
+  --glass-fill-strong: color-mix(in srgb, var(--bg-surface) 58%, transparent);
+  --glass-stroke: color-mix(in srgb, #fff 55%, transparent);
+  --glass-stroke-soft: color-mix(in srgb, #fff 28%, transparent);
+  --glass-shine: linear-gradient(
+    135deg,
+    color-mix(in srgb, #fff 55%, transparent) 0%,
+    color-mix(in srgb, #fff 8%, transparent) 38%,
+    transparent 55%,
+    color-mix(in srgb, #fff 18%, transparent) 100%
+  );
+  --shadow-stage:
+    0 1px 0 color-mix(in srgb, #fff 40%, transparent) inset,
+    0 -1px 0 color-mix(in srgb, #000 6%, transparent) inset,
+    0 8px 40px color-mix(in srgb, #000 14%, transparent),
+    0 2px 8px color-mix(in srgb, #000 6%, transparent);
+  --shadow-pop:
+    0 1px 0 color-mix(in srgb, #fff 45%, transparent) inset,
+    0 12px 40px color-mix(in srgb, #000 18%, transparent);
+  --border: color-mix(in srgb, #fff 32%, transparent);
+  --border-strong: color-mix(in srgb, #fff 48%, transparent);
+  --bg-bubble: color-mix(in srgb, var(--bg-surface) 38%, transparent);
+  --bg-code: color-mix(in srgb, var(--bg-surface) 48%, transparent);
+  --bg-hover: color-mix(in srgb, #fff 14%, transparent);
+  --bg-active: color-mix(in srgb, #fff 22%, transparent);
+}
+
+[data-theme='light'][data-skin='liquid-glass'] {
+  --bg-app: #c8d6f0;
+  --bg-surface: rgba(255, 255, 255, 0.55);
+  --text-0: #1a1c28;
+  --text-1: #4a5068;
+  --text-2: #7a829a;
+}
+
+[data-theme='dark'][data-skin='liquid-glass'] {
+  --bg-app: #0e1424;
+  --bg-surface: rgba(36, 42, 62, 0.45);
+  --glass-fill: color-mix(in srgb, #1c2238 48%, transparent);
+  --glass-fill-strong: color-mix(in srgb, #242b44 62%, transparent);
+  --glass-stroke: color-mix(in srgb, #fff 22%, transparent);
+  --glass-stroke-soft: color-mix(in srgb, #fff 12%, transparent);
+  --text-0: #f0f2fa;
+  --text-1: #a8b0c8;
+  --text-2: #6e7690;
+  --border: color-mix(in srgb, #fff 14%, transparent);
+  --border-strong: color-mix(in srgb, #fff 24%, transparent);
+  --bg-bubble: color-mix(in srgb, #2a3148 42%, transparent);
+  --bg-code: color-mix(in srgb, #22283c 55%, transparent);
+  --bg-hover: color-mix(in srgb, #fff 8%, transparent);
+  --bg-active: color-mix(in srgb, #fff 12%, transparent);
+  --shadow-stage:
+    0 1px 0 color-mix(in srgb, #fff 14%, transparent) inset,
+    0 10px 48px color-mix(in srgb, #000 45%, transparent);
+}
+
+[data-skin='liquid-glass'] body {
+  background:
+    radial-gradient(120% 80% at 12% 8%, color-mix(in srgb, var(--accent) 38%, transparent), transparent 55%),
+    radial-gradient(90% 70% at 88% 12%, color-mix(in srgb, #5ec8ff 42%, transparent), transparent 50%),
+    radial-gradient(80% 60% at 70% 90%, color-mix(in srgb, #ff8ec8 32%, transparent), transparent 55%),
+    radial-gradient(70% 50% at 8% 78%, color-mix(in srgb, #7ef0c0 28%, transparent), transparent 50%),
+    var(--bg-app);
+  background-attachment: fixed;
+}
+
+[data-skin='liquid-glass'] body::before {
+  content: '';
+  position: fixed;
+  inset: -20%;
+  z-index: 0;
+  pointer-events: none;
+  background:
+    radial-gradient(closest-side at 30% 40%, color-mix(in srgb, var(--accent) 28%, transparent), transparent 70%),
+    radial-gradient(closest-side at 75% 55%, color-mix(in srgb, #64d2ff 22%, transparent), transparent 70%);
+  filter: blur(40px);
+  opacity: 0.85;
+  animation: liquid-glass-drift 18s ease-in-out infinite alternate;
+}
+
+@keyframes liquid-glass-drift {
+  from {
+    transform: translate3d(-2%, -1%, 0) scale(1);
+  }
+  to {
+    transform: translate3d(3%, 2%, 0) scale(1.08);
+  }
+}
+
+[data-skin='liquid-glass'] .app {
+  position: relative;
+  z-index: 1;
+}
+
+[data-skin='liquid-glass'] .stage,
+[data-skin='liquid-glass'] .composer-box,
+[data-skin='liquid-glass'] .sidebar-footer-lift,
+[data-skin='liquid-glass'] .sight-pull,
+[data-skin='liquid-glass'] .context-ring-pop,
+[data-skin='liquid-glass'] .confirm-dialog,
+[data-skin='liquid-glass'] .user-profile,
+[data-skin='liquid-glass'] .contrib,
+[data-skin='liquid-glass'] .accent-card {
+  background: var(--glass-fill) !important;
+  border-color: var(--glass-stroke-soft) !important;
+  -webkit-backdrop-filter: blur(var(--glass-blur)) saturate(var(--glass-sat));
+  backdrop-filter: blur(var(--glass-blur)) saturate(var(--glass-sat));
+  box-shadow: var(--shadow-stage);
+}
+
+[data-skin='liquid-glass'] .stage {
+  border-radius: 18px;
+  isolation: isolate;
+  overflow: hidden;
+}
+
+[data-skin='liquid-glass'] .flip-front,
+[data-skin='liquid-glass'] .flip-back {
+  background: transparent;
+}
+
+[data-skin='liquid-glass'] .topbar,
+[data-skin='liquid-glass'] .chat,
+[data-skin='liquid-glass'] .composer {
+  background: transparent;
+}
+
+[data-skin='liquid-glass'] .stage::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  pointer-events: none;
+  z-index: 8;
+  background: var(--glass-shine);
+  opacity: 0.55;
+  mix-blend-mode: soft-light;
+}
+
+[data-skin='liquid-glass'] .stage::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  pointer-events: none;
+  z-index: 9;
+  box-shadow:
+    inset 0 1px 0 color-mix(in srgb, #fff 55%, transparent),
+    inset 0 0 0 1px color-mix(in srgb, #fff 18%, transparent);
+}
+
+[data-skin='liquid-glass'] .composer-box {
+  border-radius: 16px;
+  background: var(--glass-fill-strong) !important;
+}
+
+[data-skin='liquid-glass'] .composer-box:focus-within {
+  border-color: color-mix(in srgb, var(--accent) 45%, var(--glass-stroke)) !important;
+  box-shadow:
+    0 0 0 3px color-mix(in srgb, var(--accent) 18%, transparent),
+    var(--shadow-stage);
+}
+
+[data-skin='liquid-glass'] .panel {
+  background: transparent;
+}
+
+[data-skin='liquid-glass'] .msg-user .bubble {
+  background: color-mix(in srgb, var(--accent) 18%, var(--glass-fill-strong));
+  border: 1px solid color-mix(in srgb, var(--accent) 28%, transparent);
+  -webkit-backdrop-filter: blur(16px) saturate(1.3);
+  backdrop-filter: blur(16px) saturate(1.3);
+}
+
+[data-skin='liquid-glass'] .sidebar-footer-row:hover {
+  background: var(--bg-hover);
+}
+
+[data-skin='liquid-glass'] .sidebar-footer {
+  background: var(--glass-fill-strong) !important;
+  border: 1px solid var(--glass-stroke-soft);
+  -webkit-backdrop-filter: blur(24px) saturate(1.5);
+  backdrop-filter: blur(24px) saturate(1.5);
+  box-shadow: var(--shadow-pop);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  [data-skin='liquid-glass'] body::before {
+    animation: none;
+  }
+}
+
+* {
+  margin: 0;
+  padding: 0;
+  box-sizing: border-box;
+}
+html,
+body {
+  height: 100%;
+}
+
+body {
+  font-family: -apple-system, 'SF Pro Text', 'PingFang SC', 'Helvetica Neue', sans-serif;
+  background: var(--bg-app);
+  color: var(--text-0);
+  font-size: 14px;
+  line-height: 1.65;
+  overflow: hidden;
+  -webkit-font-smoothing: antialiased;
+  user-select: none;
+  -webkit-user-select: none;
+}
+
+.ic {
+  width: 15px;
+  height: 15px;
+  stroke: currentColor;
+  stroke-width: 1.75;
+  fill: none;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  flex-shrink: 0;
+}
+.ic-sm {
+  width: 13px;
+  height: 13px;
+}
+

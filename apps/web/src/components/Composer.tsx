@@ -1,11 +1,16 @@
-import { useEffect, useRef, useState } from 'react'
-import type { ClipboardEvent, DragEvent, ReactNode, RefObject } from 'react'
+import {
+  forwardRef,
+  useEffect,
+  useImperativeHandle,
+  useRef,
+  useState,
+} from 'react'
+import type { ClipboardEvent, DragEvent, ReactNode } from 'react'
 import {
   Command,
   CornerDownLeft,
   FilePen,
   Layers,
-  // Mic, // 语音输入暂关
   Paperclip,
   ShieldAlert,
   Trash2,
@@ -53,11 +58,22 @@ export interface ContextMeter {
   notes?: { label: string; value: string }[]
 }
 
+/** 父级（App）控制输入框：切会话清空、编辑回填、新建聚焦 */
+export type ComposerHandle = {
+  focus: () => void
+  clear: () => void
+  setDraft: (text: string, opts?: { clearAttachments?: boolean }) => void
+}
+
+export type ComposerSendPayload = {
+  text: string
+  files: PendingAttachment[]
+}
+
 interface ComposerProps {
-  draft: string
+  /** 切换会话时清空草稿与待发附件 */
+  conversationId?: string
   running: boolean
-  textareaRef: RefObject<HTMLTextAreaElement | null>
-  attachments: PendingAttachment[]
   approval?: ReactNode
   /** 工具审批档位：询问 / 写文件自动 / 全自动 */
   approvalMode: ApprovalMode
@@ -77,12 +93,8 @@ interface ComposerProps {
   queuedItems?: { text: string; hasImages: boolean; hasFiles: boolean }[]
   onRemoveQueued?: (index: number) => void
   onClearQueued?: () => void
-  onDraftChange: (v: string) => void
-  onAttachmentsChange: (files: PendingAttachment[]) => void
-  onSend: () => void
+  onSend: (payload: ComposerSendPayload) => void
   onStop: () => void
-  /** 语音输入暂关 */
-  onOpenVoice?: () => void
   onApprovalModeChange: (mode: ApprovalMode) => void
   onCancelEdit?: () => void
 }
@@ -124,32 +136,31 @@ export function filesFromDataTransfer(data: DataTransfer | null): File[] {
   })
 }
 
-export function Composer({
-  draft,
-  running,
-  textareaRef,
-  attachments,
-  approval,
-  approvalMode,
-  sendKey = 'cmdEnter',
-  toolsDegraded = false,
-  toolsDegradedHint,
-  editingMessage,
-  askingUser,
-  context,
-  queuedItems = [],
-  onRemoveQueued,
-  onClearQueued,
-  onDraftChange,
-  onAttachmentsChange,
-  onSend,
-  onStop,
-  // onOpenVoice, // 语音输入暂关
-  onApprovalModeChange,
-  onCancelEdit,
-}: ComposerProps) {
-  const localRef = useRef<HTMLTextAreaElement | null>(null)
-  const ta = textareaRef ?? localRef
+export const Composer = forwardRef<ComposerHandle, ComposerProps>(function Composer(
+  {
+    conversationId,
+    running,
+    approval,
+    approvalMode,
+    sendKey = 'cmdEnter',
+    toolsDegraded = false,
+    toolsDegradedHint,
+    editingMessage,
+    askingUser,
+    context,
+    queuedItems = [],
+    onRemoveQueued,
+    onClearQueued,
+    onSend,
+    onStop,
+    onApprovalModeChange,
+    onCancelEdit,
+  },
+  ref,
+) {
+  const ta = useRef<HTMLTextAreaElement | null>(null)
+  const [draft, setDraft] = useState('')
+  const [attachments, setAttachments] = useState<PendingAttachment[]>([])
   const dragDepth = useRef(0)
   const [dragging, setDragging] = useState(false)
   const [attachHint, setAttachHint] = useState('')
@@ -161,20 +172,51 @@ export function Composer({
   const sendShortcut = enterToSend ? 'Enter' : `${mod}+Enter`
   const newlineShortcut = enterToSend ? `${mod}+Enter` : 'Enter'
 
+  useImperativeHandle(
+    ref,
+    () => ({
+      focus: () => ta.current?.focus(),
+      clear: () => {
+        setDraft('')
+        setAttachments([])
+      },
+      setDraft: (text, opts) => {
+        setDraft(text)
+        if (opts?.clearAttachments) setAttachments([])
+      },
+    }),
+    [],
+  )
+
+  // 切会话：清空未发送内容（编辑态由 App 另行取消）
+  useEffect(() => {
+    setDraft('')
+    setAttachments([])
+  }, [conversationId])
+
   const insertNewline = () => {
     const el = ta.current
     if (!el) {
-      onDraftChange(draft + '\n')
+      setDraft((d) => d + '\n')
       return
     }
     const start = el.selectionStart ?? draft.length
     const end = el.selectionEnd ?? draft.length
     const next = draft.slice(0, start) + '\n' + draft.slice(end)
-    onDraftChange(next)
+    setDraft(next)
     requestAnimationFrame(() => {
       const pos = start + 1
       el.selectionStart = el.selectionEnd = pos
     })
+  }
+
+  const submit = () => {
+    const text = draft
+    const files = attachments
+    if (!text.trim() && files.length === 0) return
+    setDraft('')
+    setAttachments([])
+    onSend({ text, files })
   }
 
   useEffect(() => {
@@ -197,7 +239,7 @@ export function Composer({
     if (!el) return
     el.style.height = 'auto'
     el.style.height = Math.min(el.scrollHeight, 180) + 'px'
-  }, [draft, ta])
+  }, [draft])
 
   useEffect(() => {
     if (!attachHint) return
@@ -211,29 +253,31 @@ export function Composer({
 
   const addFiles = (files: File[]) => {
     if (!files.length) return
-    const next = [...attachments]
-    let skippedType = 0
-    let skippedSize = 0
-    for (const file of files) {
-      const reason = acceptAttachReason(file)
-      if (reason === 'size') {
-        skippedSize++
-        continue
+    setAttachments((prev) => {
+      const next = [...prev]
+      let skippedType = 0
+      let skippedSize = 0
+      for (const file of files) {
+        const reason = acceptAttachReason(file)
+        if (reason === 'size') {
+          skippedSize++
+          continue
+        }
+        if (reason === 'type') {
+          skippedType++
+          continue
+        }
+        next.push({
+          id: `att_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 8)}`,
+          name: file.name,
+          size: file.size,
+          file,
+        })
       }
-      if (reason === 'type') {
-        skippedType++
-        continue
-      }
-      next.push({
-        id: `att_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 8)}`,
-        name: file.name,
-        size: file.size,
-        file,
-      })
-    }
-    if (next.length !== attachments.length) onAttachmentsChange(next)
-    if (skippedSize) setAttachHint(`有文件超过 ${MAX_ATTACH_BYTES / 1024 / 1024}MB，已跳过`)
-    else if (skippedType) setAttachHint('有文件类型不支持，已跳过')
+      if (skippedSize) setAttachHint(`有文件超过 ${MAX_ATTACH_BYTES / 1024 / 1024}MB，已跳过`)
+      else if (skippedType) setAttachHint('有文件类型不支持，已跳过')
+      return next.length !== prev.length ? next : prev
+    })
   }
 
   const handlePaste = (e: ClipboardEvent) => {
@@ -304,7 +348,7 @@ export function Composer({
                 <AttachCard
                   key={a.id}
                   item={a}
-                  onRemove={() => onAttachmentsChange(attachments.filter((x) => x.id !== a.id))}
+                  onRemove={() => setAttachments((list) => list.filter((x) => x.id !== a.id))}
                 />
               ))}
             </div>
@@ -399,7 +443,7 @@ export function Composer({
                   className={`slash-item${i === slashHi ? ' on' : ''}`}
                   onMouseDown={(e) => {
                     e.preventDefault()
-                    onDraftChange(`/${c.name}`)
+                    setDraft(`/${c.name}`)
                     setSlashHi(i)
                   }}
                 >
@@ -422,7 +466,7 @@ export function Composer({
                     : `继续指示，${sendShortcut} 发送；${newlineShortcut} 换行；输入 / 可用命令…`
             }
             value={draft}
-            onChange={(e) => onDraftChange(e.target.value)}
+            onChange={(e) => setDraft(e.target.value)}
             onPaste={handlePaste}
             onKeyDown={(e) => {
               // 输入法组词期间的 Enter 是确认候选，不触发发送
@@ -447,12 +491,12 @@ export function Composer({
                 if (e.key === 'Tab' || e.key === 'Enter') {
                   e.preventDefault()
                   const pick = slashHits[slashHi] ?? slashHits[0]
-                  if (pick) onDraftChange(`/${pick.name}`)
+                  if (pick) setDraft(`/${pick.name}`)
                   return
                 }
                 if (e.key === 'Escape') {
                   e.preventDefault()
-                  onDraftChange('')
+                  setDraft('')
                   return
                 }
               }
@@ -465,7 +509,7 @@ export function Composer({
                 (e.currentTarget.selectionEnd ?? 0) === 0
               ) {
                 e.preventDefault()
-                onAttachmentsChange(attachments.slice(0, -1))
+                setAttachments((list) => list.slice(0, -1))
                 return
               }
               if (e.key !== 'Enter') return
@@ -476,25 +520,20 @@ export function Composer({
                   insertNewline()
                 } else if (!e.shiftKey) {
                   e.preventDefault()
-                  onSend()
+                  submit()
                 }
                 return
               }
               // cmdEnter：⌘/Ctrl+Enter 发送，Enter 换行
               if (modPressed) {
                 e.preventDefault()
-                onSend()
+                submit()
               }
             }}
           />
 
           <div className="composer-bar">
             <ApprovalModeSwitch value={approvalMode} onChange={onApprovalModeChange} />
-            {/* 语音输入暂关
-            <button className="chip mic-chip" title="语音输入" onClick={onOpenVoice}>
-              <Mic className="ic ic-sm" />
-            </button>
-            */}
             <ContextRing meter={context ?? null} />
             {running ? (
               <button
@@ -507,7 +546,7 @@ export function Composer({
                 <span className="ring" />
               </button>
             ) : (
-              <button className="send" title={`发送 (${sendShortcut})`} onClick={onSend}>
+              <button className="send" title={`发送 (${sendShortcut})`} onClick={submit}>
                 {enterToSend ? (
                   <CornerDownLeft className="ic send-ic" />
                 ) : mod === '⌘' ? (
@@ -530,7 +569,7 @@ export function Composer({
       </div>
     </div>
   )
-}
+})
 
 const RING_R = 8
 const RING_C = 2 * Math.PI * RING_R

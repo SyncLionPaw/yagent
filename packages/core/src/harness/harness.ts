@@ -34,6 +34,27 @@ export interface HarnessOptions {
   hooks?: HarnessHooks | HarnessHooks[] // 观测型生命周期钩子
 }
 
+interface MessageExtras {
+  images?: UserImageAttach[]
+  files?: UserFileAttach[]
+}
+
+/** 一次 sendMessage 的完整配置快照；运行期间不再受全局 configure / 切会话影响 */
+interface RunConfig {
+  provider: ModelProvider
+  model: string
+  system?: string
+  tools?: ToolDef[]
+  executor?: ToolExecutor
+  contextLimit: number
+}
+
+interface PendingMessage {
+  text: string
+  extras?: MessageExtras
+  config: RunConfig
+}
+
 export class Harness {
   private provider: ModelProvider
   private model: string
@@ -46,8 +67,8 @@ export class Harness {
   private readonly convs = new Map<string, Conversation>()
   private readonly listeners = new Set<(e: HarnessEvent) => void>()
   private readonly controllers = new Map<string, AbortController>()
-  /** 运行中到达的用户消息：排队，当前轮结束后合并为一条接跑 */
-  private readonly pendingQueues = new Map<string, { text: string; extras?: { images?: UserImageAttach[]; files?: UserFileAttach[] } }[]>()
+  /** 运行中到达的用户消息：连同当时的配置一起排队，当前轮结束后合并接跑 */
+  private readonly pendingQueues = new Map<string, PendingMessage[]>()
   private readonly hooks = new HookRunner()
 
   constructor(opts: HarnessOptions) {
@@ -201,19 +222,36 @@ export class Harness {
 
   /* ---------- 核心入口 ---------- */
 
-  async sendMessage(
+  async sendMessage(convId: string, text: string, extras?: MessageExtras): Promise<void> {
+    // 必须在入队或启动前取快照；之后切换会话 / 模型只影响新的 sendMessage
+    await this.sendMessageWithConfig(convId, text, extras, this.snapshotConfig())
+  }
+
+  private snapshotConfig(): RunConfig {
+    return {
+      provider: this.provider,
+      model: this.model,
+      system: this.system,
+      tools: this.tools,
+      executor: this.executor,
+      contextLimit: this.context.getLimit(),
+    }
+  }
+
+  private async sendMessageWithConfig(
     convId: string,
     text: string,
-    extras?: { images?: UserImageAttach[]; files?: UserFileAttach[] },
+    extras: MessageExtras | undefined,
+    config: RunConfig,
   ): Promise<void> {
     const conv = this.mustGet(convId)
     if (!text.trim() && !(extras?.images?.length) && !(extras?.files?.length)) {
       throw new Error('message is empty')
     }
-    // 运行中：消息入队，当前轮结束后合并接跑（不阻塞用户输入）
+    // 运行中：消息及其当时的配置一起入队，当前轮结束后合并接跑
     if (this.controllers.has(convId)) {
       const q = this.pendingQueues.get(convId) ?? []
-      q.push({ text, extras })
+      q.push({ text, extras, config })
       this.pendingQueues.set(convId, q)
       this.emit({ type: 'conv_updated', convId })
       return
@@ -251,13 +289,8 @@ export class Harness {
         conv,
         roundNode,
         {
-          resolveConfig: () => ({
-            provider: this.provider,
-            model: this.model,
-            system: this.system,
-            tools: this.tools,
-          }),
-          executor: this.executor,
+          resolveConfig: () => config,
+          executor: config.executor,
           maxTurns: this.maxTurns,
           hooks: this.hooks,
           context: this.context,
@@ -280,11 +313,17 @@ export class Harness {
           .join('\n\n')
         const mergedImages = queued.flatMap((m) => m.extras?.images ?? [])
         const mergedFiles = queued.flatMap((m) => m.extras?.files ?? [])
-        // 异步接跑，避免在 finally 里嵌套 await
-        void this.sendMessage(convId, mergedText, {
-          ...(mergedImages.length ? { images: mergedImages } : {}),
-          ...(mergedFiles.length ? { files: mergedFiles } : {}),
-        }).catch(() => undefined)
+        // 使用最后一条排队消息的配置，不能使用 drain 时的全局配置
+        const config = queued[queued.length - 1]!.config
+        void this.sendMessageWithConfig(
+          convId,
+          mergedText,
+          {
+            ...(mergedImages.length ? { images: mergedImages } : {}),
+            ...(mergedFiles.length ? { files: mergedFiles } : {}),
+          },
+          config,
+        ).catch(() => undefined)
       }
     }
   }

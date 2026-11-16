@@ -1,0 +1,24 @@
+# yagent
+
+> AI agent platform for web and desktop. yagent works with real tools, makes execution visible, and preserves useful takeaways as Insights.
+
+## Start here
+
+- [Agent instructions](https://synclionpaw.github.io/yagent/agents.txt): setup, capabilities, verification commands, and safety boundaries.
+- [Documentation](https://synclionpaw.github.io/yagent/docs.html): product setup and usage.
+- [Source repository](https://github.com/synclionpaw/yagent): implementation, README, and design specification.
+
+## Site
+
+- [Home](https://synclionpaw.github.io/yagent/): product overview and real interface screenshots.
+- [Pricing](https://synclionpaw.github.io/yagent/pricing.html): current plan presentation.
+
+## Product facts
+
+- Web and desktop interfaces
+- Local and SSH working directories
+- Multiple user-configured model providers
+- Terminal and file tools, visible artifacts, project browsing, and structured questions
+- Optional task-derived Insights
+
+The website is a static product site, not a hosted agent runtime. Local setup requires Node.js 20+ and pnpm 10.0.0.

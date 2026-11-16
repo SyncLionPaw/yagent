@@ -1,7 +1,7 @@
 /* ============ agent loop：流式消费 + 工具调用循环 ============
  * 一轮问答 = 一个 round 节点：loop 期间所有产出（思考/文本/工具调用/工具结果）
  * 都追加进同一个节点，不再每轮/每个工具结果新建节点。
- * resolveConfig() 每轮循环开头调用一次：configure() 换模型下一轮生效。
+ * resolveConfig() 返回 sendMessage 时固化的快照，运行中改配置不影响本轮。
  */
 
 import type { Conversation, ConversationNode } from '../model.js'
@@ -16,7 +16,13 @@ import { artifactKindOf, executeToolCall, summarizeInput } from './tools.js'
 import type { ToolCallInfo, ToolExecutor } from './tools.js'
 
 export interface LoopContext {
-  resolveConfig(): { provider: ModelProvider; model: string; system?: string; tools?: ToolDef[] }
+  resolveConfig(): {
+    provider: ModelProvider
+    model: string
+    system?: string
+    tools?: ToolDef[]
+    contextLimit: number
+  }
   executor?: ToolExecutor
   maxTurns: number
   hooks: HookRunner
@@ -41,9 +47,14 @@ export async function runAgentLoop(
   for (let turn = 0; turn < ctx.maxTurns; turn++) {
     if (signal.aborted) return 'aborted'
 
-    // 每轮循环开头重读配置：configure() 换模型下一轮生效
-    const { provider, model, system, tools } = ctx.resolveConfig()
-    const prepared = ctx.context.prepare(conv.id, buildMessages(conv), { system, tools })
+    // 每轮都使用同一份运行快照，避免其他会话修改全局配置后串用 workdir / executor
+    const { provider, model, system, tools, contextLimit } = ctx.resolveConfig()
+    const prepared = ctx.context.prepare(
+      conv.id,
+      buildMessages(conv),
+      { system, tools },
+      { limit: contextLimit },
+    )
     emit({ type: 'context_updated', convId: conv.id, snapshot: prepared.snapshot })
     await hooks.run('onTurnStart', conv, roundNode)
     const thinkingStarts = new Map<number, number>()
@@ -95,7 +106,7 @@ export async function runAgentLoop(
           }
           case 'done': {
             if (ev.usage) {
-              const snap = ctx.context.recordUsage(conv.id, ev.usage)
+              const snap = ctx.context.recordUsage(conv.id, ev.usage, contextLimit)
               emit({ type: 'context_updated', convId: conv.id, snapshot: snap })
             }
             break

@@ -1,9 +1,9 @@
-import { useCallback, useEffect, useRef, useState } from 'react'
+import { memo, useCallback, useEffect, useRef, useState } from 'react'
 import { BookMarked, Check, ChevronDown, ChevronsDownUp, ChevronsUpDown, ChevronUp, Cpu, FolderOpen, FolderPlus, HardDrive, Lightbulb, MessageCircle, Moon, Palette, Plug, Plus, RefreshCw, Server, Settings as SettingsIcon, Sparkles, Sun, User, Wrench, X } from 'lucide-react'
 import { isSshWorkdir, projectDisplayName } from '@yagent/core'
 import type { Conversation } from '@yagent/core'
 import { formatSidebarTime } from '../lib/utils'
-import type { SettingsPaneId } from './SettingsPanel'
+import type { SettingsPaneId } from '../settingsMeta'
 import { UserAvatar } from './UserAvatar'
 
 interface SidebarProps {
@@ -68,7 +68,28 @@ function emptyConvFallback(id: string): number {
   return ts
 }
 
-export function Sidebar({
+function sidebarListEqual(a: Conversation[], b: Conversation[]): boolean {
+  if (a === b) return true
+  if (a.length !== b.length) return false
+  for (let i = 0; i < a.length; i++) {
+    const x = a[i]!
+    const y = b[i]!
+    if (
+      x.id !== y.id ||
+      x.title !== y.title ||
+      x.status !== y.status ||
+      !!x.archived !== !!y.archived ||
+      x.workdir !== y.workdir ||
+      x.activeNodeId !== y.activeNodeId
+    ) {
+      return false
+    }
+  }
+  return true
+}
+
+/** 流式吐字时跳过重渲：只关心侧栏可见的会话元数据 */
+export const Sidebar = memo(function Sidebar({
   conversations,
   knownProjects,
   activeId,
@@ -739,4 +760,25 @@ export function Sidebar({
       </div>
     </aside>
   )
-}
+}, (prev, next) => {
+  return (
+    prev.activeId === next.activeId &&
+    prev.theme === next.theme &&
+    prev.settingsOpen === next.settingsOpen &&
+    prev.settingsPane === next.settingsPane &&
+    prev.nickname === next.nickname &&
+    prev.avatarLetter === next.avatarLetter &&
+    prev.knownProjects === next.knownProjects &&
+    prev.onSelect === next.onSelect &&
+    prev.onNewChat === next.onNewChat &&
+    prev.onNewTaskWithWorkdir === next.onNewTaskWithWorkdir &&
+    prev.onNewSshTask === next.onNewSshTask &&
+    prev.onNewTaskInProject === next.onNewTaskInProject &&
+    prev.onForgetProject === next.onForgetProject &&
+    prev.onToggleTheme === next.onToggleTheme &&
+    prev.onOpenSettings === next.onOpenSettings &&
+    prev.onOpenUserSettings === next.onOpenUserSettings &&
+    prev.onSelectSettingsPane === next.onSelectSettingsPane &&
+    sidebarListEqual(prev.conversations, next.conversations)
+  )
+})
