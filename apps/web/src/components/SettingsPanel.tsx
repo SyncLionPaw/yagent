@@ -1741,6 +1741,117 @@ function KnowledgePane({
   )
 }
 
+function patchProvider(
+  settings: Settings,
+  patch: Partial<NonNullable<Settings['sandbox']['provider']>>,
+): Settings {
+  return {
+    ...settings,
+    sandbox: {
+      ...settings.sandbox,
+      env: 'sandbox',
+      provider: { ...settings.sandbox.provider, ...patch },
+    },
+  }
+}
+
+/** 纯 chat 的外部沙箱。设置里填了地址和模板才启用；旧的 cube.json 只用来回填一次。 */
+function SandboxProviderFields({
+  settings,
+  onChange,
+}: {
+  settings: Settings
+  onChange: (s: Settings) => void
+}) {
+  const provider = settings.sandbox.provider ?? {}
+  const useCube = settings.sandbox.env !== 'local'
+
+  return (
+    <>
+      <div className="field">
+        <div className="field-label">纯 chat 执行环境</div>
+        <div className="segmented">
+          <button
+            className={!useCube ? 'on' : ''}
+            onClick={() => onChange({ ...settings, sandbox: { ...settings.sandbox, env: 'local' } })}
+          >
+            本机
+          </button>
+          <button
+            className={useCube ? 'on' : ''}
+            onClick={() =>
+              onChange({ ...settings, sandbox: { ...settings.sandbox, env: 'sandbox' } })
+            }
+          >
+            CubeSandbox
+          </button>
+        </div>
+        <div className="field-label" style={{ marginTop: 8 }}>
+          <span className="hint">
+            {useCube
+              ? '只作用于没有绑定工作目录的对话。E2B 兼容的 CubeSandbox，改完下一条消息生效。'
+              : '纯 chat 用本机进程目录。绑定了工作目录的会话始终在那个目录里执行。'}
+          </span>
+        </div>
+      </div>
+      {useCube ? (
+        <>
+          <div className="field">
+            <div className="field-label">API 地址</div>
+            <input
+              type="text"
+              placeholder="http://主机:3000"
+              value={provider.apiUrl ?? ''}
+              onChange={(e) => onChange(patchProvider(settings, { apiUrl: e.target.value }))}
+            />
+          </div>
+          <div className="field">
+            <div className="field-label">模板 ID</div>
+            <input
+              type="text"
+              placeholder="tpl-…"
+              value={provider.templateId ?? ''}
+              onChange={(e) => onChange(patchProvider(settings, { templateId: e.target.value }))}
+            />
+          </div>
+          <div className="field">
+            <div className="field-label">
+              API Key <span className="hint">未开鉴权可留空</span>
+            </div>
+            <input
+              type="password"
+              value={provider.apiKey ?? ''}
+              onChange={(e) => onChange(patchProvider(settings, { apiKey: e.target.value }))}
+            />
+          </div>
+          <div className="field">
+            <div className="field-label">
+              节点 IP <span className="hint">数据面，空则用 API 地址里的主机名</span>
+            </div>
+            <input
+              type="text"
+              placeholder="可选"
+              value={provider.proxyNodeIp ?? ''}
+              onChange={(e) => onChange(patchProvider(settings, { proxyNodeIp: e.target.value }))}
+            />
+          </div>
+          <div className="field">
+            <div className="field-label">
+              顶栏名称 <span className="hint">空则显示主机名</span>
+            </div>
+            <input
+              type="text"
+              placeholder="可选"
+              value={provider.label ?? ''}
+              onChange={(e) => onChange(patchProvider(settings, { label: e.target.value }))}
+            />
+          </div>
+        </>
+      ) : null}
+    </>
+  )
+}
+
 /* ---------- 5. 工具 ---------- */
 
 function ToolsPane({
@@ -1830,34 +1941,7 @@ function ToolsPane({
       */}
 
       <div className="sub-label">沙箱</div>
-      <div className="field">
-        <div className="field-label">执行环境</div>
-        <div className="segmented">
-          <button
-            className={settings.sandbox.env === 'local' ? 'on' : ''}
-            onClick={() =>
-              onChange({ ...settings, sandbox: { ...settings.sandbox, env: 'local' } })
-            }
-          >
-            进程隔离
-          </button>
-          <button
-            className={settings.sandbox.env === 'sandbox' ? 'on' : ''}
-            disabled
-            title="Docker / 远程沙箱尚未接线"
-            onClick={() =>
-              onChange({ ...settings, sandbox: { ...settings.sandbox, env: 'sandbox' } })
-            }
-          >
-            Docker（预留）
-          </button>
-        </div>
-        <div className="field-label" style={{ marginTop: 8 }}>
-          <span className="hint">
-            纯 chat 当前使用本机进程隔离沙箱（每会话独立目录 + 子进程 cwd）。Docker / 远程虚拟机接口已预留，尚未实现。
-          </span>
-        </div>
-      </div>
+      <SandboxProviderFields settings={settings} onChange={onChange} />
       <div className="field">
         <div className="field-label">工作目录</div>
         <input

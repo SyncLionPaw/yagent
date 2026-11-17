@@ -53,6 +53,9 @@ importers:
 
   apps/desktop:
     dependencies:
+      '@cubesandbox/sdk':
+        specifier: ^0.8.0
+        version: 0.8.0
       '@yagent/core':
         specifier: workspace:*
         version: link:../../packages/core
@@ -298,6 +301,10 @@ packages:
 
   '@csstools/css-tokenizer@3.0.4':
     resolution: {integrity: sha512-Vd/9EVDiu6PPJt9yAh6roZP6El1xHrdvIVGjyBsHR0RYwNHgL7FJPyIIW4fANJNG6FtyZfvlRPpFI4ZM/lubvw==}
+    engines: {node: '>=18'}
+
+  '@cubesandbox/sdk@0.8.0':
+    resolution: {integrity: sha512-pl+zYmoqBvRjT4H2dDRx9OlOn72VQ3Od4MXTWdvrw6swUXfyocw84Sz0G4SQ/IgdMJDD02ue3XmEi+XlWIyXqg==}
     engines: {node: '>=18'}
 
   '@electron-internal/extract-zip@1.0.5':
@@ -4001,6 +4008,10 @@ snapshots:
       '@csstools/css-tokenizer': 3.0.4
 
   '@csstools/css-tokenizer@3.0.4': {}
+
+  '@cubesandbox/sdk@0.8.0':
+    dependencies:
+      undici: 6.29.0
 
   '@electron-internal/extract-zip@1.0.5': {}
 

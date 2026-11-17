@@ -1,7 +1,7 @@
 import { useCallback, type Dispatch, type SetStateAction } from 'react'
 import type { Settings } from '@yagent/core'
 import { parseSshWorkdir } from '@yagent/core'
-import { harness, syncSkillsIntoHarness, updateToolsFor } from '../harness'
+import { harness, syncChatSandbox, syncSkillsIntoHarness, updateToolsFor } from '../harness'
 import { matchSlashCommand, unknownSlashMessage } from '../slashCommands'
 import { prepareSendAttachments } from '../lib/sendAttachments'
 import type { ComposerSendPayload } from '../components/Composer'
@@ -85,8 +85,9 @@ export function useSendMessage(opts: {
       }
 
       harness.setActiveNode(conv.id, node.parentId ?? '')
-      updateToolsFor(conv.id, tools, { remoteOffline: isRemoteOffline(conv.workdir, sshStatus) })
       void (async () => {
+        await syncChatSandbox(conv.id)
+        updateToolsFor(conv.id, tools, { remoteOffline: isRemoteOffline(conv.workdir, sshStatus) })
         await syncSkillsIntoHarness()
         await harness.sendMessage(conv.id, message, {
           ...(images.length ? { images } : {}),
@@ -136,8 +137,9 @@ export function useSendMessage(opts: {
         harness.rename(conv.id, titleFrom(titleSeed))
       }
       const files = pendingFiles
-      updateToolsFor(conv.id, tools, { remoteOffline: isRemoteOffline(conv.workdir, sshStatus) })
       void (async () => {
+        await syncChatSandbox(conv.id)
+        updateToolsFor(conv.id, tools, { remoteOffline: isRemoteOffline(conv.workdir, sshStatus) })
         await syncSkillsIntoHarness()
         const { saved, modelNotes, images, fileCards } = await prepareSendAttachments(
           conv.id,

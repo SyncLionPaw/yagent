@@ -1,0 +1,8 @@
+{
+  "apiUrl": "http://192.168.16.227:3000",
+  "templateId": "tpl-bef1932ff3f744f5b81c3509",
+  "proxyNodeIp": "192.168.16.227",
+  "proxyPort": 80,
+  "proxyScheme": "http",
+  "workdir": "/root"
+}

@@ -18,6 +18,16 @@ const {
   sshJoin,
   sshCanonicalBoundaryPrelude,
 } = require('./path-boundary')
+const {
+  cubeDiscard,
+  cubePreview,
+  cubeReadBytes,
+  cubeRootFor,
+  cubeRunTool,
+  loadCubeConfig,
+  parseCubeRoot,
+  readCubeFile,
+} = require('./sandbox-providers/cube')
 
 /**
  * Electron 在 IPC handler reject 时会 console.error → 写 stderr。
@@ -701,6 +711,19 @@ async function executeTool(_event: any, request: { name: string; input: Record<s
   }
 
   const root = request.workdir.trim()
+  // 外部供应商（providers/cube.json）。绑定的本地 / ssh 工作目录不会走到这里。
+  const cubeConv = parseCubeRoot(root)
+  if (cubeConv && request.name !== 'load_skill') {
+    if (request.name === 'read_file') {
+      const file = requiredString(request.input, 'path')
+      if (path.isAbsolute(file)) {
+        const offset = optionalPositiveInt(request.input, 'offset', 1)
+        const limit = optionalPositiveInt(request.input, 'limit', READ_DEFAULT_LIMIT)
+        return readFilePaged(await resolveReadable('', file), offset, limit)
+      }
+    }
+    return cubeRunTool(dataDir(), cubeConv, request.name, request.input ?? {})
+  }
   // 远程（SSH）工作目录：读写/命令通过 ssh 在远程主机执行
   const ssh = parseSshRoot(root)
   if (ssh) {
@@ -1074,6 +1097,8 @@ void app.whenReady().then(async () => {
   })
   // 返回结构化预览；不可预览（过大 / 二进制）用 unavailable，避免 IPC throw 把 UI 打成异常态
   ipcMain.handle('fs:read', async (_e: any, workdir: string, rel: string) => {
+    const cubeConv = parseCubeRoot(String(workdir ?? '').trim())
+    if (cubeConv) return cubePreview(dataDir(), cubeConv, String(rel ?? ''))
     const sshRoot = parseSshRoot(String(workdir ?? '').trim())
     if (sshRoot) {
       const remote = sshJoin(sshRoot.path, rel)
@@ -1627,6 +1652,7 @@ void app.whenReady().then(async () => {
       await rm(dir, { recursive: true, force: true }).catch(() => undefined)
       // 纯 chat 进程沙箱一并清掉
       await rm(localProcessSandboxDir(convId), { recursive: true, force: true }).catch(() => undefined)
+      await cubeDiscard(dataDir(), convId).catch(() => undefined)
       for (const p of Array.isArray(extraPaths) ? extraPaths : []) {
         if (typeof p !== 'string' || !path.isAbsolute(p)) continue
         try {
@@ -1639,17 +1665,38 @@ void app.whenReady().then(async () => {
     },
   )
 
-  /** 纯 chat：确保本机进程隔离沙箱目录存在（mock；后续可换 docker/remote） */
+  /** 设置页回填旧的 providers/cube.json；设置里已有端点时不再用它。 */
+  ipcMain.handle('sandbox:providerFile', async () => {
+    const cfg = await readCubeFile(dataDir())
+    if (!cfg) return null
+    return {
+      apiUrl: cfg.apiUrl,
+      apiKey: cfg.apiKey ?? '',
+      templateId: cfg.templateId,
+      proxyNodeIp: cfg.proxyNodeIp ?? '',
+    }
+  })
+
+  /** 纯 chat：设置里的端点优先，否则 providers/cube.json；选了本机则不用外部沙箱 */
   ipcMain.handle('sandbox:ensure', async (_e: any, convId: string) => {
-    return ensureLocalProcessSandbox(convId)
+    const cube = await loadCubeConfig(dataDir())
+    if (cube) {
+      return { backend: 'remote' as const, root: cubeRootFor(convId), label: cube.place }
+    }
+    const local = await ensureLocalProcessSandbox(convId)
+    return { ...local, label: '本机' }
   })
   ipcMain.handle('sandbox:info', async (_e: any, convId: string) => {
     const id = String(convId ?? '').trim()
     if (!id || id.includes('..') || id.includes('/') || id.includes('\\')) {
-      return { backend: 'local-process' as const, root: '', ready: false }
+      return { backend: 'local-process' as const, root: '', ready: false, label: '' }
+    }
+    const cube = await loadCubeConfig(dataDir())
+    if (cube) {
+      return { backend: 'remote' as const, root: cubeRootFor(id), ready: true, label: cube.place }
     }
     const root = localProcessSandboxDir(id)
-    return { backend: 'local-process' as const, root, ready: existsSync(root) }
+    return { backend: 'local-process' as const, root, ready: existsSync(root), label: '本机' }
   })
 
   /**
@@ -1669,6 +1716,22 @@ void app.whenReady().then(async () => {
             : ''
         const wd = typeof opts?.workdir === 'string' ? opts.workdir.trim() : ''
         const rel = typeof opts?.rel === 'string' ? opts.rel.trim() : ''
+        const cubeConv = !abs ? parseCubeRoot(wd) : null
+        if (cubeConv) {
+          const bytes = await cubeReadBytes(dataDir(), cubeConv, rel)
+          const suggested =
+            (typeof opts?.defaultName === 'string' && opts.defaultName.trim()) ||
+            path.posix.basename(rel) ||
+            'file'
+          const focused = BrowserWindow.getFocusedWindow()
+          const picked = await dialog.showSaveDialog(focused as any, {
+            title: '保存文件',
+            defaultPath: suggested,
+          })
+          if (picked.canceled || !picked.filePath) return { ok: false, canceled: true }
+          await writeFile(picked.filePath, bytes)
+          return { ok: true, path: picked.filePath }
+        }
         const src = abs
           ? await resolveReadable('', abs)
           : await resolveReadable(wd, rel)

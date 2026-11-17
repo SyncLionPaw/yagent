@@ -46,12 +46,22 @@ contextBridge.exposeInMainWorld('yagentDesktop', {
       ipcRenderer.invoke('sandbox:ensure', convId) as Promise<{
         backend: 'local-process' | 'docker' | 'remote'
         root: string
+        label?: string
       }>,
+    providerFile: () =>
+      ipcRenderer.invoke('sandbox:providerFile') as Promise<{
+        apiUrl: string
+        apiKey: string
+        templateId: string
+        proxyNodeIp: string
+      } | null>,
     info: (convId: string) =>
       ipcRenderer.invoke('sandbox:info', convId) as Promise<{
         backend: 'local-process' | 'docker' | 'remote'
         root: string
         ready: boolean
+        /** 沙箱位置，例如「本机」或供应商地址 */
+        label?: string
       }>,
   },
   dialog: {

@@ -1,6 +1,7 @@
-import { useCallback, useState } from 'react'
+import { useCallback, useEffect, useState } from 'react'
 import { ArrowLeft, Code2, Download, Eye } from 'lucide-react'
 import type { SandboxFile } from '@yagent/core'
+import { sandboxPlace } from '../lib/sandboxPlace'
 import { formatSize } from '../lib/utils'
 import { FileIcon } from './FileIcon'
 import {
@@ -36,6 +37,17 @@ export function ChatSandboxFiles({
   const [previewSource, setPreviewSource] = useState<'attach' | 'output' | null>(null)
   const [viewMode, setViewMode] = useState<FileViewMode>('preview')
   const [error, setError] = useState('')
+  const [sandboxLabel, setSandboxLabel] = useState<string | null>(null)
+  useEffect(() => {
+    let cancel = false
+    void window.yagentDesktop?.sandbox?.info(convId).then((box) => {
+      if (cancel) return
+      setSandboxLabel(sandboxPlace(box))
+    })
+    return () => {
+      cancel = true
+    }
+  }, [convId])
   const [busyDl, setBusyDl] = useState<string | null>(null)
 
   const downloadFile = useCallback(
@@ -263,7 +275,9 @@ export function ChatSandboxFiles({
 
       {error ? <div className="files-note">{error}</div> : null}
       <div className="files-note">
-        纯对话使用本机进程隔离沙箱。点击文件可预览；此处不是完整文件系统。
+        {sandboxLabel
+          ? `纯对话使用沙箱 ${sandboxLabel}。点击文件可预览；此处不是完整文件系统。`
+          : '纯对话使用会话沙箱。点击文件可预览；此处不是完整文件系统。'}
       </div>
     </div>
   )

@@ -228,7 +228,17 @@ export interface Settings {
       model?: string
     }
   }
-  sandbox: { env: 'local' | 'sandbox'; workdir: string; network: boolean }
+  sandbox: {
+    env: 'local' | 'sandbox'
+    workdir: string
+    network: boolean
+    /**
+     * 纯 chat 的外部沙箱（E2B 兼容的 CubeSandbox）。
+     * 桌面端读取；未填 apiUrl / templateId 时不启用。
+     * 执行仍在桌面适配器里，不进 Harness。
+     */
+    provider?: SandboxEndpointConfig
+  }
   /** 外观：主题强调色等（亮/暗模式仍由客户端本地切换） */
   appearance?: {
     accent?: AccentId
@@ -279,6 +289,17 @@ export interface KnowledgeSource {
  */
 
 /** 沙箱后端；UI / settings 可切换，执行层按 backend 选 Provider */
+/** 设置里的外部沙箱端点。字段与 Cube / E2B 控制面对齐，不含 SDK。 */
+export interface SandboxEndpointConfig {
+  apiUrl?: string
+  apiKey?: string
+  templateId?: string
+  /** 数据面节点 IP。空则用 apiUrl 的主机名，用来绕过 *.cube.app 解析。 */
+  proxyNodeIp?: string
+  /** 顶栏上的名字。空则用主机名。 */
+  label?: string
+}
+
 export type SandboxBackend = 'local-process' | 'docker' | 'remote'
 
 export interface ExecResult {

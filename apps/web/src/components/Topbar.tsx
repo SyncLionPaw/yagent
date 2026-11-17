@@ -1,4 +1,4 @@
-import { memo } from 'react'
+import { memo, useEffect, useState } from 'react'
 import {
   Archive,
   ArchiveRestore,
@@ -12,6 +12,7 @@ import {
 } from 'lucide-react'
 import type { ContentWidth, Conversation, ModelConfig } from '@yagent/core'
 import { isSshWorkdir, parseSshWorkdir } from '@yagent/core'
+import { sandboxPlace } from '../lib/sandboxPlace'
 import { EditableTitle } from './EditableTitle'
 import { ModelPicker } from './ModelPicker'
 import { ShareButton } from './ShareButton'
@@ -58,6 +59,21 @@ export const Topbar = memo(function Topbar({
   // 分享链接 = 当前分支的只读快照 /s/{convId}-{snapshotId}
   const shareLink = `https://yagent.app/s/${conversation.id}-${conversation.activeNodeId.slice(-4) || 'snap'}`
   const archived = !!conversation.archived
+  const [sandboxLabel, setSandboxLabel] = useState<string | null>(null)
+  useEffect(() => {
+    if (conversation.workdir?.trim()) {
+      setSandboxLabel(null)
+      return
+    }
+    let cancel = false
+    void window.yagentDesktop?.sandbox?.info(conversation.id).then((box) => {
+      if (cancel) return
+      setSandboxLabel(sandboxPlace(box))
+    })
+    return () => {
+      cancel = true
+    }
+  }, [conversation.id, conversation.workdir])
 
   return (
     <div className="topbar">
@@ -82,7 +98,7 @@ export const Topbar = memo(function Topbar({
         ) : (
           <>
             <MessageCircle className="ic ic-sm" />
-            <span>chat</span>
+            <span>{sandboxLabel ? `chat · ${sandboxLabel}` : 'chat'}</span>
           </>
         )}
       </span>
@@ -111,8 +127,8 @@ export const Topbar = memo(function Topbar({
         ) : (
           <span
             className="sandbox-status chat-sandbox"
-            data-tip="进程隔离沙箱 · 本机会话目录（非 Docker）"
-            aria-label="进程隔离沙箱已就绪"
+            data-tip={sandboxLabel ? `沙箱 · ${sandboxLabel}` : '沙箱'}
+            aria-label={sandboxLabel ? `沙箱 · ${sandboxLabel}` : '沙箱'}
           >
             <Box className="ic" />
             <span className="sandbox-status-dot" aria-hidden />

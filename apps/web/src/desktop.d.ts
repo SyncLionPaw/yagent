@@ -40,12 +40,20 @@ declare global {
         ensure(convId: string): Promise<{
           backend: 'local-process' | 'docker' | 'remote'
           root: string
+          label?: string
         }>
         info(convId: string): Promise<{
           backend: 'local-process' | 'docker' | 'remote'
           root: string
           ready: boolean
+          label?: string
         }>
+        providerFile(): Promise<{
+          apiUrl: string
+          apiKey: string
+          templateId: string
+          proxyNodeIp: string
+        } | null>
       }
       tools?: {
         execute(name: string, input: Record<string, unknown>, workdir: string): Promise<string>

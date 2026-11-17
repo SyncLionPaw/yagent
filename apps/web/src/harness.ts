@@ -180,9 +180,70 @@ const BASE_SYSTEM =
   '<ref url="完整https地址" title="短标题">一两句摘要</ref>；也可简写 <ref_link>完整https地址</ref_link>。' +
   '同一 URL 可重复标签；客户端会汇总到右栏「搜索」并显示为角标。'
 
-const CHAT_SANDBOX_SYSTEM =
+const CHAT_PREVIEW_RULE =
+  'HTML、SVG、Markdown、图片用 write_file 写完即可，应用会在右栏预览。' +
+  '不要为了自己看效果去安装软件。沙箱没有图形界面；技能里若要求截图自检，在这里不适用，不要为此执行 apt、pip、npm 去装浏览器、cairo、rsvg、chromium 等。' +
+  '只有用户明确要求安装，或任务脚本缺了这个库确实跑不起来，才安装依赖。'
+
+const CHAT_SANDBOX_LOCAL =
   '当前是纯对话（未绑定用户项目）：read_file / write_file / run_command 落在本机「进程隔离」会话沙箱（仅 cwd 隔离的子进程，不是 Docker）。' +
-  '写入的文件会出现在右栏「Agent 产物」；不要假设能访问用户磁盘其它路径。'
+  '写入的文件会出现在右栏「Agent 产物」；不要假设能访问用户磁盘其它路径。' +
+  CHAT_PREVIEW_RULE
+
+const CHAT_SANDBOX_REMOTE =
+  '当前是纯对话（未绑定用户项目）。read_file、write_file、run_command 是沙箱工具：它们在当前会话的隔离沙箱里执行，那是一台独立环境，不是用户的电脑，也没有项目目录。' +
+  '相对路径相对沙箱内的工作目录；沙箱里的绝对路径也可以。消息里给出的用户附件绝对路径仍用 read_file 原样读取。' +
+  '写入的文件会出现在右栏「Agent 产物」。run_command 大约 10 分钟上限，长任务放到后台，再用短命令轮询。' +
+  CHAT_PREVIEW_RULE
+
+/** 纯 chat 沙箱后端。remote = 外部供应商（providers/cube.json），不写进 core。 */
+let chatSandboxBackend: 'local-process' | 'docker' | 'remote' = 'local-process'
+
+export async function syncChatSandbox(convId: string): Promise<void> {
+  const info = window.yagentDesktop?.sandbox?.info
+  if (!info) {
+    chatSandboxBackend = 'local-process'
+    return
+  }
+  try {
+    const box = await info(convId)
+    chatSandboxBackend = box?.backend ?? 'local-process'
+  } catch {
+    chatSandboxBackend = 'local-process'
+  }
+}
+
+function chatSandboxSystem(): string {
+  return chatSandboxBackend === 'remote' ? CHAT_SANDBOX_REMOTE : CHAT_SANDBOX_LOCAL
+}
+
+function describeChatTools<T extends { name: string; description: string }>(tools: T[]): T[] {
+  if (chatSandboxBackend !== 'remote') return tools
+  return tools.map((tool) => {
+    if (tool.name === 'read_file') {
+      return {
+        ...tool,
+        description:
+          'Read a UTF-8 text file inside the current session sandbox (isolated environment, not the user disk). path is relative to the sandbox working directory, or an absolute path inside the sandbox. Attachment absolute paths given in the message may be passed through unchanged. Optional offset (1-based line, default 1) and limit (max lines, default 2000).',
+      }
+    }
+    if (tool.name === 'write_file') {
+      return {
+        ...tool,
+        description:
+          'Write a UTF-8 file inside the current session sandbox. It shows up as an agent artifact. Requires user approval. This is not the user disk.',
+      }
+    }
+    if (tool.name === 'run_command') {
+      return {
+        ...tool,
+        description:
+          'Run a shell command inside the current session sandbox (isolated environment, not the user machine). Requires user approval. About 10 minutes max; for long jobs start in the background and poll with short commands. Do not apt/pip/npm install browsers, cairo, rsvg, or chromium just to screenshot your own HTML/SVG; the app previews those files. Install a package only when the user asked, or the requested script cannot run without it.',
+      }
+    }
+    return tool
+  })
+}
 
 const INSIGHT_SYSTEM =
   '有对用户真正有用、且其可能还不知道的点时，可用 save_insight 写入右侧「收获」：本轮可以是 0 条、1 条或若干条，没有硬性数量；有就记、没有就不硬写。每条尽量拆细（一次调用只写一个小点），多点就多次调用，正文优先一句话。不要记任务进度或废话。'
@@ -318,14 +379,14 @@ export function updateToolsFor(
   const sig = [
     convId,
     workdir,
-    chatSandbox ? '1' : '0',
+    chatSandbox ? chatSandboxBackend : '0',
     remoteOffline ? '1' : '0',
     canSkills ? '1' : '0',
     insightEnabled ? '1' : '0',
     webSearch ? '1' : '0',
     kwKey,
   ].join('|')
-  const nextChatReminder = chatSandbox ? `\n\n${CHAT_SANDBOX_SYSTEM}` : ''
+  const nextChatReminder = chatSandbox ? `\n\n${chatSandboxSystem()}` : ''
   if (nextChatReminder !== chatSandboxReminder) {
     chatSandboxReminder = nextChatReminder
     pushSystem()
@@ -348,7 +409,8 @@ export function updateToolsFor(
     if (t.name === 'write_file' || t.name === 'run_command') return chatSandbox || !!workdir
     return !!workdir
   }).map((t) => (t.name === 'save_insight' ? saveInsightToolDef(insightKeywords) : t))
-  harness.configure({ tools, executor: createExecutor(workdir) })
+  const described = chatSandbox ? describeChatTools(tools) : tools
+  harness.configure({ tools: described, executor: createExecutor(workdir) })
   // 纯 chat：预热沙箱目录（不阻塞；失败时工具调用再 ensure）
   if (chatSandbox) {
     void window.yagentDesktop?.sandbox?.ensure(convId).catch(() => undefined)

@@ -5,6 +5,7 @@ import {
   harness,
   setInsightEnabled,
   setInsightKeywords,
+  syncChatSandbox,
   syncSkillsIntoHarness,
   updateToolsFor,
 } from '../harness'
@@ -90,7 +91,9 @@ export function useHarnessBridge(opts: {
     setInsightEnabled(inspirationOn)
     setInsightKeywords(inspiration?.keywords)
     if (harness.getConversation(activeConvId)) {
-      updateToolsFor(activeConvId, tools, { remoteOffline: remoteToolsDegraded })
+      void syncChatSandbox(activeConvId).then(() => {
+        updateToolsFor(activeConvId, tools, { remoteOffline: remoteToolsDegraded })
+      })
     }
     void syncSkillsIntoHarness()
   }, [activeConvId, tools, inspiration, inspirationOn, remoteToolsDegraded])
