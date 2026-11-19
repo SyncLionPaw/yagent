@@ -98,7 +98,7 @@ const ACCENT_OPTIONS: { id: AccentId; label: string; desc: string; swatch: strin
 
 const SKIN_OPTIONS: { id: UiSkin; label: string; desc: string }[] = [
   { id: 'default', label: '默认', desc: '实色面板' },
-  { id: 'liquid-glass', label: '液态玻璃', desc: '测试主题 · 磨砂透光' },
+  { id: 'liquid-glass', label: '液态玻璃', desc: '测试主题 · 重磨砂' },
 ]
 
 /** 设置页：渲染在舞台翻面后的背面（非弹窗），左侧菜单在侧栏里 */
@@ -1942,28 +1942,6 @@ function ToolsPane({
 
       <div className="sub-label">沙箱</div>
       <SandboxProviderFields settings={settings} onChange={onChange} />
-      <div className="field">
-        <div className="field-label">工作目录</div>
-        <input
-          type="text"
-          value={settings.sandbox.workdir}
-          onChange={(e) =>
-            onChange({ ...settings, sandbox: { ...settings.sandbox, workdir: e.target.value } })
-          }
-        />
-      </div>
-      <div className="switch-row">
-        <span className="sr-text">沙箱内允许网络访问</span>
-        <button
-          className={`switch${settings.sandbox.network ? ' on' : ''}`}
-          onClick={() =>
-            onChange({
-              ...settings,
-              sandbox: { ...settings.sandbox, network: !settings.sandbox.network },
-            })
-          }
-        ></button>
-      </div>
     </>
   )
 }

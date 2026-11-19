@@ -1,18 +1,19 @@
-import { memo, useEffect, useState } from 'react'
+import { memo } from 'react'
 import {
   Archive,
   ArchiveRestore,
   Box,
   Folder,
+  FolderPlus,
   MessageCircle,
   PanelLeft,
   PanelRight,
   Server,
   Trash2,
 } from 'lucide-react'
-import type { ContentWidth, Conversation, ModelConfig } from '@yagent/core'
+import type { ContentWidth, Conversation, ModelConfig, Settings } from '@yagent/core'
 import { isSshWorkdir, parseSshWorkdir } from '@yagent/core'
-import { sandboxPlace } from '../lib/sandboxPlace'
+import { useSandboxLabel } from '../hooks/useSandboxLabel'
 import { EditableTitle } from './EditableTitle'
 import { ModelPicker } from './ModelPicker'
 import { ShareButton } from './ShareButton'
@@ -35,6 +36,8 @@ interface TopbarProps {
   onBindWorkdir: () => void
   onToggleArchive: () => void
   onDelete: () => void
+  /** 当前沙箱设置。纯 chat 的顶栏名字跟着它变。 */
+  sandbox?: Settings['sandbox']
   /** SSH 远程会话的连通状态；非 SSH 会话为 null */
   sshStatus?: 'checking' | 'ok' | 'fail' | null
 }
@@ -54,26 +57,14 @@ export const Topbar = memo(function Topbar({
   onBindWorkdir,
   onToggleArchive,
   onDelete,
+  sandbox,
   sshStatus = null,
 }: TopbarProps) {
   // 分享链接 = 当前分支的只读快照 /s/{convId}-{snapshotId}
   const shareLink = `https://yagent.app/s/${conversation.id}-${conversation.activeNodeId.slice(-4) || 'snap'}`
   const archived = !!conversation.archived
-  const [sandboxLabel, setSandboxLabel] = useState<string | null>(null)
-  useEffect(() => {
-    if (conversation.workdir?.trim()) {
-      setSandboxLabel(null)
-      return
-    }
-    let cancel = false
-    void window.yagentDesktop?.sandbox?.info(conversation.id).then((box) => {
-      if (cancel) return
-      setSandboxLabel(sandboxPlace(box))
-    })
-    return () => {
-      cancel = true
-    }
-  }, [conversation.id, conversation.workdir])
+  const bound = !!conversation.workdir?.trim()
+  const sandboxLabel = useSandboxLabel(conversation.id, conversation.workdir, sandbox)
 
   return (
     <div className="topbar">
@@ -82,7 +73,18 @@ export const Topbar = memo(function Topbar({
       </button>
       <EditableTitle title={conversation.title} onCommit={onRename} />
       <span className="sep">·</span>
-      <span className="meta" onClick={onBindWorkdir} style={{ cursor: 'pointer' }} title="点击选择工作目录">
+      <span
+        className="meta"
+        onClick={bound ? onBindWorkdir : undefined}
+        style={bound ? { cursor: 'pointer' } : undefined}
+        title={
+          bound
+            ? '点击更换工作目录'
+            : sandboxLabel
+              ? `沙箱 · ${sandboxLabel}`
+              : '纯对话'
+        }
+      >
         {conversation.workdir ? (
           isSshWorkdir(conversation.workdir) ? (
             <>
@@ -102,6 +104,11 @@ export const Topbar = memo(function Topbar({
           </>
         )}
       </span>
+      {bound ? null : (
+        <button type="button" className="icon-btn meta-bind" title="绑定工作目录" onClick={onBindWorkdir}>
+          <FolderPlus className="ic" />
+        </button>
+      )}
       <div className="topbar-right">
         {conversation.workdir ? (
           <span
@@ -196,6 +203,11 @@ export const Topbar = memo(function Topbar({
     prev.onContentWidth === next.onContentWidth &&
     prev.onBindWorkdir === next.onBindWorkdir &&
     prev.onToggleArchive === next.onToggleArchive &&
-    prev.onDelete === next.onDelete
+    prev.onDelete === next.onDelete &&
+    prev.sandbox?.env === next.sandbox?.env &&
+    prev.sandbox?.provider?.apiUrl === next.sandbox?.provider?.apiUrl &&
+    prev.sandbox?.provider?.templateId === next.sandbox?.provider?.templateId &&
+    prev.sandbox?.provider?.proxyNodeIp === next.sandbox?.provider?.proxyNodeIp &&
+    prev.sandbox?.provider?.label === next.sandbox?.provider?.label
   )
 })

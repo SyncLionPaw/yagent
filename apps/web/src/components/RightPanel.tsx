@@ -1,6 +1,6 @@
 import { memo, useEffect, useMemo, useState } from 'react'
 import { Bookmark, EyeOff, Files, Globe, Lightbulb, PanelRight, Search, Trash2, X } from 'lucide-react'
-import type { Conversation, Insight, InsightMark, Ref } from '@yagent/core'
+import type { Conversation, Insight, InsightMark, Ref, Settings } from '@yagent/core'
 import { PanelBrowser, type BrowserPage } from './PanelBrowser'
 import { ChatSandboxFiles } from './ChatSandboxFiles'
 import { ProjectFiles } from './ProjectFiles'
@@ -27,6 +27,7 @@ interface RightPanelProps {
   onDeleteInsight: (id: string) => void
   /** 与主区顶栏「任务面板」相同：收起/展开右栏 */
   onTogglePanel: () => void
+  sandbox?: Settings['sandbox']
 }
 
 const BASE_TABS: {
@@ -185,6 +186,7 @@ export const RightPanel = memo(function RightPanel({
   onMarkInsight,
   onDeleteInsight,
   onTogglePanel,
+  sandbox,
 }: RightPanelProps) {
   const [browserPage, setBrowserPage] = useState<BrowserPage | null>(null)
   const browserOpen = !!browserPage
@@ -308,6 +310,7 @@ export const RightPanel = memo(function RightPanel({
             convId={conversation.id}
             attachments={conversation.attachments}
             outputs={conversation.outputs}
+            sandbox={sandbox}
           />
         )}
       </div>
@@ -352,6 +355,11 @@ export const RightPanel = memo(function RightPanel({
     prev.onSelectSrc === next.onSelectSrc &&
     prev.onMarkInsight === next.onMarkInsight &&
     prev.onDeleteInsight === next.onDeleteInsight &&
-    prev.onTogglePanel === next.onTogglePanel
+    prev.onTogglePanel === next.onTogglePanel &&
+    prev.sandbox?.env === next.sandbox?.env &&
+    prev.sandbox?.provider?.apiUrl === next.sandbox?.provider?.apiUrl &&
+    prev.sandbox?.provider?.templateId === next.sandbox?.provider?.templateId &&
+    prev.sandbox?.provider?.proxyNodeIp === next.sandbox?.provider?.proxyNodeIp &&
+    prev.sandbox?.provider?.label === next.sandbox?.provider?.label
   )
 })

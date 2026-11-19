@@ -83,6 +83,20 @@ describe('cube provider config', () => {
     expect(await loadCubeConfig(tempDir)).toBeNull()
   })
 
+  it('lets the open settings page rename the sandbox before the file is saved', async () => {
+    tempDir = await mkdtemp(path.join(tmpdir(), 'yagent-cube-'))
+    const file = path.join(tempDir, 'providers', 'cube.json')
+    await mkdir(path.dirname(file), { recursive: true })
+    await writeFile(file, JSON.stringify({ apiUrl: 'http://10.0.0.8:3000', templateId: 'tpl-file' }))
+    const live = await loadCubeConfig(tempDir, {
+      env: 'sandbox',
+      provider: { apiUrl: 'http://10.9.9.9:3000', templateId: 'tpl-live', label: 'now' },
+    })
+    expect(live?.place).toBe('now')
+    expect(live?.templateId).toBe('tpl-live')
+    expect(await loadCubeConfig(tempDir, { env: 'local' })).toBeNull()
+  })
+
   it('uses a cube:// root that local and ssh paths do not match', () => {
     expect(cubeRootFor('conv-1')).toBe('cube://conv-1')
     expect(parseCubeRoot('cube://conv-1')).toBe('conv-1')

@@ -143,18 +143,18 @@
 
 /* ================= 液态玻璃测试皮肤 ================= */
 [data-skin='liquid-glass'] {
-  --glass-blur: 28px;
-  --glass-sat: 1.55;
-  --glass-fill: color-mix(in srgb, var(--bg-surface) 42%, transparent);
-  --glass-fill-strong: color-mix(in srgb, var(--bg-surface) 58%, transparent);
-  --glass-stroke: color-mix(in srgb, #fff 55%, transparent);
-  --glass-stroke-soft: color-mix(in srgb, #fff 28%, transparent);
+  --glass-blur: 48px;
+  --glass-sat: 1.08;
+  --glass-bright: 1.03;
+  --glass-fill: color-mix(in srgb, #fff 64%, transparent);
+  --glass-fill-strong: color-mix(in srgb, #fff 76%, transparent);
+  --glass-stroke: color-mix(in srgb, #fff 42%, transparent);
+  --glass-stroke-soft: color-mix(in srgb, #fff 22%, transparent);
   --glass-shine: linear-gradient(
     135deg,
-    color-mix(in srgb, #fff 55%, transparent) 0%,
-    color-mix(in srgb, #fff 8%, transparent) 38%,
-    transparent 55%,
-    color-mix(in srgb, #fff 18%, transparent) 100%
+    color-mix(in srgb, #fff 20%, transparent) 0%,
+    color-mix(in srgb, #fff 4%, transparent) 36%,
+    transparent 58%
   );
   --shadow-stage:
     0 1px 0 color-mix(in srgb, #fff 40%, transparent) inset,
@@ -166,15 +166,15 @@
     0 12px 40px color-mix(in srgb, #000 18%, transparent);
   --border: color-mix(in srgb, #fff 32%, transparent);
   --border-strong: color-mix(in srgb, #fff 48%, transparent);
-  --bg-bubble: color-mix(in srgb, var(--bg-surface) 38%, transparent);
-  --bg-code: color-mix(in srgb, var(--bg-surface) 48%, transparent);
+  --bg-bubble: color-mix(in srgb, #fff 68%, transparent);
+  --bg-code: color-mix(in srgb, #fff 78%, transparent);
   --bg-hover: color-mix(in srgb, #fff 14%, transparent);
   --bg-active: color-mix(in srgb, #fff 22%, transparent);
 }
 
 [data-theme='light'][data-skin='liquid-glass'] {
   --bg-app: #c8d6f0;
-  --bg-surface: rgba(255, 255, 255, 0.55);
+  --bg-surface: rgba(255, 255, 255, 0.72);
   --text-0: #1a1c28;
   --text-1: #4a5068;
   --text-2: #7a829a;
@@ -182,9 +182,10 @@
 
 [data-theme='dark'][data-skin='liquid-glass'] {
   --bg-app: #0e1424;
-  --bg-surface: rgba(36, 42, 62, 0.45);
-  --glass-fill: color-mix(in srgb, #1c2238 48%, transparent);
-  --glass-fill-strong: color-mix(in srgb, #242b44 62%, transparent);
+  --bg-surface: rgba(28, 34, 52, 0.74);
+  --glass-bright: 1;
+  --glass-fill: color-mix(in srgb, #1a2034 66%, transparent);
+  --glass-fill-strong: color-mix(in srgb, #222840 78%, transparent);
   --glass-stroke: color-mix(in srgb, #fff 22%, transparent);
   --glass-stroke-soft: color-mix(in srgb, #fff 12%, transparent);
   --text-0: #f0f2fa;
@@ -192,8 +193,8 @@
   --text-2: #6e7690;
   --border: color-mix(in srgb, #fff 14%, transparent);
   --border-strong: color-mix(in srgb, #fff 24%, transparent);
-  --bg-bubble: color-mix(in srgb, #2a3148 42%, transparent);
-  --bg-code: color-mix(in srgb, #22283c 55%, transparent);
+  --bg-bubble: color-mix(in srgb, #2a3148 68%, transparent);
+  --bg-code: color-mix(in srgb, #22283c 78%, transparent);
   --bg-hover: color-mix(in srgb, #fff 8%, transparent);
   --bg-active: color-mix(in srgb, #fff 12%, transparent);
   --shadow-stage:
@@ -250,8 +251,8 @@
 [data-skin='liquid-glass'] .accent-card {
   background: var(--glass-fill) !important;
   border-color: var(--glass-stroke-soft) !important;
-  -webkit-backdrop-filter: blur(var(--glass-blur)) saturate(var(--glass-sat));
-  backdrop-filter: blur(var(--glass-blur)) saturate(var(--glass-sat));
+  -webkit-backdrop-filter: blur(var(--glass-blur)) saturate(var(--glass-sat)) brightness(var(--glass-bright));
+  backdrop-filter: blur(var(--glass-blur)) saturate(var(--glass-sat)) brightness(var(--glass-bright));
   box-shadow: var(--shadow-stage);
 }
 
@@ -280,7 +281,7 @@
   pointer-events: none;
   z-index: 8;
   background: var(--glass-shine);
-  opacity: 0.55;
+  opacity: 0.35;
   mix-blend-mode: soft-light;
 }
 
@@ -292,8 +293,8 @@
   pointer-events: none;
   z-index: 9;
   box-shadow:
-    inset 0 1px 0 color-mix(in srgb, #fff 55%, transparent),
-    inset 0 0 0 1px color-mix(in srgb, #fff 18%, transparent);
+    inset 0 1px 0 color-mix(in srgb, #fff 28%, transparent),
+    inset 0 0 0 1px color-mix(in srgb, #fff 12%, transparent);
 }
 
 [data-skin='liquid-glass'] .composer-box {
@@ -315,8 +316,8 @@
 [data-skin='liquid-glass'] .msg-user .bubble {
   background: color-mix(in srgb, var(--accent) 18%, var(--glass-fill-strong));
   border: 1px solid color-mix(in srgb, var(--accent) 28%, transparent);
-  -webkit-backdrop-filter: blur(16px) saturate(1.3);
-  backdrop-filter: blur(16px) saturate(1.3);
+  -webkit-backdrop-filter: blur(var(--glass-blur)) saturate(var(--glass-sat)) brightness(var(--glass-bright));
+  backdrop-filter: blur(var(--glass-blur)) saturate(var(--glass-sat)) brightness(var(--glass-bright));
 }
 
 [data-skin='liquid-glass'] .sidebar-footer-row:hover {
@@ -326,8 +327,8 @@
 [data-skin='liquid-glass'] .sidebar-footer {
   background: var(--glass-fill-strong) !important;
   border: 1px solid var(--glass-stroke-soft);
-  -webkit-backdrop-filter: blur(24px) saturate(1.5);
-  backdrop-filter: blur(24px) saturate(1.5);
+  -webkit-backdrop-filter: blur(var(--glass-blur)) saturate(var(--glass-sat)) brightness(var(--glass-bright));
+  backdrop-filter: blur(var(--glass-blur)) saturate(var(--glass-sat)) brightness(var(--glass-bright));
   box-shadow: var(--shadow-pop);
 }
 

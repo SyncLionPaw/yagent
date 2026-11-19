@@ -10,8 +10,6 @@ import {
 } from 'react'
 import {
   Check,
-  ChevronsDownUp,
-  ChevronsUpDown,
   Copy,
   FoldVertical,
   Minus,
@@ -19,8 +17,10 @@ import {
   RotateCcw,
   UnfoldVertical,
   X,
+  ChevronDown,
 } from 'lucide-react'
 import type { Block, Conversation, ConversationNode, Ref } from '@yagent/core'
+import { processLabel, processStartsOpen, processTone } from '../lib/processView'
 import { HTML_PREVIEW_SANDBOX } from '../lib/htmlPreview'
 import { formatMsgTime, pathToActive } from '../lib/utils'
 import { TextBlock } from './TextBlock'
@@ -32,17 +32,6 @@ import { EmptyChatHero } from './YParticleLogo'
 
 function isProcessBlock(b: Block): boolean {
   return b.type === 'thinking' || b.type === 'tool'
-}
-
-function processSummary(blocks: Block[]): string {
-  const thoughts = blocks.filter((b) => b.type === 'thinking')
-  const tools = blocks.filter((b) => b.type === 'tool')
-  const parts: string[] = []
-  if (thoughts.length) parts.push(`${thoughts.length} 次思考`)
-  if (tools.length) parts.push(`${tools.length} 次工具`)
-  const ms = thoughts.reduce((n, b) => n + (b.type === 'thinking' ? (b.durationMs ?? 0) : 0), 0)
-  if (ms > 0) parts.push(`${(ms / 1000).toFixed(1)}s`)
-  return parts.join(' · ') || '过程'
 }
 
 interface ChatViewProps {
@@ -166,6 +155,7 @@ export function ChatView({
                 node={node}
                 refs={conversation.refs}
                 streaming={i === path.length - 1 && conversation.status === 'running'}
+                paused={i === path.length - 1 && conversation.status === 'waiting'}
                 canEdit={canEdit}
                 editing={editingNodeId === node.id}
                 /** code/工作区模式不展示产物卡；仅纯 chat 沙箱用 */
@@ -243,6 +233,7 @@ const Message = memo(function Message({
   node,
   refs,
   streaming,
+  paused = false,
   canEdit,
   editing,
   showArtifacts = false,
@@ -254,6 +245,7 @@ const Message = memo(function Message({
   node: ConversationNode
   refs: Ref[]
   streaming: boolean
+  paused?: boolean
   canEdit: boolean
   editing: boolean
   showArtifacts?: boolean
@@ -312,6 +304,7 @@ const Message = memo(function Message({
           blocks={rest}
           refs={refs}
           streaming={streaming}
+          paused={paused}
           node={node}
           showArtifacts={showArtifacts}
           convId={convId}
@@ -362,6 +355,7 @@ const Message = memo(function Message({
         blocks={node.blocks}
         refs={refs}
         streaming={streaming}
+        paused={paused}
         node={node}
         time={time}
         showArtifacts={showArtifacts}
@@ -373,7 +367,7 @@ const Message = memo(function Message({
   )
 }, (prev, next) => {
   // 流式中的末条必须每帧更新；历史消息用内容指纹跳过
-  if (prev.streaming || next.streaming) return false
+  if (prev.streaming || next.streaming || prev.paused !== next.paused) return false
   return (
     prev.node.id === next.node.id &&
     nodeStreamSig(prev.node) === nodeStreamSig(next.node) &&
@@ -388,11 +382,12 @@ const Message = memo(function Message({
   )
 })
 
-/** agent 回复：右上角可一键折叠思考/工具过程为单行摘要 */
+/** agent 回复：进行中展开思考和工具；成功结束后收成一行耗时。 */
 function AgentReply({
   blocks,
   refs,
   streaming,
+  paused = false,
   node,
   time,
   showArtifacts = false,
@@ -403,6 +398,7 @@ function AgentReply({
   blocks: Block[]
   refs: Ref[]
   streaming: boolean
+  paused?: boolean
   node: ConversationNode
   time?: string
   showArtifacts?: boolean
@@ -410,25 +406,40 @@ function AgentReply({
   onRefClick: (id: number) => void
   onToggleFiles: () => void
 }) {
-  const process = blocks.filter(isProcessBlock)
-  const hasProcess = process.length > 0
-  const [open, setOpen] = useState(false)
+  const tone = processTone(blocks, streaming, paused)
+  const hasProcess = blocks.some(isProcessBlock)
+  const [open, setOpen] = useState(() => processStartsOpen(tone))
+  const toneRef = useRef(tone)
+  useEffect(() => {
+    if (toneRef.current === tone) return
+    toneRef.current = tone
+    setOpen(processStartsOpen(tone))
+  }, [tone])
 
+  const summary = hasProcess && !streaming ? processLabel(tone, blocks, node.durationMs) : ''
+  const toggle = () => setOpen((v) => !v)
   return (
     <div className="msg-agent">
-      <div className="msg-head">
+      <div
+        className={`msg-head${summary ? ' can-toggle' : ''}`}
+        role={summary ? 'button' : undefined}
+        tabIndex={summary ? 0 : undefined}
+        aria-expanded={summary ? open : undefined}
+        aria-label={summary || undefined}
+        onClick={summary ? toggle : undefined}
+        onKeyDown={summary ? (event) => {
+          if (event.key !== 'Enter' && event.key !== ' ') return
+          event.preventDefault()
+          toggle()
+        } : undefined}
+      >
         <span className="who-agent">yagent</span>
         {time && <span>{time}</span>}
-        {hasProcess && (
-          <button
-            type="button"
-            className="process-toggle"
-            title={open ? '折叠思考与工具' : '展开思考与工具'}
-            aria-label={open ? '折叠思考与工具' : '展开思考与工具'}
-            onClick={() => setOpen((v) => !v)}
-          >
-            {open ? <ChevronsDownUp className="ic ic-sm" /> : <ChevronsUpDown className="ic ic-sm" />}
-          </button>
+        {summary && (
+          <span className={`process-summary tone-${tone}${open ? ' open' : ''}`}>
+            <ChevronDown className="ic ic-sm process-caret" />
+            <span className="process-label">{summary}</span>
+          </span>
         )}
       </div>
 
@@ -436,12 +447,6 @@ function AgentReply({
         <div className="thinking">
           <span className="ring"></span>正在思考
         </div>
-      )}
-
-      {hasProcess && !open && (
-        <button type="button" className="process-summary" onClick={() => setOpen(true)}>
-          {processSummary(process)}
-        </button>
       )}
 
       {blocks.map((block, i) => {
@@ -470,12 +475,7 @@ function renderAgentBlock(
       return <TextBlock key={i} text={block.text} refs={refs} onRefClick={onRefClick} />
     case 'thinking':
       return (
-        <ThoughtBlock
-          key={i}
-          text={block.text}
-          status={block.status}
-          durationMs={block.durationMs}
-        />
+        <ThoughtBlock key={i} text={block.text} status={block.status} />
       )
     case 'tool':
       return (
@@ -486,6 +486,7 @@ function renderAgentBlock(
           status={block.status}
           detail={block.detail}
           stats={block.stats}
+          input={block.input}
         />
       )
     case 'tool_result':

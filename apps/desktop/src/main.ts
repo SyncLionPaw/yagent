@@ -1686,12 +1686,12 @@ void app.whenReady().then(async () => {
     const local = await ensureLocalProcessSandbox(convId)
     return { ...local, label: '本机' }
   })
-  ipcMain.handle('sandbox:info', async (_e: any, convId: string) => {
+  ipcMain.handle('sandbox:info', async (_e: any, convId: string, sandbox?: { env?: string; provider?: Record<string, unknown> } | null) => {
     const id = String(convId ?? '').trim()
     if (!id || id.includes('..') || id.includes('/') || id.includes('\\')) {
       return { backend: 'local-process' as const, root: '', ready: false, label: '' }
     }
-    const cube = await loadCubeConfig(dataDir())
+    const cube = await loadCubeConfig(dataDir(), sandbox)
     if (cube) {
       return { backend: 'remote' as const, root: cubeRootFor(id), ready: true, label: cube.place }
     }

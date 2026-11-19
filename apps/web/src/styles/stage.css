@@ -133,7 +133,8 @@
 /* 舞台收窄时，顶栏按优先级隐藏次要信息，保证按钮完整 */
 @container (max-width: 720px) {
   .topbar .sep,
-  .topbar .meta {
+  .topbar .meta,
+  .topbar .meta-bind {
     display: none;
   }
 }

@@ -1944,12 +1944,12 @@
     radial-gradient(100% 100% at 90% 80%, #ff9ec8, #7ad8ff 70%);
 }
 .skin-preview.liquid::after {
-  background: color-mix(in srgb, #fff 42%, transparent);
-  border: 1px solid color-mix(in srgb, #fff 55%, transparent);
+  background: color-mix(in srgb, #fff 78%, transparent);
+  border: 1px solid color-mix(in srgb, #fff 36%, transparent);
   box-shadow:
-    inset 0 1px 0 rgba(255, 255, 255, 0.65),
-    0 2px 6px rgba(0, 0, 0, 0.12);
-  backdrop-filter: blur(2px);
+    inset 0 1px 0 rgba(255, 255, 255, 0.35),
+    0 2px 6px rgba(0, 0, 0, 0.1);
+  backdrop-filter: blur(6px);
 }
 .ui-thumb.ui-thumb-glass {
   background:
@@ -1959,10 +1959,10 @@
     var(--bg-app) !important;
 }
 .ui-thumb.ui-thumb-glass .ui-thumb-main {
-  background: color-mix(in srgb, var(--bg-surface) 55%, transparent) !important;
-  border: 1px solid color-mix(in srgb, #fff 40%, transparent);
-  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.45);
-  backdrop-filter: blur(6px);
+  background: color-mix(in srgb, #fff 78%, transparent) !important;
+  border: 1px solid color-mix(in srgb, #fff 28%, transparent);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.28);
+  backdrop-filter: blur(8px);
 }
 .ui-thumb.ui-thumb-glass .ui-thumb-side,
 .ui-thumb.ui-thumb-glass .ui-thumb-panel {

@@ -42,7 +42,10 @@ declare global {
           root: string
           label?: string
         }>
-        info(convId: string): Promise<{
+        info(convId: string, sandbox?: {
+          env?: string
+          provider?: Record<string, unknown>
+        }): Promise<{
           backend: 'local-process' | 'docker' | 'remote'
           root: string
           ready: boolean

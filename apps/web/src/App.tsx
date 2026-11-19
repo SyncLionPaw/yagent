@@ -210,6 +210,7 @@ function App() {
                 onBindWorkdir={actions.handleBindWorkdir}
                 onToggleArchive={actions.handleToggleArchive}
                 onDelete={actions.handleDeleteConversation}
+                sandbox={settings.sandbox}
                 sshStatus={sshHost ? sshStatus : null}
               />
               {sshHost && (sshStatus === 'fail' || sshStatus === 'checking') && (
@@ -336,6 +337,7 @@ function App() {
         onMarkInsight={insights.handleMarkInsight}
         onDeleteInsight={insights.handleDeleteInsight}
         onTogglePanel={() => chrome.setPanelOpen((v) => !v)}
+        sandbox={settings.sandbox}
       />
 
       <ConfirmDialog

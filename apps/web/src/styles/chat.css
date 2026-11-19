@@ -210,45 +210,52 @@
   font-weight: 600;
   font-size: 12.5px;
 }
-/* 回答块右上角：一键折叠/展开全部思考与工具 */
-.process-toggle {
-  margin-left: auto;
-  border: none;
-  background: none;
-  color: var(--text-2);
+.msg-head.can-toggle {
   cursor: pointer;
-  width: 26px;
-  height: 26px;
-  border-radius: 6px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  padding: 0;
 }
-.process-toggle:hover {
+.msg-head.can-toggle:hover .process-summary {
   background: var(--bg-hover);
-  color: var(--text-0);
 }
 .process-summary {
   display: flex;
   align-items: center;
-  width: 100%;
+  gap: 4px;
+  flex: 1;
+  min-width: 0;
   border: 1px solid var(--border);
   background: var(--bg-surface);
   border-radius: 6px;
-  padding: 4px 10px;
-  margin: 2px 0 6px;
+  padding: 2px 8px;
   font-size: 12px;
   color: var(--text-2);
   font-family: inherit;
   cursor: pointer;
   text-align: left;
   line-height: 1.35;
-  min-height: 28px;
+}
+.process-summary .process-label {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 .process-summary:hover {
   background: var(--bg-hover);
   color: var(--text-1);
+}
+.process-summary .process-caret {
+  transform: rotate(-90deg);
+  flex-shrink: 0;
+  transition: transform 0.15s ease;
+}
+.process-summary.open .process-caret {
+  transform: rotate(0deg);
+}
+.process-summary.tone-failed {
+  color: var(--red);
+}
+.process-summary.tone-stopped {
+  color: var(--yellow);
 }
 .who-user {
   color: var(--text-0);
@@ -900,49 +907,98 @@ pre.math-raw {
   color: var(--green);
 }
 
-/* 工具调用：紧凑单行 */
+/* 工具调用：和思考一样的一行，不套卡片 */
 .tool {
-  border: 1px solid var(--border);
-  background: var(--bg-surface);
-  border-radius: 6px;
-  margin: 3px 0;
-  overflow: hidden;
+  margin: 2px 0;
+  min-width: 0;
 }
 .tool-row {
   display: flex;
   align-items: center;
   gap: 6px;
-  padding: 4px 9px;
+  padding: 2px 0;
   font-size: 12px;
-  cursor: pointer;
+  cursor: default;
   color: var(--text-1);
-  min-height: 28px;
+  min-width: 0;
 }
-.tool-row:hover {
-  background: var(--bg-hover);
+.tool-row.can-open {
+  cursor: pointer;
+}
+.tool-row.can-open:hover {
+  color: var(--text-1);
+}
+.tool .caret {
+  flex-shrink: 0;
+  display: flex;
+  color: var(--text-2);
+  transform: rotate(-90deg);
+  transition: transform 0.15s ease;
+}
+.tool.open .caret {
+  transform: rotate(0deg);
+}
+.tool-row .t-end {
+  margin-left: auto;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-shrink: 0;
 }
 .tool-row .t-icon {
   color: var(--text-2);
   display: flex;
+  flex-shrink: 0;
 }
 .tool-row .t-name {
-  font-family: 'SF Mono', Menlo, monospace;
-  font-size: 11.5px;
-  color: var(--blue);
+  font-size: 12px;
+  color: var(--text-0);
   font-weight: 600;
+  flex-shrink: 0;
 }
 .tool-row .t-desc {
+  flex: 1;
+  min-width: 0;
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
+  color: var(--text-2);
+}
+.tool-row .t-desc.is-error {
+  color: var(--red);
+}
+.tool-row .t-desc.is-stopped {
+  color: var(--yellow);
+}
+.tool-row .t-desc.live,
+.thought-preview.live {
+  animation: thought-pulse 1.4s ease-in-out infinite;
+}
+@keyframes thought-pulse {
+  50% {
+    opacity: 0.45;
+  }
 }
 .tool-row .t-status {
-  margin-left: auto;
   font-size: 11.5px;
   display: flex;
   align-items: center;
   gap: 4px;
   flex-shrink: 0;
+}
+.tool-row .t-time {
+  flex-shrink: 0;
+  font-size: 11.5px;
+  font-variant-numeric: tabular-nums;
+}
+.tool-row .t-time.tone-ok {
+  color: var(--green);
+}
+.tool-row .t-time.tone-error {
+  color: var(--red);
+}
+.tool-row .t-time.tone-stopped {
+  color: var(--yellow);
 }
 .ok {
   color: var(--green);
@@ -958,12 +1014,24 @@ pre.math-raw {
 }
 
 .tool-detail {
-  border-top: 1px solid var(--border);
-  background: var(--bg-code);
-  padding: 7px 10px;
+  border-left: 2px solid var(--border-strong);
+  margin: 1px 0 4px 5px;
+  padding: 1px 0 1px 10px;
   font-family: 'SF Mono', Menlo, monospace;
   font-size: 11px;
   line-height: 1.55;
+  max-height: 280px;
+  overflow: auto;
+}
+.tool-detail pre {
+  margin: 0;
+  white-space: pre-wrap;
+  word-break: break-word;
+  color: var(--text-2);
+  font-family: inherit;
+}
+.tool-detail pre.is-error {
+  color: var(--red);
 }
 .dl {
   display: block;
@@ -986,6 +1054,7 @@ pre.math-raw {
   color: var(--text-2);
   font-size: 12px;
   padding: 1px 0;
+  min-width: 0;
 }
 /* 流式光标：thinking / 首字等待出字后的低调指示 */
 .stream-caret {
@@ -1118,48 +1187,73 @@ pre.math-raw {
   color: var(--yellow);
 }
 
-/* 思考过程（完成后折叠态） */
+/* 思考：默认收起，预览一行；展开后是次级 Markdown */
 .thought {
   margin: 2px 0;
+  min-width: 0;
 }
 .thought-head {
   display: flex;
   align-items: center;
   gap: 5px;
+  width: 100%;
+  min-width: 0;
   padding: 2px 0;
+  border: none;
+  background: none;
+  font: inherit;
   font-size: 12px;
   color: var(--text-2);
   cursor: pointer;
   user-select: none;
+  text-align: left;
   line-height: 1.35;
 }
 .thought-head:hover {
   color: var(--text-1);
 }
+.thought-title {
+  flex-shrink: 0;
+  color: var(--text-1);
+}
+.thought-preview {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
 .thought-head .caret {
-  transition: transform 0.15s ease;
+  margin-left: auto;
+  flex-shrink: 0;
   display: flex;
+  transform: rotate(-90deg);
+  transition: transform 0.15s ease;
 }
 .thought.open .thought-head .caret {
-  transform: rotate(90deg);
+  transform: rotate(0deg);
 }
 .thought-body {
-  display: none;
   border-left: 2px solid var(--border-strong);
   margin: 1px 0 4px 5px;
   padding: 1px 0 1px 10px;
   color: var(--text-2);
   font-size: 12px;
   line-height: 1.5;
+  min-width: 0;
+  overflow-wrap: anywhere;
 }
-.thought.open .thought-body {
-  display: block;
-}
-.thought-body p {
+.thought-body.md p {
   margin-bottom: 6px;
 }
-.thought-body p:last-child {
+.thought-body.md p:last-child {
   margin-bottom: 0;
+}
+.thought-body.md h1,
+.thought-body.md h2,
+.thought-body.md h3,
+.thought-body.md h4 {
+  font-size: 13px;
+  margin: 8px 0 4px;
 }
 .ring {
   width: 13px;

@@ -1,7 +1,7 @@
-import { useCallback, useEffect, useState } from 'react'
+import { useCallback, useState } from 'react'
 import { ArrowLeft, Code2, Download, Eye } from 'lucide-react'
-import type { SandboxFile } from '@yagent/core'
-import { sandboxPlace } from '../lib/sandboxPlace'
+import type { SandboxFile, Settings } from '@yagent/core'
+import { useSandboxLabel } from '../hooks/useSandboxLabel'
 import { formatSize } from '../lib/utils'
 import { FileIcon } from './FileIcon'
 import {
@@ -27,27 +27,19 @@ export function ChatSandboxFiles({
   convId,
   attachments,
   outputs,
+  sandbox,
 }: {
   convId: string
   attachments: SandboxFile[]
   outputs: SandboxFile[]
+  sandbox?: Settings['sandbox']
 }) {
   const [preview, setPreview] = useState<FilePreview | null>(null)
   const [opening, setOpening] = useState<string | null>(null)
   const [previewSource, setPreviewSource] = useState<'attach' | 'output' | null>(null)
   const [viewMode, setViewMode] = useState<FileViewMode>('preview')
   const [error, setError] = useState('')
-  const [sandboxLabel, setSandboxLabel] = useState<string | null>(null)
-  useEffect(() => {
-    let cancel = false
-    void window.yagentDesktop?.sandbox?.info(convId).then((box) => {
-      if (cancel) return
-      setSandboxLabel(sandboxPlace(box))
-    })
-    return () => {
-      cancel = true
-    }
-  }, [convId])
+  const sandboxLabel = useSandboxLabel(convId, undefined, sandbox)
   const [busyDl, setBusyDl] = useState<string | null>(null)
 
   const downloadFile = useCallback(

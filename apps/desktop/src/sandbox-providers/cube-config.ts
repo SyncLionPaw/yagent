@@ -47,9 +47,13 @@ export function parseCubeRoot(root: string): string | null {
   return id
 }
 
-/** 设置优先。选了「本机」就不用外部沙箱。设置没填时才读 providers/cube.json。 */
-export async function loadCubeConfig(dataDir: string): Promise<CubeProviderConfig | null> {
-  const sandbox = await readSettingsSandbox(dataDir)
+/** 设置优先。选了「本机」就不用外部沙箱。设置没填时才读 providers/cube.json。
+ * override 用来让界面按内存里的设置立刻换名字，不必等落盘。 */
+export async function loadCubeConfig(
+  dataDir: string,
+  override?: { env?: string; provider?: Record<string, unknown> } | null,
+): Promise<CubeProviderConfig | null> {
+  const sandbox = override ?? (await readSettingsSandbox(dataDir))
   if (sandbox?.env === 'local') return null
   const fromSettings = configFromRecord(sandbox?.provider, '设置 → 沙箱')
   if (fromSettings) return fromSettings

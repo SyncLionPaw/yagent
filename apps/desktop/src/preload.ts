@@ -55,8 +55,8 @@ contextBridge.exposeInMainWorld('yagentDesktop', {
         templateId: string
         proxyNodeIp: string
       } | null>,
-    info: (convId: string) =>
-      ipcRenderer.invoke('sandbox:info', convId) as Promise<{
+    info: (convId: string, sandbox?: { env?: string; provider?: Record<string, unknown> }) =>
+      ipcRenderer.invoke('sandbox:info', convId, sandbox) as Promise<{
         backend: 'local-process' | 'docker' | 'remote'
         root: string
         ready: boolean
