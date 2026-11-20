@@ -20,6 +20,7 @@ const {
 } = require('./path-boundary')
 const {
   cubeDiscard,
+  cubePing,
   cubePreview,
   cubeReadBytes,
   cubeRootFor,
@@ -1697,6 +1698,9 @@ void app.whenReady().then(async () => {
     }
     const root = localProcessSandboxDir(id)
     return { backend: 'local-process' as const, root, ready: existsSync(root), label: '本机' }
+  })
+  ipcMain.handle('sandbox:ping', async (_e: any, sandbox?: { env?: string; provider?: Record<string, unknown> } | null) => {
+    return cubePing(dataDir(), sandbox)
   })
 
   /**

@@ -1276,6 +1276,26 @@
   gap: 4px;
   padding-top: 6px;
 }
+.composer-attach {
+  width: 28px;
+  height: 26px;
+  border: none;
+  background: none;
+  border-radius: 5px;
+  color: var(--text-2);
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+}
+.composer-attach:hover {
+  background: var(--bg-hover);
+  color: var(--text-0);
+}
+.composer-attach.has-files {
+  color: var(--accent-text);
+}
 .chip {
   font-size: 12px;
   color: var(--text-2);

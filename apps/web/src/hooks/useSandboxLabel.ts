@@ -39,3 +39,59 @@ export function useSandboxLabel(
 
   return label
 }
+
+export type SandboxLink = 'checking' | 'ok' | 'fail'
+
+/** 纯 chat 顶栏的灯。外部沙箱问控制面；本机模式直接算通。绑了目录时不探测。 */
+export function useSandboxLink(
+  workdir: string | null | undefined,
+  sandbox: Settings['sandbox'] | undefined,
+): { status: SandboxLink | null; error: string } {
+  const bound = !!workdir?.trim()
+  const env = sandbox?.env
+  const apiUrl = sandbox?.provider?.apiUrl ?? ''
+  const templateId = sandbox?.provider?.templateId ?? ''
+  const proxyNodeIp = sandbox?.provider?.proxyNodeIp ?? ''
+  const name = sandbox?.provider?.label ?? ''
+  const key = `${env ?? ''}|${apiUrl}|${templateId}|${proxyNodeIp}|${name}`
+  const [link, setLink] = useState<{ key: string; status: SandboxLink; error: string } | null>(null)
+
+  useEffect(() => {
+    if (bound) return
+    const ping = window.yagentDesktop?.sandbox?.ping
+    if (!ping) return
+    let alive = true
+    const run = () => {
+      void ping({
+        env,
+        provider: { apiUrl, templateId, proxyNodeIp, label: name },
+      })
+        .then((result) => {
+          if (!alive) return
+          setLink({
+            key,
+            status: result.ok ? 'ok' : 'fail',
+            error: result.ok ? '' : (result.error ?? '连接失败'),
+          })
+        })
+        .catch((err) => {
+          if (!alive) return
+          setLink({
+            key,
+            status: 'fail',
+            error: err instanceof Error ? err.message : '连接失败',
+          })
+        })
+    }
+    run()
+    const timer = setInterval(run, 30_000)
+    return () => {
+      alive = false
+      clearInterval(timer)
+    }
+  }, [bound, key, env, apiUrl, templateId, proxyNodeIp, name])
+
+  if (bound || !window.yagentDesktop?.sandbox?.ping) return { status: null, error: '' }
+  if (!link || link.key !== key) return { status: 'checking', error: '' }
+  return { status: link.status, error: link.error }
+}

@@ -5,7 +5,7 @@ import {
   useRef,
   useState,
 } from 'react'
-import type { ClipboardEvent, DragEvent, ReactNode } from 'react'
+import type { ChangeEvent, ClipboardEvent, DragEvent, ReactNode } from 'react'
 import {
   Command,
   CornerDownLeft,
@@ -159,6 +159,7 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(function Compo
   ref,
 ) {
   const ta = useRef<HTMLTextAreaElement | null>(null)
+  const fileRef = useRef<HTMLInputElement | null>(null)
   const [draft, setDraft] = useState('')
   const [attachments, setAttachments] = useState<PendingAttachment[]>([])
   const dragDepth = useRef(0)
@@ -278,6 +279,12 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(function Compo
       else if (skippedType) setAttachHint('有文件类型不支持，已跳过')
       return next.length !== prev.length ? next : prev
     })
+  }
+
+  const onPickFiles = (e: ChangeEvent<HTMLInputElement>) => {
+    const list = e.target.files
+    if (list?.length) addFiles(Array.from(list))
+    e.target.value = ''
   }
 
   const handlePaste = (e: ClipboardEvent) => {
@@ -534,6 +541,26 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(function Compo
 
           <div className="composer-bar">
             <ApprovalModeSwitch value={approvalMode} onChange={onApprovalModeChange} />
+            <button
+              type="button"
+              className={`composer-attach${attachments.length ? ' has-files' : ''}`}
+              title={
+                attachments.length
+                  ? `已选 ${attachments.length} 个文件，继续添加`
+                  : '上传文件，也可粘贴或拖入'
+              }
+              aria-label="上传文件"
+              onClick={() => fileRef.current?.click()}
+            >
+              <Paperclip className="ic ic-sm" />
+            </button>
+            <input
+              ref={fileRef}
+              type="file"
+              multiple
+              hidden
+              onChange={onPickFiles}
+            />
             <ContextRing meter={context ?? null} />
             {running ? (
               <button

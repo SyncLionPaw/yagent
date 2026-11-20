@@ -2,6 +2,7 @@ import { mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import path from 'node:path'
 import { afterEach, describe, expect, it } from 'vitest'
+import { cubePing } from '../src/sandbox-providers/cube.js'
 import {
   cubeRootFor,
   loadCubeConfig,
@@ -95,6 +96,27 @@ describe('cube provider config', () => {
     expect(live?.place).toBe('now')
     expect(live?.templateId).toBe('tpl-live')
     expect(await loadCubeConfig(tempDir, { env: 'local' })).toBeNull()
+  })
+
+  it('treats a local env as connected without calling the network', async () => {
+    tempDir = await mkdtemp(path.join(tmpdir(), 'yagent-cube-'))
+    const live = await cubePing(tempDir, {
+      env: 'local',
+      provider: { apiUrl: 'http://127.0.0.1:1', templateId: 'tpl-dead' },
+    })
+    expect(live).toEqual({ mode: 'local', ok: true, label: '本机' })
+  })
+
+  it('reports a refused cube endpoint as disconnected', async () => {
+    tempDir = await mkdtemp(path.join(tmpdir(), 'yagent-cube-'))
+    const live = await cubePing(tempDir, {
+      env: 'sandbox',
+      provider: { apiUrl: 'http://127.0.0.1:1', templateId: 'tpl-dead', label: 'gone' },
+    })
+    expect(live.mode).toBe('remote')
+    expect(live.ok).toBe(false)
+    expect(live.label).toBe('gone')
+    expect(live.error).toBeTruthy()
   })
 
   it('uses a cube:// root that local and ssh paths do not match', () => {

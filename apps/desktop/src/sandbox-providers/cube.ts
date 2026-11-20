@@ -38,6 +38,7 @@ interface CubeSdk {
   Sandbox: {
     create(options: Record<string, unknown>): Promise<CubeSandbox>
     connect(id: string, options: { config: Record<string, unknown> }): Promise<CubeSandbox>
+    health(config?: Record<string, unknown>): Promise<Record<string, unknown>>
   }
 }
 
@@ -50,7 +51,7 @@ export async function cubeRunTool(
   input: Record<string, unknown>,
 ): Promise<string> {
   const cfg = await requiredConfig(dataDir)
-  const sb = await session(dataDir, convId, cfg)
+  return callSandbox(dataDir, convId, cfg, async (sb) => {
   if (name === 'run_command') {
     const command = requiredString(input, 'command')
     const result = await sb.commands.run(command, { cwd: cfg.workdir, timeoutMs: COMMAND_TIMEOUT_MS })
@@ -74,11 +75,12 @@ export async function cubeRunTool(
     return `Wrote ${rel}`
   }
   throw new Error(`Unknown tool: ${name}`)
+  })
 }
 
 export async function cubePreview(dataDir: string, convId: string, rel: string) {
   const cfg = await requiredConfig(dataDir)
-  const sb = await session(dataDir, convId, cfg)
+  return callSandbox(dataDir, convId, cfg, async (sb) => {
   const file = resolveSandboxPath(cfg.workdir, rel)
   const ext = path.posix.extname(file).toLowerCase()
   const unavailable = (reason: string, size = 0) => ({ kind: 'unavailable' as const, reason, size })
@@ -121,15 +123,38 @@ export async function cubePreview(dataDir: string, convId: string, rel: string) 
   if (ext === '.md' || ext === '.markdown') return { kind: 'markdown' as const, content: text }
   if (molecule) return { kind: 'molecule' as const, format: ext.slice(1), content: text }
   return { kind: 'text' as const, content: text }
+  })
 }
 
 export async function cubeReadBytes(dataDir: string, convId: string, rel: string): Promise<Buffer> {
   const cfg = await requiredConfig(dataDir)
-  const sb = await session(dataDir, convId, cfg)
+  return callSandbox(dataDir, convId, cfg, async (sb) => {
   const file = resolveSandboxPath(cfg.workdir, rel)
   const bytes = await readBytes(sb, file)
   if (bytes.byteLength > 80 * 1024 * 1024) throw new Error('文件过大（超过 80MB）')
   return Buffer.from(bytes)
+  })
+}
+
+/** 只问控制面是否通，不创建沙箱。没配外部沙箱时本机进程始终可用。 */
+export async function cubePing(
+  dataDir: string,
+  override?: { env?: string; provider?: Record<string, unknown> } | null,
+): Promise<{ mode: 'local' | 'remote'; ok: boolean; label: string; error?: string }> {
+  const cfg = await loadCubeConfig(dataDir, override)
+  if (!cfg) return { mode: 'local', ok: true, label: '本机' }
+  try {
+    const { Sandbox } = await loadSdk()
+    await Sandbox.health({
+      apiUrl: cfg.apiUrl,
+      apiKey: cfg.apiKey ?? '',
+      templateId: cfg.templateId,
+      requestTimeoutMs: 4000,
+    })
+    return { mode: 'remote', ok: true, label: cfg.place }
+  } catch (err) {
+    return { mode: 'remote', ok: false, label: cfg.place, error: pingError(err) }
+  }
 }
 
 export async function cubeDiscard(dataDir: string, convId: string): Promise<void> {
@@ -150,6 +175,27 @@ export async function cubeDiscard(dataDir: string, convId: string): Promise<void
   const { Sandbox } = await loadSdk()
   const connected = await Sandbox.connect(saved, { config: sdkConfig(cfg) }).catch(() => null)
   if (connected) await connected.kill().catch(() => undefined)
+}
+
+/** 到期后控制面把沙箱暂停。缓存的连接还指着停掉的数据面，404 时丢掉再 connect，由控制面恢复。 */
+function sandboxPaused(err: unknown): boolean {
+  const message = err instanceof Error ? err.message : String(err)
+  return message.includes('{"error":"not found"}')
+}
+
+async function callSandbox<T>(
+  dataDir: string,
+  convId: string,
+  cfg: CubeProviderConfig,
+  fn: (sb: CubeSandbox) => Promise<T>,
+): Promise<T> {
+  try {
+    return await fn(await session(dataDir, convId, cfg))
+  } catch (err) {
+    if (!sandboxPaused(err)) throw err
+    live.delete(sessionKey(dataDir, convId))
+    return await fn(await session(dataDir, convId, cfg))
+  }
 }
 
 async function session(dataDir: string, convId: string, cfg: CubeProviderConfig): Promise<CubeSandbox> {
@@ -180,6 +226,7 @@ async function openSession(dataDir: string, convId: string, cfg: CubeProviderCon
   const created = await Sandbox.create({
     template: cfg.templateId,
     timeout: cfg.timeout ?? SESSION_TIMEOUT_S,
+    lifecycle: { onTimeout: 'pause', autoResume: true },
     config,
   })
   await mkdir(path.dirname(cubeSessionPath(dataDir, convId)), { recursive: true })
@@ -253,6 +300,20 @@ async function fileSize(sb: CubeSandbox, file: string): Promise<number | null> {
   } catch {
     return null
   }
+}
+
+function pingError(err: unknown): string {
+  const cause = err instanceof Error ? (err as Error & { cause?: { code?: string } }).cause : undefined
+  const code = cause?.code
+  if (code === 'ECONNREFUSED' || code === 'ENOTFOUND' || code === 'EHOSTUNREACH' || code === 'ENETUNREACH') {
+    return '连不上'
+  }
+  if (code === 'UND_ERR_CONNECT_TIMEOUT' || (err instanceof Error && err.name === 'TimeoutError')) {
+    return '连接超时'
+  }
+  const message = err instanceof Error ? err.message : String(err)
+  const line = message.split('\n')[0]?.trim() || '连接失败'
+  return line.length > 60 ? `${line.slice(0, 60)}…` : line
 }
 
 function sessionKey(dataDir: string, convId: string): string {

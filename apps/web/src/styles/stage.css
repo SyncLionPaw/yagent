@@ -185,6 +185,17 @@
 .sandbox-status.ssh.fail .sandbox-status-dot {
   background: var(--red, #e06c75);
 }
+/* 纯 chat 的外部沙箱：通了才绿灯，检测中黄、连不上红 */
+.sandbox-status.chat-sandbox.checking .sandbox-status-dot {
+  background: var(--yellow);
+  animation: ssh-dot-pulse 1.1s ease-in-out infinite;
+}
+.sandbox-status.chat-sandbox.fail {
+  color: var(--red, #e06c75);
+}
+.sandbox-status.chat-sandbox.fail .sandbox-status-dot {
+  background: var(--red, #e06c75);
+}
 @keyframes ssh-dot-pulse {
   0%,
   100% {

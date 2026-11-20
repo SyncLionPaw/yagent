@@ -51,6 +51,16 @@ declare global {
           ready: boolean
           label?: string
         }>
+        /** 控制面是否通。不创建沙箱。本机模式 ok 为 true。 */
+        ping(sandbox?: {
+          env?: string
+          provider?: Record<string, unknown>
+        }): Promise<{
+          mode: 'local' | 'remote'
+          ok: boolean
+          label: string
+          error?: string
+        }>
         providerFile(): Promise<{
           apiUrl: string
           apiKey: string

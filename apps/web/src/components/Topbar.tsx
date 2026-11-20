@@ -13,11 +13,21 @@ import {
 } from 'lucide-react'
 import type { ContentWidth, Conversation, ModelConfig, Settings } from '@yagent/core'
 import { isSshWorkdir, parseSshWorkdir } from '@yagent/core'
-import { useSandboxLabel } from '../hooks/useSandboxLabel'
+import { useSandboxLabel, useSandboxLink, type SandboxLink } from '../hooks/useSandboxLabel'
 import { EditableTitle } from './EditableTitle'
 import { ModelPicker } from './ModelPicker'
 import { ShareButton } from './ShareButton'
 import { WidthPicker } from './WidthPicker'
+
+function chatSandboxTip(label: string | null, status: SandboxLink | null, error: string): string {
+  const place = label ? `沙箱 · ${label}` : '沙箱'
+  if (status === 'checking') return `${place} · 检测中…`
+  if (status === 'ok') return `${place} · 已连接`
+  if (status === 'fail') {
+    return error && error !== '连接失败' ? `${place} · 连接失败 · ${error}` : `${place} · 连接失败`
+  }
+  return place
+}
 
 export type PopoverId = 'model' | 'share' | 'mode' | 'workdir' | 'width' | null
 
@@ -65,6 +75,7 @@ export const Topbar = memo(function Topbar({
   const archived = !!conversation.archived
   const bound = !!conversation.workdir?.trim()
   const sandboxLabel = useSandboxLabel(conversation.id, conversation.workdir, sandbox)
+  const sandboxLink = useSandboxLink(conversation.workdir, sandbox)
 
   return (
     <div className="topbar">
@@ -133,9 +144,9 @@ export const Topbar = memo(function Topbar({
           </span>
         ) : (
           <span
-            className="sandbox-status chat-sandbox"
-            data-tip={sandboxLabel ? `沙箱 · ${sandboxLabel}` : '沙箱'}
-            aria-label={sandboxLabel ? `沙箱 · ${sandboxLabel}` : '沙箱'}
+            className={`sandbox-status chat-sandbox${sandboxLink.status ? ` ${sandboxLink.status}` : ''}`}
+            data-tip={chatSandboxTip(sandboxLabel, sandboxLink.status, sandboxLink.error)}
+            aria-label={chatSandboxTip(sandboxLabel, sandboxLink.status, sandboxLink.error)}
           >
             <Box className="ic" />
             <span className="sandbox-status-dot" aria-hidden />

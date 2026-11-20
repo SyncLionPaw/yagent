@@ -63,6 +63,14 @@ contextBridge.exposeInMainWorld('yagentDesktop', {
         /** 沙箱位置，例如「本机」或供应商地址 */
         label?: string
       }>,
+    /** 控制面是否通。不创建沙箱。本机模式 ok 为 true。 */
+    ping: (sandbox?: { env?: string; provider?: Record<string, unknown> }) =>
+      ipcRenderer.invoke('sandbox:ping', sandbox) as Promise<{
+        mode: 'local' | 'remote'
+        ok: boolean
+        label: string
+        error?: string
+      }>,
   },
   dialog: {
     selectDirectory: () => ipcRenderer.invoke('dialog:selectDirectory'),
